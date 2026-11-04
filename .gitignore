@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+
+# Output directory
+out/
+
+# Runtime data store (contains users/passwords & live state — regenerated from lib/db.js seeds)
+data-store.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
