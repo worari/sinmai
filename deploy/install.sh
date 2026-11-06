@@ -132,3 +132,4 @@ echo -e "   1. ชี้โดเมนมายัง IP นี้: ${SERVER_IP
 echo -e "   2. รันคำสั่ง: ${CYAN}sudo apt install -y certbot python3-certbot-nginx${NC}"
 echo -e "   3. รันคำสั่ง: ${CYAN}sudo certbot --nginx -d โดเมนของท่าน.army.mil.th${NC}"
 echo -e "${CYAN}====================================================================${NC}"
+

@@ -120,3 +120,4 @@ sql += `COMMIT;\n`;
 
 fs.writeFileSync(outputPath, sql, 'utf8');
 console.log('สร้างไฟล์ seed-data.sql สำเร็จเรียบร้อย:', outputPath);
+
