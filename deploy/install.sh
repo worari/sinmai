@@ -118,10 +118,13 @@ echo -e "${GREEN}✓ Nginx Reverse Proxy ทำงานเรียบร้อ
 
 # 9. ตั้งค่า Firewall (UFW)
 echo -e "\n${YELLOW}🛡️ กำหนดค่า Firewall (UFW)...${NC}"
-ufw allow OpenSSH
-ufw allow 'Nginx Full'
+# สำคัญมาก: อนุญาตพอร์ต SSH พิเศษ 4224 และ 22 เพื่อไม่ให้การเชื่อมต่อหลุด
+ufw allow 4224/tcp comment 'SSH Custom Port 4224'
+ufw allow 22/tcp comment 'SSH Port 22'
+ufw allow 80/tcp comment 'HTTP'
+ufw allow 443/tcp comment 'HTTPS'
 ufw --force enable || true
-echo -e "${GREEN}✓ อนุญาตพอร์ต SSH (22), HTTP (80), HTTPS (443)${NC}"
+echo -e "${GREEN}✓ อนุญาตพอร์ต SSH (4224, 22), HTTP (80), HTTPS (443)${NC}"
 
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
@@ -129,7 +132,9 @@ echo -e "\n${CYAN}==============================================================
 echo -e "${GREEN}🎉 ติดตั้งระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทน ทบ. บน Linux สำเร็จเรียบร้อย!${NC}"
 echo -e "${CYAN}====================================================================${NC}"
 echo -e "🌐 สามารถเข้าใช้งานระบบผ่านเว็บเบราว์เซอร์ได้ที่:"
-echo -e "   👉 ${YELLOW}http://${SERVER_IP}/${NC}"
+echo -e "   👉 โดเมนหลัก:  ${YELLOW}http://sinmai.rta.mi.th${NC}"
+echo -e "   👉 Public IP:  ${YELLOW}http://103.146.204.84${NC}"
+echo -e "   👉 Private IP: ${YELLOW}http://10.200.2.168${NC} (IP เครื่อง: ${SERVER_IP})"
 echo -e ""
 echo -e "👤 บัญชีผู้ดูแลระบบเริ่มต้น (Super Admin):"
 echo -e "   - อีเมล: ${GREEN}admin@army.mil.th${NC} (หรือเลข ปชช: 1100500001122)"
@@ -139,10 +144,14 @@ echo -e "📊 คำสั่งตรวจสอบการทำงานข
 echo -e "   - ดูสถานะ PM2:     ${CYAN}pm2 status${NC}"
 echo -e "   - ดูบันทึก Log:     ${CYAN}pm2 logs rta-sinmai${NC}"
 echo -e "   - รีสตาร์ทระบบ:    ${CYAN}pm2 restart rta-sinmai${NC}"
-echo -e "   - ดูสถานะ Nginx:   ${CYAN}systemctl status nginx${NC}"
-echo -e "   - ดูสถานะ DB:      ${CYAN}systemctl status postgresql${NC}"
+echo -e "   - ดูสถานะ Nginx:   ${CYAN}sudo systemctl status nginx${NC}"
+echo -e "   - ดูสถานะ DB:      ${CYAN}sudo systemctl status postgresql${NC}"
 echo -e ""
-echo -e "🔒 หากต้องการเปิดใช้งาน HTTPS (SSL Certificate ฟรีจาก Let's Encrypt):"
+echo -e "🔒 การเปิดใช้งาน HTTPS (SSL Certificate จาก Let's Encrypt สำหรับ sinmai.rta.mi.th):"
+echo -e "   1. ตรวจสอบว่าโดเมน sinmai.rta.mi.th ชี้มาที่ IP 103.146.204.84 แล้ว"
+echo -e "   2. รันคำสั่ง: ${CYAN}sudo apt install -y certbot python3-certbot-nginx${NC}"
+echo -e "   3. รันคำสั่ง: ${CYAN}sudo certbot --nginx -d sinmai.rta.mi.th${NC}"
+echo -e "${CYAN}====================================================================${NC}"
 echo -e "   1. ชี้โดเมนมายัง IP นี้: ${SERVER_IP}"
 echo -e "   2. รันคำสั่ง: ${CYAN}sudo apt install -y certbot python3-certbot-nginx${NC}"
 echo -e "   3. รันคำสั่ง: ${CYAN}sudo certbot --nginx -d โดเมนของท่าน.army.mil.th${NC}"
