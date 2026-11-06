@@ -3,14 +3,33 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// ---------- ดึงคำถามในธนาคารทั้งหมด ----------
+// ---------- ดึงคำถามในธนาคารทั้งหมด (พร้อมตัวกรอง) ----------
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const examId = searchParams.get('examId');
+    const search = searchParams.get('search');
+    const category = searchParams.get('category');
+    const difficulty = searchParams.get('difficulty');
+
     let questions = db.getQuestionBank();
     if (examId) {
       questions = questions.filter((q) => q.examId === examId);
+    }
+    if (category) {
+      questions = questions.filter((q) => (q.category || '').toLowerCase().includes(category.toLowerCase()));
+    }
+    if (difficulty) {
+      questions = questions.filter((q) => q.difficulty === difficulty);
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      questions = questions.filter(
+        (q) =>
+          (q.questionText || '').toLowerCase().includes(s) ||
+          (q.category || '').toLowerCase().includes(s) ||
+          (Array.isArray(q.tags) && q.tags.some((t) => t.toLowerCase().includes(s)))
+      );
     }
     return NextResponse.json({ success: true, questions });
   } catch (error) {
@@ -32,10 +51,18 @@ export async function POST(request) {
   }
 }
 
-// ---------- เชื่อมโยงคำถามจากธนาคารเข้าสู่แบบทดสอบ ----------
+// ---------- อัปเดตคำถาม หรือ เชื่อมโยงคำถามเข้าแบบทดสอบ ----------
 export async function PUT(request) {
   try {
     const body = await request.json();
+
+    // 1. กรณีระบุ id โดยตรงเพื่ออัปเดตคำถาม
+    if (body.id && !body.questionId) {
+      const updated = db.updateQuestionBankQuestion(body.id, body);
+      return NextResponse.json({ success: true, message: 'แก้ไขคำถามในธนาคารสำเร็จ', question: updated });
+    }
+
+    // 2. กรณีเชื่อมโยงคำถามจากธนาคารเข้าสู่แบบทดสอบ
     const { questionId, examId, add } = body;
     if (!questionId || !examId) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุทั้ง questionId และ examId' }, { status: 400 });
@@ -50,7 +77,6 @@ export async function PUT(request) {
     }
 
     if (add === true) {
-      // ตรวจสอบว่าคำถามนี้ยังไม่ได้อยู่ในแบบทดสอบนี้
       const examQuestionIds = exam.questionIds || [];
       if (examQuestionIds.includes(questionId)) {
         return NextResponse.json({ success: false, message: 'คำถามนี้ได้ถูกเพิ่มเข้าแบบทดสอบนี้แล้ว' }, { status: 409 });
@@ -58,7 +84,6 @@ export async function PUT(request) {
       const updated = db.updateKnowledgeExam(examId, { questionIds: [...examQuestionIds, questionId] });
       return NextResponse.json({ success: true, message: 'เพิ่มคำถามเข้าแบบทดสอบสำเร็จ', exam: updated });
     } else {
-      // ลบคำถามออกจากแบบทดสอบ
       const updated = db.updateKnowledgeExam(examId, { questionIds: (exam.questionIds || []).filter((id) => id !== questionId) });
       return NextResponse.json({ success: true, message: 'ลบคำถามออกจากแบบทดสอบสำเร็จ', exam: updated });
     }
@@ -67,3 +92,17 @@ export async function PUT(request) {
   }
 }
 
+// ---------- ลบคำถามออกจากธนาคาร (ผ่าน Query String ?id=...) ----------
+export async function DELETE(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสคำถามที่ต้องการลบ (id)' }, { status: 400 });
+    }
+    db.deleteQuestionBankQuestion(id);
+    return NextResponse.json({ success: true, message: 'ลบคำถามออกจากธนาคารสำเร็จ' });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
+  }
+}
