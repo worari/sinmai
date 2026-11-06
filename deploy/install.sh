@@ -74,15 +74,30 @@ echo "กำลังสร้าง Production Build (Next.js)..."
 npm run build
 echo -e "${GREEN}✓ สร้าง Production Build สำเร็จ${NC}"
 
+# ปรับปรุงสิทธิ์การเข้าถึงไฟล์ให้ผู้ใช้ที่แท้จริง (เช่น adminrta)
+ACTUAL_USER="${SUDO_USER:-root}"
+ACTUAL_HOME=$(eval echo "~$ACTUAL_USER")
+
+if [ "$ACTUAL_USER" != "root" ]; then
+    echo "กำหนดสิทธิ์โฟลเดอร์ให้ผู้ใช้: $ACTUAL_USER"
+    chown -R "$ACTUAL_USER":"$ACTUAL_USER" "$APP_DIR"
+    chmod 755 "$ACTUAL_HOME" 2>/dev/null || true
+fi
+
 # 7. ตั้งค่า PM2 ให้รันระบบอัตโนมัติ
 echo -e "\n${YELLOW}6/7. เริ่มต้นเซอร์วิสด้วย PM2 และตั้งค่า Auto-Start เมื่อเปิดเครื่อง...${NC}"
-pm2 delete rta-sinmai 2>/dev/null || true
-pm2 start ecosystem.config.js
-pm2 save
-
-# ตั้งค่า systemd startup
-pm2 startup systemd -u root --hp /root || true
-echo -e "${GREEN}✓ PM2 จัดการ Process เรียบร้อย${NC}"
+if [ "$ACTUAL_USER" != "root" ]; then
+    sudo -u "$ACTUAL_USER" pm2 delete rta-sinmai 2>/dev/null || true
+    sudo -u "$ACTUAL_USER" pm2 start "$APP_DIR/ecosystem.config.js"
+    sudo -u "$ACTUAL_USER" pm2 save
+    env PATH=$PATH:/usr/bin pm2 startup systemd -u "$ACTUAL_USER" --hp "$ACTUAL_HOME" || true
+else
+    pm2 delete rta-sinmai 2>/dev/null || true
+    pm2 start "$APP_DIR/ecosystem.config.js"
+    pm2 save
+    pm2 startup systemd -u root --hp /root || true
+fi
+echo -e "${GREEN}✓ PM2 จัดการ Process เรียบร้อย (ผู้ใช้: $ACTUAL_USER)${NC}"
 
 # 8. ติดตั้งและตั้งค่า Nginx Reverse Proxy
 echo -e "\n${YELLOW}7/7. ติดตั้งและตั้งค่า Nginx Reverse Proxy...${NC}"
