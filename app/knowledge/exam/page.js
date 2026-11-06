@@ -35,13 +35,25 @@ export default function ExamPage() {
     try {
       const uid = user?.id;
       if (!uid) throw new Error('ยังไม่ได้เข้าสู่ระบบ');
-      const [wRes, qRes] = await Promise.all([
+      const [wRes, examsRes] = await Promise.all([
         fetch(`/api/knowledge/can-access?userId=${encodeURIComponent(uid)}`),
-        fetch(`/api/knowledge/questions?examId=${encodeURIComponent(EXAM_ID)}`)
+        fetch('/api/knowledge/exams')
       ]);
       const w = await wRes.json();
-      const q = await qRes.json();
+      const examsData = await examsRes.json();
+      const examConfig = examsData.success && Array.isArray(examsData.exams)
+        ? examsData.exams.find((e) => e.id === EXAM_ID)
+        : null;
+      setExam(examConfig || null);
       setWindowStatus(w.success ? w.windowOpen : null);
+
+      const questionCount = examConfig?.questionCount || 10;
+
+      // ดึงข้อสอบแบบสุ่มจากฐานคำถาม และสุ่มตำแหน่งตัวเลือกในแต่ละข้อ
+      const qRes = await fetch(
+        `/api/knowledge/questions?examId=${encodeURIComponent(EXAM_ID)}&random=true&limit=${questionCount}&shuffleOptions=true&hideAnswers=true`
+      );
+      const q = await qRes.json();
       if (q.success && Array.isArray(q.questions)) {
         setQuestions(q.questions.map((q) => ({
           id: q.id, questionText: q.questionText,
@@ -51,7 +63,7 @@ export default function ExamPage() {
       }
       const startKey = `rta_exam_start_${EXAM_ID}`;
       const existing = localStorage.getItem(startKey);
-      const timeLimit = ((exam && exam.timeLimitMinutes) ? exam.timeLimitMinutes : 30) * 60;
+      const timeLimit = ((examConfig && examConfig.timeLimitMinutes) ? examConfig.timeLimitMinutes : 30) * 60;
       if (!existing) {
         localStorage.setItem(startKey, Date.now().toString());
         setTimeLeft(timeLimit);

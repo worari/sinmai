@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { BookOpen, ShieldAlert, PlusCircle, Edit3, Trash2, Clock, Save, CheckCircle2, ChevronRight, List, Layout } from 'lucide-react';
 
-const ADMIN_ROLES = ['ADMIN'];
+const ADMIN_ROLES = ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER'];  // ปรับให้หลายบทบาทสามารถจัดการข้อมูลข้อสอบได้
 
 export default function KnowledgeAdminPage() {
   const [user, setUser] = useState(null);
@@ -24,7 +24,47 @@ export default function KnowledgeAdminPage() {
   const [qForm, setQForm] = useState({ examId: '', questionText: '', optionA: '', optionB: '', optionC: '', optionD: '', correctOption: 'a', points: 10, orderIndex: 1 });
   const [saving, setSaving] = useState(false);
   const [qSaving, setQSaving] = useState(false);
+  // ---------- Excel Import state ----------
 
+      {/* ถอดรหัสพารามิเตอร์ query string (ถ้ามี) */}
+      const queryParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+      const activeTab = queryParams.get('tab') || 'exams';
+
+      const tabs = [
+        { id: 'exams', label: 'จัดการแบบทดสอบ', icon: Layout },
+        { id: 'bank', label: 'ธนาคารคำถามกลาง', icon: BookOpen },
+        { id: 'import', label: 'นำเข้าจาก Excel', icon: PlusCircle }
+      ];
+
+      const switchTab = (tabId) => {
+        window.location.href = `/knowledge/admin?tab=${tabId}`;
+      };
+  const [importFile, setImportFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importExamId, setImportExamId] = useState(selectedExamId || '');
+  const [importSaving, setImportSaving] = useState(false);
+
+  // ---------- ธนาคารคำถามกลาง (Question Bank) state ----------
+  const [bankLoading, setBankLoading] = useState(false);
+  const [bankQuestions, setBankQuestions] = useState([]);
+  const [bankQuestionError, setBankQuestionError] = useState('');
+  const [bankSelectedId, setBankSelectedId] = useState('');
+  const [bankSearch, setBankSearch] = useState('');
+  const [bankCategory, setBankCategory] = useState('');
+  const [bankDifficulty, setBankDifficulty] = useState('');
+  const [bankTags, setBankTags] = useState('');
+  const [bankCategoryError, setBankCategoryError] = useState('');
+  const [creatingQuestion, setCreatingQuestion] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('rta_user');
+    if (saved) {
+      try { setUser(JSON.parse(saved)); } catch (e) {}
+    }
+    loadExams();
+    loadBankQuestions();
+  }, []);
   useEffect(() => {
     const saved = localStorage.getItem('rta_user');
     if (saved) {
@@ -180,6 +220,147 @@ export default function KnowledgeAdminPage() {
     });
   };
 
+  // ---------- Excel Import ----------
+
+  const handleImportFileChange = (e) => {
+    setImportFile(e.target.files[0]);
+    setImportPreview(null);
+  };
+
+  // ---------- ธนาคารคำถามกลาง (Question Bank) ----------
+  const loadBankQuestions = async (filter = null) => {
+    setBankQuestionError('');
+    setBankLoading(true);
+    try {
+      const params = [];
+      if (filter?.examId) params.push(`examId=${encodeURIComponent(filter.examId)}`);
+      if (bankSearch) params.push(`search=${encodeURIComponent(bankSearch)}`);
+      if (bankCategory) params.push(`category=${encodeURIComponent(bankCategory)}`);
+      if (bankDifficulty) params.push(`difficulty=${encodeURIComponent(bankDifficulty)}`);
+      if (bankTags) params.push(`tags=${encodeURIComponent(bankTags)}`);
+      const query = params.length > 0 ? '?' + params.join('&') : '';
+      const res = await fetch(`/api/knowledge/bank${query}`);
+      const data = await res.json();
+      if (data.success) setBankQuestions(data.questions);
+    } catch (e) {
+      setBankQuestionError('โหลดธนาคารคำถามไม่สำเร็จ');
+    } finally {
+      setBankLoading(false);
+    }
+  };
+
+  const createBankQuestion = async (e) => {
+    e.preventDefault();
+    setBankCategoryError('');
+    if (!bankSelectedId) {
+      setBankCategoryError('กรุณาเลือกคำถามต้นแบบจากธนาคาร');
+      return;
+    }
+    setCreatingQuestion(true);
+    try {
+      const question = db.getQuestionBankById(bankSelectedId);
+      if (!question) {
+        setBankCategoryError('ไม่พบรายการที่เลือก');
+        return;
+      }
+      const newQuestion = {
+        questionText: question.questionText,
+        options: question.options,
+        points: question.points,
+        category: question.category,
+        difficulty: question.difficulty,
+        tags: question.tags,
+        source: 'admin'
+      };
+      await fetch('/api/knowledge/bank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newQuestion)
+      });
+      loadBankQuestions();
+      setBankSelectedId('');
+      setBankCategory('');
+      setBankDifficulty('');
+      setBankTags('');
+    } catch (e) {
+      setBankCategoryError('สร้างคำถามใหม่ในธนาคารไม่สำเร็จ');
+    } finally {
+      setCreatingQuestion(false);
+    }
+  };
+
+  const deleteBankQuestion = async (id) => {
+    if (!confirm('ยืนยันลบคำถามนี้ออกจากธนาคารหรือไม่?')) return;
+    setBankQuestionError('');
+    try {
+      await fetch(`/api/knowledge/bank/${id}`, { method: 'DELETE' });
+      loadBankQuestions();
+    } catch (e) {
+      setBankQuestionError('ลบคำถามออกจากธนาคารไม่สำเร็จ');
+    }
+  };
+
+  const copyQuestionToForm = (q) => {
+    setBankSelectedId(q.id);
+    setBankCategory(q.category || '');
+    setBankDifficulty(q.difficulty || '');
+    setBankTags(q.tags?.join(', ') || '');
+  };
+
+  const handleImportPreview = async (e) => {
+    e.preventDefault();
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportPreview(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      if (importExamId) formData.append('examId', importExamId);
+      const res = await fetch('/api/knowledge/questions/import', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) {
+        setImportPreview({ questions: data.questions, errors: [], count: data.count });
+      } else {
+        setImportPreview({ questions: [], errors: data.errors || [], message: data.message });
+      }
+    } catch (err) {
+      setImportPreview({ questions: [], errors: [{ row: 0, message: err.message }], message: err.message });
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview || !importPreview.questions || importPreview.questions.length === 0) return;
+    setImportSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      if (importExamId) formData.append('examId', importExamId);
+      const res = await fetch('/api/knowledge/questions/import', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) {
+        setImportFile(null);
+        setImportPreview(null);
+        setImportExamId(selectedExamId || '');
+        loadQuestions(selectedExamId);
+      } else {
+        setQuestionError(data.message || 'นำเข้าข้อสอบไม่สำเร็จ');
+      }
+    } catch (err) {
+      setQuestionError(err.message || 'นำเข้าข้อสอบไม่สำเร็จ');
+    } finally {
+      setImportSaving(false);
+    }
+  };
+
+  const handleCancelImport = () => {
+    setImportFile(null);
+    setImportPreview(null);
+    setImportExamId(selectedExamId || '');
+  };
+
+
   const fmtDateTime = (v) => { if (!v) return '-'; return new Date(v).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }); };
   const selectedExam = exams.find((e) => e.id === selectedExamId) || null;
 
@@ -195,7 +376,93 @@ export default function KnowledgeAdminPage() {
 
       {examError && (<div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '12px', color: 'var(--ruby-danger)', fontSize: '13px', marginBottom: '16px' }}>{examError}</div>)}
 
-      {/* ===== ส่วนที่ 1: จัดการแบบทดสอบ (Exam) ===== */}
+
+
+      {/* ========== แท็บ: สร้างแบบทดสอบจากธนาคารคำถามกลาง ========== */}
+      {activeTab === 'exams' && (
+        <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', marginBottom: '24px' }}>
+          <button type="button" className="btn btn-outline btn-sm" style={{ padding: '6px 14px', fontSize: '12px', marginBottom: '12px' }} onClick={() => switchTab('bank')}>
+            &larr; กลับไปธนาคารคำถามกลาง
+          </button>
+          <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <PlusCircle size={18} style={{ color: 'var(--cyan-accent)' }} />
+                <h2 style={{ fontSize: '18px', margin: 0 }}>เพิ่มคำถามจากธนาคารเข้าแบบทดสอบ</h2>
+              </div>
+            </div>
+            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              เลือกคำถามจากธนาคารคำถามกลางแล้วเพิ่มเข้าแบบทดสอบที่เลือก
+            </p>
+            </div>
+          </div>
+        )}
+
+      {activeTab === 'bank' && (
+        <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <BookOpen size={18} style={{ color: 'var(--gold-primary)' }} />
+              <h2 style={{ fontSize: '18px', margin: 0 }}>ธนาคารคำถามกลาง</h2>
+            </div>
+            <Link href="/knowledge/admin?tab=exams" className="btn btn-outline btn-sm" style={{ padding: '6px 14px', fontSize: '12px' }}>
+              &larr; กลับจัดการแบบทดสอบ
+            </Link>
+          </div>
+          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            คำถามในธนาคารนี้ไม่ผูกกับแบบทดสอบใดๆ สามารถถูกนำไปสร้างเป็นแบบทดสอบได้หลายชุดในภายหลัง
+          </p>
+
+          {/* ✅ ตรวจสอบสิทธิ์ก่อนแสดง */}
+          {isAdmin ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: '14px', alignItems: 'end' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>เลือกคำถามต้นแบบมาวาง</label>
+                  <select className="form-input" value={bankSelectedId} onChange={(e) => setBankSelectedId(e.target.value)}>
+                    <option value="">-- เลือกคำถามจากธนาคาร --</option>
+                    {bankQuestions.map((q) => (
+                      <option key={q.id} value={q.id}>{q.questionText} ({q.category || 'ไม่ระบุ'})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>หมวดหมู่</label>
+                  <input className="form-input" value={bankCategory} onChange={(e) => setBankCategory(e.target.value)} placeholder="เช่น เอกสารยื่น" />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>ความยาก</label>
+                  <select className="form-input" value={bankDifficulty} onChange={(e) => setBankDifficulty(e.target.value)}>
+                    <option value="">เลือกความยาก (optional)</option>
+                    <option value="easy">ง่าย</option>
+                    <option value="medium">ปานกลาง</option>
+                    <option value="hard">ยาก</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>แท็ก (comma separated)</label>
+                  <input className="form-input" value={bankTags} onChange={(e) => setBankTags(e.target.value)} placeholder="เช่น เอกสาร,พื้นฐาน" />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <button type="button" onClick={createBankQuestion} className="btn btn-primary" disabled={creatingQuestion || !bankSelectedId} style={{ padding: '10px 24px' }}>
+                    {creatingQuestion ? 'บันทึก...' : 'สร้างคำถามใหม่ในธนาคาร'}
+                  </button>
+                </div>
+              </div>
+              {bankCategoryError && <div style={{ color: 'var(--ruby-danger)', fontSize: '13px', marginTop: '10px' }}>{bankCategoryError}</div>}
+            </>
+          ) : (
+            <div style={{ color: 'var(--ruby-danger)', fontSize: '13px', padding: '12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)' }}>
+              ⚠️ เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถจัดการข้อมูลข้อสอบและธนาคารคำถามกลางได้
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========== แท็บ: จัดการแบบทดสอบ (Exam) ========== */}
+      {activeTab === 'exams' && (
+        <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', marginBottom: '24px' }}>
+
       <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', marginBottom: '24px' }}>
         <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Layout size={18} style={{ color: 'var(--gold-primary)' }} /> {editingId ? ' แก้ไขแบบทดสอบ' : ' สร้างแบบทดสอบใหม่'}
@@ -319,6 +586,83 @@ export default function KnowledgeAdminPage() {
           </div>
         )}
       </div>
+
+      {/* ===== ส่วนที่ 3: นำเข้าข้อสอบจาก Excel ===== */}
+      <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px' }}>
+        <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <PlusCircle size={18} style={{ color: 'var(--gold-primary)' }} /> นำเข้าข้อสอบจากไฟล์ Excel
+        </div>
+        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+          อัปโหลดไฟล์ .xlsx ที่มีคอลัมน์: คำถาม, ตัวเลือก A-D, เฉลย (a/b/c/d), [คะแนน], [รหัสแบบทดสอบ]
+        </p>
+
+        {!importPreview ? (
+          <form onSubmit={handleImportPreview} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: '14px', alignItems: 'end' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>เลือกไฟล์ Excel *</label>
+              <input type="file" accept=".xlsx" onChange={handleImportFileChange} className="form-input" required />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>รหัสแบบทดสอบ</label>
+              <input className="form-input" value={importExamId} onChange={(e) => setImportExamId(e.target.value)} placeholder="เช่น exm-claims-basic" />
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="btn btn-primary" disabled={importLoading} style={{ padding: '10px 24px' }}>
+                {importLoading ? <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>กำลังอ่านไฟล์...</span> : 'อ่านตัวอย่างจากไฟล์'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ fontWeight: 600 }}>{importPreview.message || `พบคำถาม ${importPreview.questions.length} ข้อในไฟล์`}</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={handleCancelImport} className="btn btn-outline btn-sm">ยกเลิก</button>
+                <button onClick={handleConfirmImport} className="btn btn-primary" disabled={importSaving} style={{ padding: '8px 18px' }}>
+                  {importSaving ? 'กำลังนำเข้า...' : 'ยืนยันนำเข้าทั้งหมด'}
+                </button>
+              </div>
+            </div>
+
+            {importPreview.errors && importPreview.errors.length > 0 && (
+              <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '12px', color: 'var(--ruby-danger)', fontSize: '13px', marginBottom: '12px' }}>
+                {importPreview.errors.map((err, i) => (
+                  <div key={i} style={{ marginBottom: '4px' }}>⚠️ แถวที่ {err.row}: {err.message}</div>
+                ))}
+              </div>
+            )}
+
+            {importPreview.questions && importPreview.questions.length > 0 && (
+              <div style={{ overflowX: 'auto', maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--border-glass)', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--border-glass)', textAlign: 'left', background: 'rgba(20,184,166,0.05)' }}>
+                      <th style={{ padding: '8px 6px', color: 'var(--text-muted)', fontWeight: 600, width: '40px' }}>#</th>
+                      <th style={{ padding: '8px 6px', color: 'var(--text-muted)', fontWeight: 600 }}>คำถาม</th>
+                      <th style={{ padding: '8px 6px', color: 'var(--text-muted)', fontWeight: 600, width: '70px' }}>เฉลย</th>
+                      <th style={{ padding: '8px 6px', color: 'var(--text-muted)', fontWeight: 600, width: '70px' }}>คะแนน</th>
+                      <th style={{ padding: '8px 6px', color: 'var(--text-muted)', fontWeight: 600, width: '130px' }}>รหัสแบบทดสอบ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.questions.map((q, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 600, color: 'var(--gold-primary)' }}>{i + 1}</td>
+                        <td style={{ padding: '8px 6px' }}>{q.questionText}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, color: 'var(--emerald-success)' }}>{q.options?.find((o) => o.isCorrect)?.id?.toUpperCase() || '-'}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>{q.points}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>{q.examId || importExamId || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+          </div>
+      </div>
+        )}
     </div>
   );
 }
