@@ -4,8 +4,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Shield, UserPlus, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Shield, UserPlus, CheckCircle2, AlertCircle, ArrowLeft, Clock, LogIn, UserCheck } from 'lucide-react';
 import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId } from '@/lib/thai-utils';
+import { USER_ROLES } from '@/lib/constants';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function RegisterPage() {
     position: 'นายทหารฝ่ายกำลังพล',
     unitId: '9th_INF_DIV',
     unitName: 'กองพลทหารราบที่ 9 (พล.ร.9)',
+    requestedRole: 'UNIT_OFFICER',
     phone: '',
     email: '',
     password: '',
@@ -25,7 +27,8 @@ export default function RegisterPage() {
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [registeredUser, setRegisteredUser] = useState(null);
 
   const handleUnitChange = (e) => {
     const unitId = e.target.value;
@@ -40,7 +43,6 @@ export default function RegisterPage() {
   const handleRegister = async (e) => {
     e.preventDefault();
     setErrorMsg('');
-    setSuccessMsg('');
 
     // Check citizen ID
     if (!validateCitizenId(formData.citizenId)) {
@@ -72,12 +74,8 @@ export default function RegisterPage() {
         throw new Error(data.message || 'การลงทะเบียนไม่สำเร็จ');
       }
 
-      setSuccessMsg(data.message);
-      // Auto login
-      localStorage.setItem('rta_user', JSON.stringify(data.user));
-      setTimeout(() => {
-        router.push('/');
-      }, 1500);
+      setRegisteredUser(data.user);
+      setIsSuccess(true);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -85,42 +83,96 @@ export default function RegisterPage() {
     }
   };
 
+  if (isSuccess) {
+    return (
+      <div className="container" style={{ paddingTop: '60px', maxWidth: '640px' }}>
+        <div className="glass-panel" style={{ padding: '40px 32px', textAlign: 'center' }}>
+          <div style={{
+            width: '68px',
+            height: '68px',
+            borderRadius: '20px',
+            background: 'rgba(245, 158, 11, 0.18)',
+            border: '2px solid var(--amber-warning)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 18px',
+            color: 'var(--amber-warning)'
+          }}>
+            <Clock size={36} />
+          </div>
+
+          <span className="badge badge-amber" style={{ fontSize: '13px', padding: '6px 14px', marginBottom: '14px', display: 'inline-block' }}>
+            สถานะ: รอการอนุมัติสิทธิ์ (Pending Approval)
+          </span>
+
+          <h1 style={{ fontSize: '24px', fontWeight: 700, margin: '8px 0' }}>
+            ลงทะเบียนขอใช้งานระบบสำเร็จแล้ว
+          </h1>
+
+          <p style={{ color: 'var(--text-muted)', fontSize: '14.5px', lineHeight: 1.7, margin: '14px 0 24px' }}>
+            ข้อมูลคำขอลงทะเบียนของ <strong>{formData.rank} {formData.firstName} {formData.lastName}</strong> สังกัด <strong>{formData.unitName}</strong> ถูกบันทึกเข้าสู่ระบบเรียบร้อยแล้ว<br />
+            ตามนโยบายความมั่นคงปลอดภัย (RBAC) บัญชีของท่านต้องได้รับการตรวจสอบและอนุมัติสิทธิ์จากผู้ดูแลระบบส่วนกลาง (Admin) ก่อนเข้าใช้งาน
+          </p>
+
+          <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: '10px', padding: '16px', marginBottom: '26px', textAlign: 'left', fontSize: '13.5px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ color: 'var(--text-dim)', marginBottom: '8px', fontWeight: 600 }}>สรุปข้อมูลการลงทะเบียน:</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '6px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>เลข ปชช.:</span>
+              <span style={{ fontFamily: 'monospace', color: 'var(--gold-primary)' }}>{formData.citizenId}</span>
+              <span style={{ color: 'var(--text-muted)' }}>อีเมลเข้าใช้งาน:</span>
+              <span>{formData.email}</span>
+              <span style={{ color: 'var(--text-muted)' }}>บทบาทที่ขอ:</span>
+              <span style={{ color: 'var(--cyan-accent)' }}>{USER_ROLES[formData.requestedRole]?.label || formData.requestedRole}</span>
+              <span style={{ color: 'var(--text-muted)' }}>หน่วยงาน:</span>
+              <span>{formData.unitName}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <Link href="/login" className="btn btn-primary" style={{ padding: '10px 24px' }}>
+              <LogIn size={16} />
+              <span>ไปยังหน้าเข้าสู่ระบบ (Login)</span>
+            </Link>
+            <Link href="/" className="btn btn-secondary" style={{ padding: '10px 20px' }}>
+              <ArrowLeft size={16} />
+              <span>กลับสู่หน้าหลัก</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container" style={{ paddingTop: '40px', maxWidth: '720px' }}>
+    <div className="container" style={{ paddingTop: '40px', maxWidth: '740px' }}>
       
-      <div className="glass-panel" style={{ padding: '32px' }}>
+      <div className="glass-panel" style={{ padding: '36px' }}>
         
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
           <div style={{
             width: '56px',
             height: '56px',
             borderRadius: '14px',
-            background: 'linear-gradient(135deg, #d4af37 0%, #aa8010 100%)',
+            background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #059669 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 14px',
-            boxShadow: '0 0 20px rgba(212, 175, 55, 0.35)'
+            boxShadow: '0 0 20px rgba(20, 184, 166, 0.35)'
           }}>
-            <Shield size={32} color="#070d1e" />
+            <Shield size={32} color="#ffffff" />
           </div>
-          <h1 style={{ fontSize: '22px' }}>ลงทะเบียนขอใช้งานระบบ (เจ้าหน้าที่หน่วย ทบ.)</h1>
+          <h1 style={{ fontSize: '22px', fontWeight: 700 }}>ลงทะเบียนขอใช้งานระบบสินไหม ทบ.</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', marginTop: '4px' }}>
-            ระบบมีกลไกป้องกันการสมัครซ้ำด้วยเลขประจำตัวประชาชน 13 หลัก และกำหนดสิทธิเฉพาะหน่วย
+            ระบบมีกลไกตรวจสอบเลขประจำตัวประชาชน 13 หลัก และแอดมินเป็นผู้อนุมัติสิทธิ์ก่อนเริ่มใช้งาน
           </p>
         </div>
 
         {errorMsg && (
-          <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--ruby-danger)', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--ruby-danger)', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13.5px' }}>
             <AlertCircle size={18} />
             <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {successMsg && (
-          <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--emerald-success)', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', color: '#6ee7b7', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <CheckCircle2 size={18} />
-            <span>{successMsg}</span>
           </div>
         )}
 
@@ -128,11 +180,11 @@ export default function RegisterPage() {
           
           {/* เลขประจำตัวประชาชน 13 หลัก */}
           <div className="form-group">
-            <label className="form-label required">เลขประจำตัวประชาชน (13 หลัก) - ป้องกันสมัครซ้ำ</label>
+            <label className="form-label required">เลขประจำตัวประชาชน (13 หลัก) - ใช้เป็นกุญแจตรวจสอบสิทธิ์</label>
             <input 
               type="text" 
               className="form-input"
-              placeholder="เลขประจำตัวประชาชน 13 หลักของผู้เสนอเรื่อง"
+              placeholder="เลขประจำตัวประชาชน 13 หลักของผู้ขอใช้งาน"
               maxLength={13}
               value={formData.citizenId}
               onChange={(e) => setFormData({ ...formData, citizenId: e.target.value.replace(/\D/g, '') })}
@@ -140,7 +192,7 @@ export default function RegisterPage() {
             />
             {formData.citizenId && (
               <span style={{ fontSize: '12px', marginTop: '4px', display: 'block', color: validateCitizenId(formData.citizenId) ? 'var(--emerald-success)' : 'var(--ruby-danger)' }}>
-                {validateCitizenId(formData.citizenId) ? '✓ เลขบัตรประจำตัวประชาชนถูกต้อง' : '✗ เลขบัตร ปชช. ไม่ถูกต้องตามเกณฑ์ Mod 11'}
+                {validateCitizenId(formData.citizenId) ? '✓ เลขบัตรประจำตัวประชาชนถูกต้องตามเกณฑ์ Mod 11' : '✗ เลขบัตร ปชช. ไม่ถูกต้องตามหลักตรวจสอบ'}
               </span>
             )}
           </div>
@@ -182,6 +234,26 @@ export default function RegisterPage() {
                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                 required
               />
+            </div>
+          </div>
+
+          {/* บทบาทที่ขอใช้งาน (Role Request) */}
+          <div className="form-group">
+            <label className="form-label required">บทบาทหน้าที่ที่ขอใช้งานในระบบ (Role)</label>
+            <select 
+              className="form-select"
+              value={formData.requestedRole}
+              onChange={(e) => setFormData({ ...formData, requestedRole: e.target.value })}
+              required
+            >
+              <option value="UNIT_OFFICER">1. เจ้าหน้าที่หน่วย (ผู้เสนอเรื่อง กพ.4 และเอกสาร)</option>
+              <option value="KSP_OFFICER">2. กพ.ทบ. (กสพ.ฯ ตรวจเอกสาร 10 รายการ)</option>
+              <option value="COMMANDER">3. ผู้บังคับบัญชา (จก.กพ.ทบ. ลงนามอนุมัติ)</option>
+              <option value="INSURANCE_REP">4. บริษัทประกันภัย (โอนเงินสินไหม)</option>
+              <option value="SK_OFFICER">5. สก.ทบ. (รับทราบยอดจ่าย/สวัสดิการ)</option>
+            </select>
+            <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '4px' }}>
+              * ผู้ดูแลระบบ (Admin) จะพิจารณาอนุมัติและปรับบทบาทตามความเหมาะสมจริงก่อนเปิดใช้งาน
             </div>
           </div>
 
@@ -227,7 +299,7 @@ export default function RegisterPage() {
             </div>
 
             <div className="form-group">
-              <label className="form-label required">Email (อีเมลใช้งาน)</label>
+              <label className="form-label required">Email (ใช้อีเมลสำหรับเข้าสู่ระบบ)</label>
               <input 
                 type="email" 
                 className="form-input"
@@ -272,11 +344,11 @@ export default function RegisterPage() {
             disabled={loading}
           >
             <UserPlus size={18} />
-            <span>{loading ? 'กำลังลงทะเบียน...' : 'ยืนยันการลงทะเบียนขอใช้งานระบบ'}</span>
+            <span>{loading ? 'กำลังส่งข้อมูลลงทะเบียน...' : 'ส่งคำขอลงทะเบียน (รอแอดมินอนุมัติ)'}</span>
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '18px', fontSize: '13px', color: 'var(--text-dim)' }}>
-            มีบัญชีผู้ใช้งานแล้ว? <Link href="/reset-password" style={{ color: 'var(--gold-primary)' }}>รีเซ็ตรหัสผ่าน</Link> หรือเลือกสลับสิทธิ์ได้ที่เมนูด้านบน
+            มีบัญชีผู้ใช้งานที่ได้รับการอนุมัติแล้ว? <Link href="/login" style={{ color: 'var(--cyan-accent)' }}>เข้าสู่ระบบที่นี่</Link>
           </div>
 
         </form>

@@ -524,10 +524,10 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                   </div>
                   <div>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      {currentUser?.name}
+                      {currentUser?.name || `${currentUser?.rank || ''} ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'เจ้าหน้าที่ ทบ.'}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>
-                      {currentUser?.badge}
+                      {currentUser?.badge || currentUser?.role || ''}
                     </div>
                   </div>
                   <ChevronDown size={14} color="var(--text-dim)" />
@@ -547,51 +547,87 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                     border: '1px solid var(--border-subtle)'
                   }}>
                     {/* ข้อมูลบัญชีปัจจุบัน */}
-                    <div style={{ padding: '8px 10px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '8px', marginBottom: '12px' }}>
+                    <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '8px', marginBottom: '12px' }}>
                       <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>เข้าสู่ระบบในนาม:</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginTop: '2px' }}>{currentUser.name}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--cyan-accent)' }}>{currentUser.unitName}</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff', marginTop: '2px' }}>
+                        {currentUser?.name || `${currentUser?.rank || ''} ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim()}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--cyan-accent)', marginTop: '2px' }}>{currentUser?.unitName || '-'}</div>
+                      {currentUser?.citizenId && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', fontFamily: 'monospace' }}>
+                          เลข ปชช.: {currentUser.citizenId}
+                        </div>
+                      )}
                     </div>
 
-                    <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>สลับสิทธิ์ทดสอบบทบาท (Workflow Roles):</span>
-                      <span style={{ color: 'var(--gold-primary)', fontSize: '10.5px' }}>RBAC</span>
-                    </div>
+                    {/* เมนูลัดสำหรับผู้ดูแลระบบ */}
+                    {currentUser?.role === 'ADMIN' && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <Link
+                          href="/users"
+                          onClick={() => setShowRoleSwitcher(false)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            background: 'rgba(20, 184, 166, 0.15)',
+                            border: '1px solid var(--cyan-accent)',
+                            color: '#fff',
+                            fontSize: '12.5px',
+                            fontWeight: 600,
+                            textDecoration: 'none'
+                          }}
+                        >
+                          <span>⚙️ จัดการผู้ใช้ & สิทธิ์ & Audit Logs</span>
+                          <span style={{ fontSize: '11px', color: 'var(--cyan-accent)' }}>เปิดหน้า →</span>
+                        </Link>
+                      </div>
+                    )}
 
-                    {/* รายการบัญชีสลับสิทธิ์ */}
-                    <div style={{ maxHeight: '250px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
-                      {DEMO_USERS.map((u) => {
-                        const isCurrent = currentUser?.id === u.id;
-                        return (
-                          <button
-                            key={u.id}
-                            onClick={() => handleSwitchUser(u)}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              background: isCurrent ? 'rgba(20, 184, 166, 0.22)' : 'rgba(255, 255, 255, 0.02)',
-                              border: 'none',
-                              borderRadius: '6px',
-                              color: '#fff',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '2px',
-                              borderLeft: isCurrent ? '3px solid var(--cyan-accent)' : '3px solid transparent',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <div style={{ fontSize: '12.5px', fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
-                              <span>{u.name}</span>
-                              {isCurrent && <span style={{ fontSize: '10px', color: 'var(--cyan-accent)' }}>● ปัจจุบัน</span>}
-                            </div>
-                            <div style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>{u.badge}</div>
-                            <div style={{ fontSize: '10.5px', color: 'var(--text-dim)' }}>{u.desc}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {/* รายการสลับสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Testing) */}
+                    {currentUser?.role === 'ADMIN' && (
+                      <>
+                        <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>ทดสอบสิทธิ์ในมุมมองบทบาท (Role View):</span>
+                          <span style={{ color: 'var(--gold-primary)', fontSize: '10.5px' }}>RBAC</span>
+                        </div>
+
+                        <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+                          {DEMO_USERS.map((u) => {
+                            const isCurrent = currentUser?.id === u.id;
+                            return (
+                              <button
+                                key={u.id}
+                                onClick={() => handleSwitchUser(u)}
+                                style={{
+                                  width: '100%',
+                                  padding: '7px 10px',
+                                  background: isCurrent ? 'rgba(20, 184, 166, 0.22)' : 'rgba(255, 255, 255, 0.02)',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  color: '#fff',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '2px',
+                                  borderLeft: isCurrent ? '3px solid var(--cyan-accent)' : '3px solid transparent',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                <div style={{ fontSize: '12px', fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{u.name}</span>
+                                  {isCurrent && <span style={{ fontSize: '10px', color: 'var(--cyan-accent)' }}>● ปัจจุบัน</span>}
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>{u.badge}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
 
                     {/* ปุ่มออกจากระบบ (Logout) */}
                     <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '10px' }}>

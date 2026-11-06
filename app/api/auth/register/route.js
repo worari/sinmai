@@ -6,7 +6,7 @@ import { validateCitizenId } from '@/lib/thai-utils';
 export async function POST(request) {
   try {
     const data = await request.json();
-    const { citizenId, rank, firstName, lastName, position, unitId, unitName, phone, email, password } = data;
+    const { citizenId, rank, firstName, lastName, position, unitId, unitName, phone, email, password, requestedRole } = data;
 
     // ตรวจสอบความครบถ้วนของข้อมูล
     if (!citizenId || !rank || !firstName || !lastName || !position || !unitId || !phone || !email || !password) {
@@ -39,7 +39,7 @@ export async function POST(request) {
       }, { status: 409 });
     }
 
-    // สร้าง User ใหม่ กำหนดเป็นเจ้าหน้าที่หน่วย (UNIT_OFFICER)
+    // สร้าง User ใหม่ (สถานะเริ่มต้น: PENDING รอการอนุมัติจากแอดมิน)
     const newUser = db.createUser({
       citizenId: cleanId,
       rank,
@@ -51,13 +51,17 @@ export async function POST(request) {
       phone,
       email,
       password,
-      role: 'UNIT_OFFICER'
+      status: 'PENDING',
+      isActive: false,
+      requestedRole: requestedRole || 'UNIT_OFFICER',
+      role: requestedRole || 'UNIT_OFFICER'
     });
 
     const { password: _, ...safeUser } = newUser;
     return NextResponse.json({ 
       success: true, 
-      message: 'ลงทะเบียนขอใช้งานระบบสำเร็จ สามารถเข้าสู่ระบบได้ทันที',
+      pendingApproval: true,
+      message: 'ลงทะเบียนขอเข้าใช้งานระบบเรียบร้อยแล้ว บัญชีของท่านอยู่ระหว่างรอผู้ดูแลระบบ (Admin) ตรวจสอบและอนุมัติสิทธิ์การใช้งาน',
       user: safeUser 
     });
   } catch (error) {
