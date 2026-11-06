@@ -143,9 +143,9 @@ export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser }) {
     },
   ];
 
-  // กรองเมนูตามบทบาทสิทธิ์ (RBAC Filtering)
+  // กรองเมนูตามบทบาทสิทธิ์ (RBAC Filtering) - ผู้ดูแลระบบ (ADMIN) มีสิทธิ์เห็นและเข้าถึงทุกเมนู
   const visibleNavItems = navItems.filter(
-    (item) => !item.allowedRoles || item.allowedRoles.includes(userRole)
+    (item) => userRole === 'ADMIN' || !item.allowedRoles || item.allowedRoles.includes(userRole)
   );
 
   // คำอธิบายบทบาทสิทธิ์ภาษาไทย

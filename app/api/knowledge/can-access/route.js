@@ -13,8 +13,10 @@ export async function GET(request) {
     const status = db.getUserKnowledgeStatus(userId);
     return NextResponse.json({
       success: true,
-      canAccess: status.canUseSystem,
+      canAccess: status.canUseSystem || status.isExempt || status.role === 'ADMIN',
       passed: status.passed,
+      isExempt: Boolean(status.isExempt || status.role === 'ADMIN'),
+      role: status.role,
       score: status.score,
       message: status.message,
       windowOpen: status.windowOpen

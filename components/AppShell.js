@@ -99,10 +99,12 @@ export default function AppShell({ children }) {
     pathname === '/track';
 
   const isLoggedIn = Boolean(currentUser);
+  const isAdmin = currentUser?.role === 'ADMIN';
 
   // เส้นทางที่อนุญาตให้เข้าถึงได้แม้ยังไม่ผ่านแบบทดสอบความรู้
   const knowledgeAllowedRoutes = ['/', '/login', '/register', '/track', '/knowledge', '/knowledge/exam', '/knowledge/admin'];
-  const knowledgeBlocked = isLoaded && isLoggedIn && knowledgeStatus && !knowledgeStatus.canAccess && !knowledgeAllowedRoutes.includes(pathname);
+  // ผู้ดูแลระบบ (ADMIN) ยกเว้นไม่ต้องทำแบบทดสอบความรู้ มีสิทธิ์ใช้งานระบบได้ทุกฟังก์ชัน
+  const knowledgeBlocked = isLoaded && isLoggedIn && !isAdmin && knowledgeStatus && !knowledgeStatus.canAccess && !knowledgeAllowedRoutes.includes(pathname);
 
   // กรณีผู้ใช้ยังไม่ได้ Login และพยายามเข้าหน้าภายในที่ต้องใช้สิทธิเจ้าหน้าที่
   const shouldBlockAccess = isLoaded && !isLoggedIn && !isPublicRoute;

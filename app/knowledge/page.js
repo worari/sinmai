@@ -45,10 +45,11 @@ export default function KnowledgePage() {
     }
   };
 
-  const passed = status?.passed === true;
+  const isAdmin = user?.role === 'ADMIN';
+  const passed = isAdmin || status?.passed === true;
   const canTake = status?.windowOpen?.open === true;
   const attemptCount = status?.attemptCount || 0;
-  const latestScore = status?.score;
+  const latestScore = isAdmin ? 100 : status?.score;
 
   if (loading) {
     return (
@@ -98,22 +99,32 @@ export default function KnowledgePage() {
             </div>
           )}
           <div>
-            <div style={{ fontSize: '16px', fontWeight: 700 }}>{passed ? 'ผ่านการทดสอบความรู้แล้ว' : 'ยังไม่ผ่านการทดสอบความรู้'}</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{status?.message || '-'}</div>
+            <div style={{ fontSize: '16px', fontWeight: 700 }}>
+              {isAdmin ? 'สิทธิ์ผู้ดูแลระบบ (Admin) ได้รับยกเว้นไม่ต้องสอบ' : (passed ? 'ผ่านการทดสอบความรู้แล้ว' : 'ยังไม่ผ่านการทดสอบความรู้')}
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+              {isAdmin ? 'ผู้ดูแลระบบสูงสุดได้รับสิทธิ์เข้าใช้งานระบบทุกฟังก์ชันโดยอัตโนมัติ' : (status?.message || '-')}
+            </div>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: '12px', marginTop: '10px', paddingTop: '14px', borderTop: '1px solid var(--border-glass)' }}>
           <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
             <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>สถานะใช้งานระบบ</div>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: passed ? 'var(--emerald-success)' : 'var(--ruby-danger)' }}>{passed ? 'ใช้งานได้' : 'ใช้งานไม่ได้'}</div>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--emerald-success)' }}>
+              {isAdmin ? 'ใช้งานได้ทุกฟังก์ชัน' : (passed ? 'ใช้งานได้' : 'ใช้งานไม่ได้')}
+            </div>
           </div>
           <div style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>คะแนนสูงสุด</div>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-accent)' }}>{latestScore !== null ? latestScore + ' คะแนน' : 'ยังไม่สอบ'}</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>เกณฑ์ประเมิน</div>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-accent)' }}>
+              {isAdmin ? 'ยกเว้นการสอบ' : (latestScore !== null ? latestScore + ' คะแนน' : 'ยังไม่สอบ')}
+            </div>
           </div>
           <div style={{ background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>จำนวนครั้งที่สอบ</div>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gold-primary)' }}>{attemptCount} ครั้ง</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>ระดับสิทธิ์</div>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gold-primary)' }}>
+              {isAdmin ? 'ผู้ดูแลระบบ (Admin)' : `${attemptCount} ครั้ง`}
+            </div>
           </div>
         </div>
       </div>
