@@ -11,6 +11,7 @@ export default function KnowledgePage() {
   const [status, setStatus] = useState(null);
   const [manuals, setManuals] = useState([]);
   const [videos, setVideos] = useState([]);
+  const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function KnowledgePage() {
       if (uid) promises.push(fetch(`/api/knowledge/status?userId=${encodeURIComponent(uid)}`));
       promises.push(fetch('/api/content/manuals'));
       promises.push(fetch('/api/content/videos'));
+      promises.push(fetch('/api/knowledge/exams'));
       const results = await Promise.all(promises.map((p) => p.catch((e) => ({ success: false }))));
       let idx = 0;
       if (uid) {
@@ -38,6 +40,8 @@ export default function KnowledgePage() {
       if (m.success) setManuals(m.manuals || []);
       const v = await results[idx++].json();
       if (v.success) setVideos(v.videos || []);
+      const ex = await results[idx++].json();
+      if (ex.success) setExams(ex.exams || []);
     } catch (e) {
       console.error('load knowledge data error', e);
     } finally {
@@ -82,9 +86,16 @@ export default function KnowledgePage() {
           <h1 style={{ fontSize: '22px', marginBottom: '4px' }}>คลังความรู้และแบบทดสอบผู้ใช้งาน</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '13.5px' }}>ศึกษาคู่มือและวิดีโอ แล้วทำแบบทดสอบเพื่อรับสิทธิใช้งานระบบ</p>
         </div>
-        <Link href="/manuals" className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <BookOpen size={16} /> ดูคู่มือทั้งหมด
-        </Link>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {(user?.role === 'ADMIN' || user?.role === 'KSP_OFFICER') && (
+            <Link href="/knowledge/admin" className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <ShieldCheck size={16} /> จัดการแบบทดสอบ (ADMIN)
+            </Link>
+          )}
+          <Link href="/manuals" className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <BookOpen size={16} /> ดูคู่มือทั้งหมด
+          </Link>
+        </div>
       </div>
 
       <div className="glass-panel" style={{ padding: '22px', borderRadius: '12px', marginBottom: '24px', borderLeft: `6px solid ${passed ? 'var(--emerald-success)' : 'var(--ruby-danger)'}` }}>
@@ -130,30 +141,51 @@ export default function KnowledgePage() {
       </div>
 
       <div className="glass-panel" style={{ padding: '22px', borderRadius: '12px', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
           <Play size={22} style={{ color: 'var(--gold-primary)' }} />
           <div>
-            <div style={{ fontSize: '16px', fontWeight: 700 }}>เข้าทำแบบทดสอบความรู้</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>คะแนนเต็ม 100 • เกณฑ์ผ่าน 80 คะแนน • เวลา 30 นาที</div>
+            <div style={{ fontSize: '16px', fontWeight: 700 }}>ชุดแบบทดสอบความรู้</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>ทำแบบทดสอบเพื่อวัดความรู้และปลดล็อกการใช้งานระบบ (เกณฑ์ผ่าน 80% • มีระบบสุ่มข้อสอบและตัวเลือก)</div>
           </div>
         </div>
-        <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '14px' }}>{status?.windowOpen?.message || 'ข้อมูลช่วงเวลาเปิดสอบ'}</div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {!passed && canTake ? (
-            <Link href="/knowledge/exam" className="btn btn-primary" style={{ padding: '12px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Play size={18} /> เริ่มทำแบบทดสอบ
+
+        {exams.length > 0 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+            {exams.filter((e) => e.isActive !== false).map((ex) => (
+              <div key={ex.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '11px', background: 'rgba(20,184,166,0.15)', color: 'var(--cyan-accent)', padding: '2px 8px', borderRadius: '4px' }}>
+                      {ex.category || 'ทั่วไป'}
+                    </span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {ex.timeLimitMinutes || 30} นาที • {ex.questionCount || 10} ข้อ
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: '14.5px', marginBottom: '6px' }}>{ex.title}</div>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.5 }}>
+                    {ex.description || 'แบบทดสอบวัดความรู้เพื่อขอสิทธิใช้งานระบบ'}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--gold-primary)', fontWeight: 600 }}>
+                    เกณฑ์ผ่าน: {ex.passingScore || 80}%
+                  </span>
+                  <Link href={`/knowledge/exam?examId=${encodeURIComponent(ex.id)}`} className="btn btn-primary btn-sm" style={{ padding: '6px 14px', fontSize: '12.5px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Play size={14} /> ทำแบบทดสอบ
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <Link href="/knowledge/exam" className="btn btn-primary" style={{ padding: '10px 22px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Play size={18} /> เข้าทำแบบทดสอบ
             </Link>
-          ) : passed ? (
-            <span className="btn btn-secondary" style={{ padding: '12px 24px', color: 'var(--emerald-success)', border: '1px solid var(--emerald-success)', background: 'rgba(16,185,129,0.1)' }}>คุณผ่านแบบทดสอบแล้ว</span>
-          ) : (
-            <span className="btn btn-secondary" style={{ padding: '12px 24px', opacity: 0.6, cursor: 'not-allowed' }}>
-              <Lock size={18} /> ยังไม่ถึงช่วงเปิดสอบ
-            </span>
-          )}
-          {attemptCount > 0 && (
-            <Link href="/knowledge/exam" className="btn btn-outline" style={{ padding: '12px 24px', border: '1px solid var(--border-glass)' }}>สอบใหม่ / ดูรายละเอียด</Link>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: '16px' }}>

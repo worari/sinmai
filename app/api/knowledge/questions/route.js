@@ -17,41 +17,29 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const examId = searchParams.get('examId');
-    const random = searchParams.get('random') === 'true';
+    const adminView = searchParams.get('adminView') === 'true';
+    const random = searchParams.has('random') ? searchParams.get('random') === 'true' : null;
     const limit = parseInt(searchParams.get('limit') || '0', 10);
-    const shuffleOptions = searchParams.get('shuffleOptions') === 'true';
-    const hideAnswers = searchParams.get('hideAnswers') !== 'false'; // default ซ่อนคำตอบถูก
+    const shuffleOptions = searchParams.has('shuffleOptions') ? searchParams.get('shuffleOptions') === 'true' : null;
+    const hideAnswers = searchParams.has('hideAnswers') ? searchParams.get('hideAnswers') !== 'false' : !adminView;
 
     if (!examId) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสแบบทดสอบ (examId)' }, { status: 400 });
     }
 
-    let questions = db.getKnowledgeQuestions(examId);
+    let questions;
 
-    // สุ่มลำดับข้อสอบจากฐานคำถาม (ถ้าขอ random และระบุ limit)
-    if (random && limit > 0 && questions.length > limit) {
-      questions = shuffleArray(questions).slice(0, limit);
-    }
-
-    // สุ่มตำแหน่งตัวเลือกในแต่ละข้อ (ถ้าขอ shuffleOptions)
-    if (shuffleOptions) {
-      questions = questions.map((q) => ({
-        ...q,
-        options: shuffleArray(q.options)
-      }));
-    }
-
-    // ซ่อนแฟล็ก isCorrect ออกจากตัวเลือกก่อนส่งไปฝั่ง client (ค่าเริ่มต้นซ่อน)
-    if (hideAnswers) {
-      questions = questions.map((q) => ({
-        ...q,
-        options: q.options.map((o) => ({ id: o.id, text: o.text }))
-      }));
-    }
-
-    // เรียงตาม orderIndex อีกครั้งเพื่อให้ลำดับคำถามคงที่ (กรณีไม่สุ่ม หรือสุ่มแล้วอยากเรียงกลับ)
-    if (!random) {
-      questions.sort((a, b) => a.orderIndex - b.orderIndex);
+    if (adminView) {
+      // หน้าผู้ดูแลระบบ: แสดงข้อสอบทั้งหมดในชุดพร้อมคำตอบถูก
+      questions = db.getKnowledgeQuestions(examId);
+    } else {
+      // หน้าผู้เข้าสอบ: ใช้กลไกสุ่มข้อสอบและสุ่มตัวเลือกคำตอบตามที่ตั้งค่าไว้ในชุดข้อสอบ
+      questions = db.getQuestionsForExam(examId, {
+        random,
+        shuffleOptions,
+        limit: limit > 0 ? limit : null,
+        hideAnswers
+      });
     }
 
     return NextResponse.json({ success: true, questions });

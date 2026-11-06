@@ -7,10 +7,16 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
-    if (!userId) {
-      return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสผู้ใช้งาน (userId)' }, { status: 400 });
+    const examId = searchParams.get('examId');
+    const all = searchParams.get('all') === 'true';
+
+    let attempts;
+    if (all || !userId) {
+      attempts = db.getAllExamAttempts(examId);
+    } else {
+      attempts = db.getExamAttempts(userId);
     }
-    const attempts = db.getExamAttempts(userId);
+
     return NextResponse.json({ success: true, attempts });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
