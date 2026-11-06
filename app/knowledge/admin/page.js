@@ -24,25 +24,10 @@ export default function KnowledgeAdminPage() {
   const [qForm, setQForm] = useState({ examId: '', questionText: '', optionA: '', optionB: '', optionC: '', optionD: '', correctOption: 'a', points: 10, orderIndex: 1 });
   const [saving, setSaving] = useState(false);
   const [qSaving, setQSaving] = useState(false);
-  // ---------- Excel Import state ----------
-
-      {/* ถอดรหัสพารามิเตอร์ query string (ถ้ามี) */}
-      const queryParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-      const activeTab = queryParams.get('tab') || 'exams';
-
-      const tabs = [
-        { id: 'exams', label: 'จัดการแบบทดสอบ', icon: Layout },
-        { id: 'bank', label: 'ธนาคารคำถามกลาง', icon: BookOpen },
-        { id: 'import', label: 'นำเข้าจาก Excel', icon: PlusCircle }
-      ];
-
-      const switchTab = (tabId) => {
-        window.location.href = `/knowledge/admin?tab=${tabId}`;
-      };
   const [importFile, setImportFile] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importPreview, setImportPreview] = useState(null);
-  const [importExamId, setImportExamId] = useState(selectedExamId || '');
+  const [importExamId, setImportExamId] = useState('');
   const [importSaving, setImportSaving] = useState(false);
 
   // ---------- ธนาคารคำถามกลาง (Question Bank) state ----------
@@ -57,21 +42,19 @@ export default function KnowledgeAdminPage() {
   const [bankCategoryError, setBankCategoryError] = useState('');
   const [creatingQuestion, setCreatingQuestion] = useState(false);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('rta_user');
-    if (saved) {
-      try { setUser(JSON.parse(saved)); } catch (e) {}
-    }
-    loadExams();
-    loadBankQuestions();
-  }, []);
-  useEffect(() => {
-    const saved = localStorage.getItem('rta_user');
-    if (saved) {
-      try { setUser(JSON.parse(saved)); } catch (e) {}
-    }
-    loadExams();
-  }, []);
+  // ถอดรหัสพารามิเตอร์ query string (ถ้ามี)
+  const queryParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const activeTab = queryParams.get('tab') || 'exams';
+
+  const tabs = [
+    { id: 'exams', label: 'จัดการแบบทดสอบ', icon: Layout },
+    { id: 'bank', label: 'ธนาคารคำถามกลาง', icon: BookOpen },
+    { id: 'import', label: 'นำเข้าจาก Excel', icon: PlusCircle }
+  ];
+
+  const switchTab = (tabId) => {
+    window.location.href = `/knowledge/admin?tab=${tabId}`;
+  };
 
   const loadExams = async () => {
     try {
@@ -248,6 +231,15 @@ export default function KnowledgeAdminPage() {
       setBankLoading(false);
     }
   };
+
+  useEffect(() => {
+    const saved = localStorage.getItem('rta_user');
+    if (saved) {
+      try { setUser(JSON.parse(saved)); } catch (e) {}
+    }
+    loadExams();
+    loadBankQuestions();
+  }, []);
 
   const createBankQuestion = async (e) => {
     e.preventDefault();

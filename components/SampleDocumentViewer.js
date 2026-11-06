@@ -381,7 +381,7 @@ export default function SampleDocumentViewer({
 
                   <div style={{ fontSize: '14px', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
                     <div><strong>เรื่อง</strong> &nbsp; รายงานการสูญเสียกำลังพลในการปฏิบัติหน้าที่และขอรับสิทธิเงินค่าสินไหมทดแทน</div>
-                    <div><strong>เรียน</strong> &nbsp; เจ้ากรมกำลังพลทหารบก (ผ่าน กองการสงเคราะห์ กรมกำลังพลทหารบก)</div>
+                    <div><strong>เรียน</strong> &nbsp; เจ้ากรมกำลังพลทหารบก (ผ่าน กองสิทธิกำลังพล กรมกำลังพลทหารบก)</div>
                     <div><strong>อ้างถึง</strong> &nbsp; ระเบียบกองทัพบก ว่าด้วยการประกันชีวิตกำลังพล พ.ศ. ๒๕๖๒</div>
                     <div><strong>สิ่งที่ส่งมาด้วย</strong> &nbsp; รายการเอกสารหลักฐานประกอบคำร้อง จำนวน ๑๐ ฉบับ</div>
                   </div>
