@@ -1,7 +1,7 @@
 // components/LocationPicker.js
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   MapPin, 
   Navigation, 
@@ -14,7 +14,17 @@ import {
   Sparkles, 
   Building2, 
   CheckCircle2,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  Minus,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Maximize2,
+  Minimize2,
+  Layers,
+  Crosshair
 } from 'lucide-react';
 import { 
   THAI_PROVINCES, 
@@ -53,6 +63,10 @@ export default function LocationPicker({ value, onChange }) {
     landmark: value?.landmark || ''
   });
 
+  // โหมดแผนที่: 'interactive' (Leaflet ลากได้ ซูมได้ ปักหมุดได้), 'satellite' (ดาวเทียม), 'google' (Google Maps Embed)
+  const [mapMode, setMapMode] = useState('interactive');
+  const [isExpanded, setIsExpanded] = useState(false);
+
   // State สำหรับการค้นหาสถานที่ (Search สถานที่เสียชีวิต/เกิดเหตุ)
   const [placeSearchQuery, setPlaceSearchQuery] = useState('');
   const [placeSearchResults, setPlaceSearchResults] = useState([]);
@@ -68,6 +82,7 @@ export default function LocationPicker({ value, onChange }) {
 
   const placeSearchRef = useRef(null);
   const addressSearchRef = useRef(null);
+  const mapIframeRef = useRef(null);
 
   useEffect(() => {
     if (value) {
@@ -85,6 +100,25 @@ export default function LocationPicker({ value, onChange }) {
       });
     }
   }, []);
+
+  // ฟังข้อความ PostMessage จาก Leaflet Map ภายใน iframe เมื่อผู้ใช้ลากหมุดหรือคลิกบนแผนที่
+  useEffect(() => {
+    function handleWindowMessage(event) {
+      if (event.data && event.data.type === 'MAP_COORDS_UPDATE') {
+        const { lat, lng } = event.data;
+        if (typeof lat === 'number' && typeof lng === 'number') {
+          const newCoords = {
+            lat: Number(lat.toFixed(6)),
+            lng: Number(lng.toFixed(6))
+          };
+          setCoords(newCoords);
+          reverseGeocode(newCoords.lat, newCoords.lng);
+        }
+      }
+    }
+    window.addEventListener('message', handleWindowMessage);
+    return () => window.removeEventListener('message', handleWindowMessage);
+  }, [locationDetails]);
 
   // ปิด Dropdown เมื่อคลิกข้างนอก
   useEffect(() => {
@@ -120,7 +154,49 @@ export default function LocationPicker({ value, onChange }) {
     });
   };
 
-  // Reverse Geocoding จากพิกัด Lat/Lng (คลิกบนแผนที่)
+  // ส่งพิกัดใหม่ไปยัง Leaflet Map ใน iframe
+  const sendCoordsToIframe = (newLat, newLng, zoom = 15) => {
+    if (mapIframeRef.current && mapIframeRef.current.contentWindow) {
+      mapIframeRef.current.contentWindow.postMessage({
+        type: 'SET_MAP_VIEW',
+        lat: newLat,
+        lng: newLng,
+        zoom: zoom
+      }, '*');
+    }
+  };
+
+  // ปุ่มควบคุมการซูมและการเลื่อนแผนที่ (Pan & Zoom Controls)
+  const handleZoomIn = () => {
+    if (mapIframeRef.current && mapIframeRef.current.contentWindow) {
+      mapIframeRef.current.contentWindow.postMessage({ type: 'ZOOM_IN' }, '*');
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (mapIframeRef.current && mapIframeRef.current.contentWindow) {
+      mapIframeRef.current.contentWindow.postMessage({ type: 'ZOOM_OUT' }, '*');
+    }
+  };
+
+  const handlePan = (dx, dy) => {
+    if (mapIframeRef.current && mapIframeRef.current.contentWindow) {
+      mapIframeRef.current.contentWindow.postMessage({ type: 'PAN_BY', x: dx, y: dy }, '*');
+    }
+  };
+
+  const handleCenterOnPin = () => {
+    sendCoordsToIframe(coords.lat, coords.lng, 15);
+  };
+
+  const handleSwitchLayer = (layerType) => {
+    setMapMode(layerType);
+    if (mapIframeRef.current && mapIframeRef.current.contentWindow) {
+      mapIframeRef.current.contentWindow.postMessage({ type: 'SWITCH_LAYER', layer: layerType }, '*');
+    }
+  };
+
+  // Reverse Geocoding จากพิกัด Lat/Lng (คลิกบนแผนที่หรือลากหมุด)
   const reverseGeocode = async (lat, lng) => {
     setGeocoding(true);
     try {
@@ -233,6 +309,7 @@ export default function LocationPicker({ value, onChange }) {
     setCoords(newCoords);
     setLocationDetails(newDetails);
     triggerChange(newCoords, newDetails);
+    sendCoordsToIframe(newCoords.lat, newCoords.lng, 16);
 
     setPlaceSearchQuery(place.name || place.title);
     setShowPlaceDropdown(false);
@@ -267,6 +344,7 @@ export default function LocationPicker({ value, onChange }) {
 
     if (item.lat && item.lng) {
       setCoords(newCoords);
+      sendCoordsToIframe(newCoords.lat, newCoords.lng, 14);
     }
     setLocationDetails(newDetails);
     triggerChange(newCoords, newDetails);
@@ -289,6 +367,7 @@ export default function LocationPicker({ value, onChange }) {
     setCoords(newCoords);
     setLocationDetails(newDetails);
     triggerChange(newCoords, newDetails);
+    sendCoordsToIframe(newCoords.lat, newCoords.lng, 15);
   };
 
   const handleManualDetailChange = (field, val) => {
@@ -297,23 +376,130 @@ export default function LocationPicker({ value, onChange }) {
     triggerChange(coords, updated);
   };
 
-  const handleMapClick = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    const latSpan = 20.5 - 5.5;
-    const lngSpan = 105.7 - 97.3;
-    
-    const newLat = Number((20.5 - (y / rect.height) * latSpan).toFixed(6));
-    const newLng = Number((97.3 + (x / rect.width) * lngSpan).toFixed(6));
-    
-    const newCoords = { lat: newLat, lng: newLng };
-    setCoords(newCoords);
-    reverseGeocode(newLat, newLng);
-  };
-
   const googleMapsUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lng}`;
+
+  // Interactive Leaflet Map HTML Template (รองรับซูม +/-, ลากหมุด, เลื่อนแผนที่ ซ้าย-ขวา บน-ล่าง)
+  const leafletSrcDoc = useMemo(() => {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #070d1e; overflow: hidden; cursor: grab; }
+    #map:active { cursor: grabbing; }
+    .custom-pin {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: grab;
+      user-select: none;
+    }
+    .custom-pin:active { cursor: grabbing; }
+    .pin-label {
+      background: #dc2626;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.6);
+      margin-bottom: 2px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      border: 1px solid rgba(255,255,255,0.4);
+      pointer-events: none;
+    }
+    .pin-dot {
+      width: 18px;
+      height: 18px;
+      background: #ef4444;
+      border: 2.5px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.95);
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', {
+      center: [${coords.lat}, ${coords.lng}],
+      zoom: 15,
+      zoomControl: false,
+      scrollWheelZoom: true,
+      doubleClickZoom: true,
+      dragging: true
+    });
+
+    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    var satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: '© Esri Satellite'
+    });
+
+    var pinIcon = L.divIcon({
+      className: 'custom-pin',
+      html: '<div class="pin-label">📍 จุดเกิดเหตุ (ลากเพื่อปรับพิกัด)</div><div class="pin-dot"></div>',
+      iconSize: [150, 44],
+      iconAnchor: [75, 40]
+    });
+
+    var marker = L.marker([${coords.lat}, ${coords.lng}], {
+      draggable: true,
+      icon: pinIcon
+    }).addTo(map);
+
+    marker.on('dragend', function(e) {
+      var pos = marker.getLatLng();
+      window.parent.postMessage({
+        type: 'MAP_COORDS_UPDATE',
+        lat: pos.lat,
+        lng: pos.lng
+      }, '*');
+    });
+
+    map.on('click', function(e) {
+      marker.setLatLng(e.latlng);
+      window.parent.postMessage({
+        type: 'MAP_COORDS_UPDATE',
+        lat: e.latlng.lat,
+        lng: e.latlng.lng
+      }, '*');
+    });
+
+    window.addEventListener('message', function(e) {
+      if (!e.data) return;
+      if (e.data.type === 'SET_MAP_VIEW') {
+        map.setView([e.data.lat, e.data.lng], e.data.zoom || map.getZoom());
+        marker.setLatLng([e.data.lat, e.data.lng]);
+      } else if (e.data.type === 'ZOOM_IN') {
+        map.zoomIn();
+      } else if (e.data.type === 'ZOOM_OUT') {
+        map.zoomOut();
+      } else if (e.data.type === 'PAN_BY') {
+        map.panBy([e.data.x, e.data.y]);
+      } else if (e.data.type === 'SWITCH_LAYER') {
+        if (e.data.layer === 'satellite') {
+          if (map.hasLayer(osmLayer)) map.removeLayer(osmLayer);
+          satLayer.addTo(map);
+        } else {
+          if (map.hasLayer(satLayer)) map.removeLayer(satLayer);
+          osmLayer.addTo(map);
+        }
+      }
+    });
+  </script>
+</body>
+</html>`;
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -498,131 +684,320 @@ export default function LocationPicker({ value, onChange }) {
         </div>
       </div>
 
-      {/* Interactive Map Visual Pinning Canvas */}
+      {/* Interactive Map Visual Pinning Canvas (สามารถซูม +/-, จับลากเลื่อน ซ้าย/ขวา/บน/ล่าง และจับลากหมุดได้) */}
       <div 
-        onClick={handleMapClick}
         style={{
           width: '100%',
-          height: '240px',
+          height: isExpanded ? '460px' : '330px',
           borderRadius: '10px',
           position: 'relative',
           overflow: 'hidden',
-          cursor: 'crosshair',
           border: '1px solid var(--border-subtle)',
-          background: `
-            radial-gradient(circle at 50% 50%, rgba(14, 28, 58, 0.6) 0%, rgba(7, 13, 30, 0.95) 100%),
-            linear-gradient(rgba(212, 175, 55, 0.08) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(212, 175, 55, 0.08) 1px, transparent 1px)
-          `,
-          backgroundSize: '100% 100%, 24px 24px, 24px 24px'
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+          transition: 'height 0.25s ease'
         }}
       >
+        {/* Layer 1: แผนที่ Interactive Leaflet (OpenStreetMap / Satellite) */}
+        {mapMode !== 'google' ? (
+          <iframe
+            ref={mapIframeRef}
+            title="Interactive Location Map"
+            srcDoc={leafletSrcDoc}
+            width="100%"
+            height="100%"
+            frameBorder="0"
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              display: 'block'
+            }}
+          />
+        ) : (
+          /* Layer 2: มุมมอง Google Maps Embed */
+          <iframe
+            title="Google Map Location Preview"
+            width="100%"
+            height="100%"
+            frameBorder="0"
+            scrolling="no"
+            src={`https://maps.google.com/maps?q=${coords.lat},${coords.lng}&z=15&output=embed`}
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              filter: 'contrast(1.05) invert(0.9) hue-rotate(180deg)'
+            }}
+          />
+        )}
+
+        {/* 1. ปุ่มควบคุมการซูม (Zoom In / Out +/-) */}
         <div style={{
           position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: 0.15,
-          pointerEvents: 'none',
-          fontSize: '72px',
-          fontWeight: 900,
-          color: 'var(--gold-primary)'
-        }}>
-          MAP PINNING
-        </div>
-
-        {/* Dynamic Embedded Google Map Preview Iframe */}
-        <iframe
-          title="Google Map Location Preview"
-          width="100%"
-          height="100%"
-          frameBorder="0"
-          scrolling="no"
-          marginHeight="0"
-          marginWidth="0"
-          src={`https://maps.google.com/maps?q=${coords.lat},${coords.lng}&z=14&output=embed`}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            opacity: 0.85,
-            filter: 'contrast(1.05) invert(0.9) hue-rotate(180deg)',
-            pointerEvents: 'none'
-          }}
-        />
-
-        {/* Pin marker overlay */}
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -100%)',
-          pointerEvents: 'none',
+          top: '12px',
+          left: '12px',
+          zIndex: 30,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 10
+          gap: '6px'
         }}>
-          <div style={{
-            background: 'var(--ruby-danger)',
-            color: '#fff',
-            padding: '3px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: 700,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-            marginBottom: '2px',
-            whiteSpace: 'nowrap'
-          }}>
-            📍 {locationDetails.subdistrict ? `ต.${locationDetails.subdistrict} จ.${locationDetails.province}` : 'จุดเกิดเหตุ/สถานที่เสียชีวิต'}
-          </div>
-          <div style={{
-            width: '16px',
-            height: '16px',
-            background: 'var(--ruby-danger)',
-            borderRadius: '50%',
-            border: '2px solid #ffffff',
-            boxShadow: '0 0 10px rgba(239, 68, 68, 0.8)'
-          }}></div>
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className="btn btn-secondary btn-sm"
+            style={{
+              width: '34px',
+              height: '34px',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(7, 13, 30, 0.9)',
+              borderColor: 'var(--gold-primary)',
+              color: 'var(--gold-primary)',
+              borderRadius: '6px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+            }}
+            title="ซูมเข้า (+)"
+          >
+            <Plus size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className="btn btn-secondary btn-sm"
+            style={{
+              width: '34px',
+              height: '34px',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(7, 13, 30, 0.9)',
+              borderColor: 'var(--gold-primary)',
+              color: 'var(--gold-primary)',
+              borderRadius: '6px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.5)'
+            }}
+            title="ซูมออก (-)"
+          >
+            <Minus size={18} />
+          </button>
         </div>
 
-        {/* Top-Right Tools */}
+        {/* 2. ปุ่มเลื่อนทิศทาง 4 ทิศทาง (Pan Controls: บน ล่าง ซ้าย ขวา และ ตรงกลาง) */}
         <div style={{
           position: 'absolute',
-          top: '10px',
-          right: '10px',
-          zIndex: 15,
-          display: 'flex',
-          gap: '8px'
+          top: '12px',
+          left: '54px',
+          zIndex: 30,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 26px)',
+          gridTemplateRows: 'repeat(3, 26px)',
+          gap: '2px',
+          background: 'rgba(7, 13, 30, 0.85)',
+          padding: '4px',
+          borderRadius: '8px',
+          border: '1px solid var(--border-glass)',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.6)'
         }}>
+          <div></div>
+          <button
+            type="button"
+            onClick={() => handlePan(0, -80)}
+            style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}
+            title="เลื่อนขึ้น"
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(212, 175, 55, 0.3)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <ArrowUp size={14} />
+          </button>
+          <div></div>
+
+          <button
+            type="button"
+            onClick={() => handlePan(-80, 0)}
+            style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}
+            title="เลื่อนซ้าย"
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(212, 175, 55, 0.3)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <ArrowLeft size={14} />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCenterOnPin}
+            style={{ background: 'rgba(212, 175, 55, 0.2)', border: 'none', color: 'var(--gold-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}
+            title="กลับมากึ่งกลางหมุด"
+          >
+            <Crosshair size={13} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handlePan(80, 0)}
+            style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}
+            title="เลื่อนขวา"
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(212, 175, 55, 0.3)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <ArrowRight size={14} />
+          </button>
+
+          <div></div>
+          <button
+            type="button"
+            onClick={() => handlePan(0, 80)}
+            style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px' }}
+            title="เลื่อนลง"
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(212, 175, 55, 0.3)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <ArrowDown size={14} />
+          </button>
+          <div></div>
+        </div>
+
+        {/* 3. ปุ่มสลับโหมดแผนที่ และขยายเต็มจอ (Top-Right Tools) */}
+        <div style={{
+          position: 'absolute',
+          top: '12px',
+          right: '12px',
+          zIndex: 30,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          {/* สลับเลเยอร์แผนที่ */}
+          <div style={{
+            display: 'flex',
+            background: 'rgba(7, 13, 30, 0.9)',
+            borderRadius: '6px',
+            border: '1px solid var(--border-glass)',
+            padding: '2px'
+          }}>
+            <button
+              type="button"
+              onClick={() => handleSwitchLayer('interactive')}
+              style={{
+                fontSize: '11px',
+                padding: '4px 8px',
+                background: mapMode === 'interactive' ? 'var(--gold-primary)' : 'transparent',
+                color: mapMode === 'interactive' ? '#000' : '#cbd5e1',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+              title="แผนที่ถนน (Street Map)"
+            >
+              แผนที่
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchLayer('satellite')}
+              style={{
+                fontSize: '11px',
+                padding: '4px 8px',
+                background: mapMode === 'satellite' ? 'var(--gold-primary)' : 'transparent',
+                color: mapMode === 'satellite' ? '#000' : '#cbd5e1',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+              title="แผนที่ดาวเทียม (Satellite Imagery)"
+            >
+              ดาวเทียม
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapMode('google')}
+              style={{
+                fontSize: '11px',
+                padding: '4px 8px',
+                background: mapMode === 'google' ? 'var(--gold-primary)' : 'transparent',
+                color: mapMode === 'google' ? '#000' : '#cbd5e1',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 600
+              }}
+              title="Google Maps Embed"
+            >
+              Google
+            </button>
+          </div>
+
+          {/* ยืด/หดความสูงแผนที่ */}
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="btn btn-secondary btn-sm"
+            style={{
+              padding: '6px 8px',
+              fontSize: '11px',
+              background: 'rgba(7, 13, 30, 0.9)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            title={isExpanded ? 'ย่อความสูงแผนที่' : 'ขยายความสูงแผนที่'}
+          >
+            {isExpanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+
+          {/* เปิดบน Google Maps แท็บใหม่ */}
           <a
             href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary btn-sm"
             style={{ fontSize: '11.5px', background: 'rgba(7, 13, 30, 0.9)', padding: '5px 10px' }}
-            onClick={(e) => e.stopPropagation()}
           >
             <ExternalLink size={13} />
-            <span>เปิดบน Google Maps</span>
+            <span>Google Maps</span>
           </a>
         </div>
 
-        {/* Bottom coordinate indicator */}
+        {/* 4. แถบแสดงพิกัดและคำแนะนำการใช้งาน (Bottom Info Bar) */}
         <div style={{
           position: 'absolute',
           bottom: '8px',
           left: '10px',
-          zIndex: 15,
-          background: 'rgba(7, 13, 30, 0.85)',
-          padding: '4px 10px',
-          borderRadius: '6px',
-          fontSize: '11.5px',
-          color: 'var(--gold-primary)',
-          border: '1px solid var(--border-glass)'
+          right: '10px',
+          zIndex: 30,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '6px',
+          pointerEvents: 'none'
         }}>
-          พิกัด GPS: Lat {coords.lat.toFixed(6)}, Lng {coords.lng.toFixed(6)}
-          {geocoding && <span style={{ marginLeft: '8px', color: '#fff' }}>(กำลังดึงชื่อตำบล/อำเภอ...)</span>}
+          <div style={{
+            background: 'rgba(7, 13, 30, 0.9)',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '11.5px',
+            color: 'var(--gold-primary)',
+            border: '1px solid var(--border-glass)',
+            pointerEvents: 'auto'
+          }}>
+            📍 พิกัด GPS: Lat {coords.lat.toFixed(6)}, Lng {coords.lng.toFixed(6)}
+            {geocoding && <span style={{ marginLeft: '6px', color: '#fff' }}>(กำลังอ่านชื่อตำบล/อำเภอ...)</span>}
+          </div>
+
+          <div style={{
+            background: 'rgba(7, 13, 30, 0.85)',
+            padding: '3px 8px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            color: 'var(--text-dim)',
+            border: '1px solid rgba(255, 255, 255, 0.08)'
+          }}>
+            💡 คลิกบนแผนที่หรือลากหมุดสีแดง เพื่อเปลี่ยนพิกัด | หมุนลูกกลิ้งเมาส์เพื่อซูม
+          </div>
         </div>
       </div>
 
