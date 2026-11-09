@@ -3,15 +3,30 @@
 
 const { createServer } = require('http');
 const { parse } = require('url');
+const os = require('os');
 const next = require('next');
 const { Server } = require('socket.io');
 
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = process.env.HOSTNAME || '0.0.0.0';
+const hostname = process.env.HOSTNAME || 'localhost';
 const port = parseInt(process.env.PORT, 10) || 3000;
 
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
+
+function getLocalIp() {
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
 
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
@@ -48,9 +63,14 @@ app.prepare().then(() => {
     });
   });
 
-  server.listen(port, (err) => {
+  server.listen(port, '0.0.0.0', (err) => {
     if (err) throw err;
-    console.log(`> 🎖️ RTA Claim Management System ready on http://${hostname}:${port}`);
+    const localIp = getLocalIp();
+    console.log(`> 🎖️ RTA Claim Management System ready:`);
+    console.log(`>   - Local:    http://localhost:${port}`);
+    if (localIp) {
+      console.log(`>   - Network:  http://${localIp}:${port}`);
+    }
     console.log(`> ⚡ Socket.io Server active on port ${port}`);
   });
 });

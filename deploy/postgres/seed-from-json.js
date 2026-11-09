@@ -36,6 +36,9 @@ if (Array.isArray(data.units)) {
 VALUES (${escapeSql(u.id)}, ${escapeSql(u.name)}, ${escapeSql(u.shortName || u.short_name)}, ${escapeSql(u.code)}, ${escapeSql(u.parentId || u.parent_id)}, ${escapeSql(u.region)})
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;\n`;
   }
+  sql += `INSERT INTO military_units (id, name, short_name, code, parent_id, region)
+VALUES ('INSURANCE_CO', 'บริษัท ทิพยประกันภัย จำกัด (มหาชน)', 'ทิพยประกันภัย', 'INS', NULL, 'ส่วนกลาง')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;\n`;
   sql += '\n';
 }
 

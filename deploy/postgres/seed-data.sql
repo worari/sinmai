@@ -302,6 +302,9 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 INSERT INTO military_units (id, name, short_name, code, parent_id, region)
 VALUES ('AAD_REG_2', 'กรมทหารต่อสู้อากาศยานที่ 2 (ปตอ.2)', 'ปตอ.2', 'ปตอ.2', 'AAD_DIV', NULL)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+INSERT INTO military_units (id, name, short_name, code, parent_id, region)
+VALUES ('INSURANCE_CO', 'บริษัท ทิพยประกันภัย จำกัด (มหาชน)', 'ทิพยประกันภัย', 'INS', NULL, 'ส่วนกลาง')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
 -- 2. ผู้ใช้งานระบบ
 INSERT INTO users (id, citizen_id, rank, first_name, last_name, position, unit_id, unit_name, phone, email, password, role, status, is_active, created_at)
