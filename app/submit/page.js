@@ -935,7 +935,7 @@ export default function SubmitClaimPage() {
           </div>
 
           {/* สาเหตุการเสียชีวิต (ตามใบมรณบัตร) & สาเหตุพฤติการณ์ (รายงาน กพ.4) */}
-          <div className="grid-cols-2" style={{ marginTop: '10px' }}>
+          <div style={{ marginTop: '16px' }}>
             <div className="form-group">
               <label className="form-label required">สาเหตุการเสียชีวิต (ตามใบมรณบัตร)</label>
               <input 
@@ -951,21 +951,55 @@ export default function SubmitClaimPage() {
               </span>
             </div>
 
-            <div className="form-group">
-              <label className="form-label required">
-                สาเหตุการสูญเสีย (รายละเอียดและพฤติการณ์เหตุการณ์ - ตามพฤติกรรมในรายงาน กพ.4)
-              </label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="เช่น ถูกลอบวางระเบิดแสวงเครื่องขณะลาดตระเวนเส้นทาง รปภ.ครู ตามรายงาน กพ.4..."
+            {/* สาเหตุการสูญเสีย (รายละเอียดและพฤติการณ์เหตุการณ์ - ตามพฤติกรรมในรายงาน กพ.4) - ขยายช่องกรอกขนาดใหญ่ */}
+            <div className="form-group" style={{ marginTop: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label required" style={{ marginBottom: 0, fontSize: '14.5px', color: 'var(--gold-light)' }}>
+                  สาเหตุการสูญเสีย (รายละเอียดและพฤติการณ์เหตุการณ์ - ตามพฤติกรรมในรายงาน กพ.4)
+                </label>
+                <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                  {formData.causeOfLoss ? `${formData.causeOfLoss.length} ตัวอักษร` : 'กรอกได้หลายบรรทัด'}
+                </span>
+              </div>
+              <textarea 
+                className="form-textarea" 
+                rows={5}
+                style={{
+                  width: '100%',
+                  minHeight: '130px',
+                  lineHeight: '1.6',
+                  fontSize: '14px',
+                  resize: 'vertical',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  border: '1px solid var(--border-glass)'
+                }}
+                placeholder="ระบุรายละเอียดและพฤติการณ์เหตุการณ์โดยละเอียดตามที่ระบุในแบบรายงานการสูญเสียกำลังพล (กพ.4) เช่น วัน เวลา เกิดเหตุ ขณะที่หน่วยทำการลาดตระเวนเส้นทาง รปภ.ครู ในพื้นที่... ได้ถูกกลุ่มผู้ก่อเหตุรุนแรงลอบวางระเบิดแสวงเครื่อง... ส่งผลให้กำลังพลได้รับบาดเจ็บบริเวณ... และเสียชีวิตระหว่างนำส่งโรงพยาบาล..."
                 value={formData.causeOfLoss}
                 onChange={(e) => setFormData({ ...formData, causeOfLoss: e.target.value })}
                 required
               />
-              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
-                ระบุรายละเอียดและพฤติการณ์ตามที่ระบุในแบบรายงานการสูญเสียกำลังพล (กพ.4)
-              </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                  💡 ระบุรายละเอียดและพฤติการณ์ตามที่ระบุในแบบรายงานการสูญเสียกำลังพล (กพ.4) สามารถกรอกข้อความยาวและขึ้นบรรทัดใหม่ได้
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: '11.5px', padding: '3px 10px' }}
+                  onClick={() => {
+                    if (!formData.causeOfLoss) {
+                      setFormData({
+                        ...formData,
+                        causeOfLoss: `เมื่อวันที่ ${formatThaiDate(formData.lossDate) || '...'} เวลาประมาณ ... น. ขณะที่กำลังพลสังกัด ${formData.unitName || 'หน่วย...'} ได้รับคำสั่งให้ปฏิบัติภารกิจ... ในพื้นที่... ได้เกิดเหตุ... ส่งผลให้ได้รับบาดเจ็บบริเวณ... และเสียชีวิตในเวลาต่อมา ตามที่ปรากฏในแบบรายงาน กพ.4`
+                      });
+                    }
+                  }}
+                >
+                  📝 ใส่โครงข้อความตัวอย่าง กพ.4
+                </button>
+              </div>
             </div>
           </div>
 

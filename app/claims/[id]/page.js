@@ -589,7 +589,7 @@ export default function ClaimDetailPage({ params }) {
 
           <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
             <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>สาเหตุการสูญเสีย (พฤติการณ์เหตุการณ์):</span>
-            <p style={{ marginTop: '2px', fontSize: '14px', color: '#e2e8f0' }}>{claim.causeOfLoss}</p>
+            <p style={{ marginTop: '2px', fontSize: '14px', color: '#e2e8f0', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{claim.causeOfLoss}</p>
           </div>
 
           {/* ข้อมูลสถานที่เสียชีวิต & พิกัด Google Maps */}
