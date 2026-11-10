@@ -23,7 +23,10 @@ import {
   ExternalLink,
   Eye,
   Trash2,
-  X
+  X,
+  Clock,
+  Save,
+  FileEdit
 } from 'lucide-react';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
 import { 
@@ -59,6 +62,13 @@ export default function SubmitClaimPage() {
   const [successMsg, setSuccessMsg] = useState('');
   const [duplicateAlert, setDuplicateAlert] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
+
+  // Draft Claim State
+  const [isEditingDraft, setIsEditingDraft] = useState(false);
+  const [editingDraftId, setEditingDraftId] = useState(null);
+  const [draftTrackingCode, setDraftTrackingCode] = useState('');
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [loadingDraft, setLoadingDraft] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -118,7 +128,7 @@ export default function SubmitClaimPage() {
   const [level3Id, setLevel3Id] = useState('R9_BN1');
   const [subUnitName, setSubUnitName] = useState('');
 
-  // โหลดรายการหน่วยทั้งหมดจาก API และผูกกับสังกัดผู้ใช้งาน
+  // โหลดรายการหน่วยทั้งหมดจาก API และผูกกับสังกัดผู้ใช้งาน หรือโหลดข้อมูลแบบร่าง (ถ้ามี draftId)
   useEffect(() => {
     fetch('/api/units')
       .then((r) => r.json())
@@ -129,17 +139,109 @@ export default function SubmitClaimPage() {
       })
       .catch((err) => console.error('Fetch units failed', err));
 
+    let activeUser = null;
     const saved = localStorage.getItem('rta_user');
     if (saved) {
       try {
-        const u = JSON.parse(saved);
-        setCurrentUser(u);
-        resolveInitialUnitHierarchy(u.unitId || '9th_INF_DIV');
+        activeUser = JSON.parse(saved);
+        setCurrentUser(activeUser);
       } catch (e) {}
+    }
+
+    // ตรวจสอบพารามิเตอร์ draftId จาก URL
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetDraftId = urlParams.get('draftId') || urlParams.get('id');
+      if (targetDraftId) {
+        loadDraftClaim(targetDraftId, activeUser);
+        return;
+      }
+    }
+
+    if (activeUser) {
+      resolveInitialUnitHierarchy(activeUser.unitId || '9th_INF_DIV');
     } else {
       resolveInitialUnitHierarchy('9th_INF_DIV');
     }
   }, []);
+
+  const loadDraftClaim = async (draftId, user) => {
+    setLoadingDraft(true);
+    try {
+      const queryParam = user?.id ? `?userId=${user.id}` : '';
+      const res = await fetch(`/api/claims/${draftId}${queryParam}`);
+      const data = await res.json();
+      if (!res.ok || !data.success || !data.claim) {
+        throw new Error(data.message || 'ไม่สามารถโหลดข้อมูลแบบร่างได้');
+      }
+
+      const c = data.claim;
+      setIsEditingDraft(true);
+      setEditingDraftId(c.id);
+      setDraftTrackingCode(c.trackingCode);
+
+      setFormData((prev) => ({
+        ...prev,
+        reportDate: c.reportDate || new Date().toISOString().split('T')[0],
+        unitId: c.unitId || prev.unitId,
+        unitName: c.unitName || prev.unitName,
+        casualtyRank: c.casualtyRank || 'ส.อ.',
+        casualtyFirstName: c.casualtyFirstName || '',
+        casualtyLastName: c.casualtyLastName || '',
+        casualtyCitizenId: c.casualtyCitizenId || '',
+        casualtyBirthDate: c.casualtyBirthDate || '1995-01-01',
+        lossDate: c.lossDate || new Date().toISOString().split('T')[0],
+        claimType: c.claimType || 'HIGH_RISK',
+        lossType: c.lossType || 'DECEASED',
+        incidentType: c.incidentType || 'ILLNESS',
+        isDriver: c.isDriver || 'YES',
+        alcoholTestResult: c.alcoholTestResult || 'NOT_EXCEEDED',
+        personnelType: c.personnelType || 'นายทหารประทวน',
+        casualtyGender: c.casualtyGender || 'ชาย',
+        causeOfLoss: c.causeOfLoss || '',
+        deathCertificateCause: c.deathCertificateCause || '',
+        disabledOrganDetail: c.disabledOrganDetail || '',
+        lossSpecificCause: c.lossSpecificCause || '',
+        locationOfLoss: c.locationOfLoss || prev.locationOfLoss
+      }));
+
+      if (c.casualtyRank) {
+        setRankInput(c.casualtyRank);
+      }
+
+      // นำไฟล์เอกสารที่เคยแนบไว้กลับมาใส่ใน state
+      if (Array.isArray(c.documents) && c.documents.length > 0) {
+        setAttachedDocs((prev) =>
+          prev.map((docDef) => {
+            const found = c.documents.find((d) => d.index === docDef.index);
+            if (found && found.uploaded) {
+              return {
+                ...docDef,
+                uploaded: true,
+                fileName: found.fileName,
+                fileUrl: found.fileUrl,
+                fileData: found.fileData || null,
+                fileSize: found.fileSize || 0,
+                status: found.status || 'PENDING',
+                comment: found.comment || ''
+              };
+            }
+            return docDef;
+          })
+        );
+      }
+
+      if (c.unitLevel1Id) setLevel1Id(c.unitLevel1Id);
+      if (c.unitLevel2Id) setLevel2Id(c.unitLevel2Id);
+      if (c.unitLevel3Id) setLevel3Id(c.unitLevel3Id);
+      if (c.subUnitName) setSubUnitName(c.subUnitName);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('เกิดข้อผิดพลาดในการโหลดแบบร่าง: ' + err.message);
+    } finally {
+      setLoadingDraft(false);
+    }
+  };
 
   const resolveInitialUnitHierarchy = (targetUnitId) => {
     const unit = findUnitById(targetUnitId, allUnits);
@@ -419,6 +521,106 @@ export default function SubmitClaimPage() {
     }
   };
 
+  // บันทึกร่างคำร้อง (กรณีรอรวบรวมเอกสารอื่นเพิ่มเติม สามารถบันทึกไว้แล้วกลับมาทำต่อได้)
+  const handleSaveDraft = async (e) => {
+    if (e) e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    // สำหรับบันทึกแบบร่าง ขอเพียงมีชื่อหรือนามสกุลอย่างน้อย 1 ช่อง เพื่อใช้แสดงในการ์ด/ตารางค้นหา
+    if (!formData.casualtyFirstName && !formData.casualtyLastName) {
+      setErrorMsg('กรุณากรอกชื่อหรือนามสกุลของผู้สูญเสียอย่างน้อย 1 ช่อง เพื่อบันทึกแบบร่างสำหรับกลับมาค้นหาแก้ไข');
+      return;
+    }
+
+    // ตรวจสอบความปลอดภัยของไฟล์แนบ (ถ้ามีไฟล์อัปโหลดไว้)
+    for (const doc of attachedDocs) {
+      if (doc.uploaded && doc.fileName) {
+        const val = validateAttachmentFile({ name: doc.fileName, size: doc.fileSize });
+        if (!val.valid) {
+          setErrorMsg(`เอกสารข้อที่ ${doc.index} (${doc.name}): ${val.error}`);
+          return;
+        }
+      }
+    }
+
+    setSavingDraft(true);
+
+    try {
+      const specificCause = (
+        formData.lossSpecificCause || 
+        (formData.lossType === 'DECEASED' ? formData.deathCertificateCause : formData.disabledOrganDetail) || 
+        formData.deathCertificateCause || 
+        formData.disabledOrganDetail || 
+        ''
+      ).trim();
+
+      const claimPayload = {
+        ...formData,
+        incidentType: formData.incidentType,
+        isDriver: formData.incidentType === 'ACCIDENT' ? formData.isDriver : null,
+        alcoholTestResult: formData.incidentType === 'ACCIDENT' ? formData.alcoholTestResult : null,
+        lossSpecificCause: specificCause,
+        deathCertificateCause: formData.lossType === 'DECEASED' ? specificCause : (formData.deathCertificateCause || ''),
+        disabledOrganDetail: formData.lossType === 'DISABLED' ? specificCause : '',
+        documents: attachedDocs
+      };
+
+      let res, resData;
+      if (isEditingDraft && editingDraftId) {
+        res = await fetch(`/api/claims/${editingDraftId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser?.id || 'usr-unit-1',
+            claimData: claimPayload,
+            submitNow: false
+          })
+        });
+        resData = await res.json();
+      } else {
+        res = await fetch('/api/claims', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser?.id || 'usr-unit-1',
+            claimData: claimPayload,
+            isDraft: true
+          })
+        });
+        resData = await res.json();
+      }
+
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.message || 'เกิดข้อผิดพลาดในการบันทึกแบบร่าง');
+      }
+
+      const savedClaim = resData.claim;
+      setSuccessMsg(`บันทึกแบบร่างเรียบร้อยแล้ว! เลขที่แบบร่าง: ${savedClaim.trackingCode}`);
+
+      triggerStatusPopup({
+        type: 'warning',
+        title: 'บันทึกแบบร่างคำร้องเรียบร้อย (รอเอกสารเพิ่มเติม)',
+        message: `ระบบได้บันทึกข้อมูลและไฟล์ที่แนบไว้ทั้งหมดในแบบร่าง "${savedClaim.trackingCode}" เรียบร้อยแล้ว ท่านสามารถกลับมากด "แก้ไข/แนบเอกสารต่อ" ได้ตลอดเวลาในหน้ารายการคำร้อง`,
+        trackingCode: savedClaim.trackingCode,
+        casualtyName: `${savedClaim.casualtyRank} ${savedClaim.casualtyFirstName} ${savedClaim.casualtyLastName}`,
+        action: 'บันทึกแบบร่าง (Draft Saved)',
+        by: currentUser ? `${currentUser.name} (${currentUser.role})` : 'เจ้าหน้าที่หน่วย',
+        ref: savedClaim.trackingCode
+      });
+
+      if (!isEditingDraft) {
+        setIsEditingDraft(true);
+        setEditingDraftId(savedClaim.id);
+        setDraftTrackingCode(savedClaim.trackingCode);
+      }
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -435,7 +637,7 @@ export default function SubmitClaimPage() {
       return;
     }
 
-    if (duplicateAlert) {
+    if (duplicateAlert && (!isEditingDraft || duplicateAlert.trackingCode !== draftTrackingCode)) {
       setErrorMsg(`ห้ามยื่นเรื่องซ้ำ: กำลังพลเลขประจำตัวประชาชน ${formData.casualtyCitizenId} เคยมีการยื่นเสนอเรื่องแล้ว (${duplicateAlert.trackingCode})`);
       return;
     }
@@ -472,7 +674,7 @@ export default function SubmitClaimPage() {
     }
 
     if (missingDocs.length > 0) {
-      setErrorMsg(`กรุณาแนบเอกสารสำคัญให้ครบถ้วน: ${missingDocs.join(', ')}`);
+      setErrorMsg(`กรุณาแนบเอกสารสำคัญให้ครบถ้วนก่อนส่งเรื่อง: ${missingDocs.join(', ')} (หากเอกสารยังไม่ครบ สามารถกดปุ่ม "บันทึกร่าง" เพื่อรอเอกสารได้)`);
       return;
     }
 
@@ -490,27 +692,42 @@ export default function SubmitClaimPage() {
     setSubmitting(true);
 
     try {
-      const payload = {
-        userId: currentUser?.id || 'usr-unit-1',
-        claimData: {
-          ...formData,
-          incidentType: formData.incidentType,
-          isDriver: formData.incidentType === 'ACCIDENT' ? formData.isDriver : null,
-          alcoholTestResult: formData.incidentType === 'ACCIDENT' ? formData.alcoholTestResult : null,
-          lossSpecificCause: specificCause,
-          deathCertificateCause: formData.lossType === 'DECEASED' ? specificCause : (formData.deathCertificateCause || ''),
-          disabledOrganDetail: formData.lossType === 'DISABLED' ? specificCause : '',
-          documents: attachedDocs
-        }
+      const claimPayload = {
+        ...formData,
+        incidentType: formData.incidentType,
+        isDriver: formData.incidentType === 'ACCIDENT' ? formData.isDriver : null,
+        alcoholTestResult: formData.incidentType === 'ACCIDENT' ? formData.alcoholTestResult : null,
+        lossSpecificCause: specificCause,
+        deathCertificateCause: formData.lossType === 'DECEASED' ? specificCause : (formData.deathCertificateCause || ''),
+        disabledOrganDetail: formData.lossType === 'DISABLED' ? specificCause : '',
+        documents: attachedDocs
       };
 
-      const res = await fetch('/api/claims', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      let res, resData;
+      if (isEditingDraft && editingDraftId) {
+        res = await fetch(`/api/claims/${editingDraftId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser?.id || 'usr-unit-1',
+            claimData: claimPayload,
+            submitNow: true
+          })
+        });
+        resData = await res.json();
+      } else {
+        res = await fetch('/api/claims', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser?.id || 'usr-unit-1',
+            claimData: claimPayload,
+            isDraft: false
+          })
+        });
+        resData = await res.json();
+      }
 
-      const resData = await res.json();
       if (!res.ok || !resData.success) {
         throw new Error(resData.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
       }
@@ -524,7 +741,7 @@ export default function SubmitClaimPage() {
         message: `ระบบได้บันทึกรายงานขอรับสิทธิและออกเลขติดตาม ${resData.claim.trackingCode} เข้าสู่กระบวนการพิจารณาตาม SLA 30 วัน`,
         trackingCode: resData.claim.trackingCode,
         casualtyName: `${resData.claim.casualtyRank} ${resData.claim.casualtyFirstName} ${resData.claim.casualtyLastName}`,
-        action: 'ยื่นเสนอขอรับสิทธิสินไหม (สร้างคำร้องใหม่)',
+        action: isEditingDraft ? 'ยื่นเสนอเรื่องขอรับสิทธิสินไหม (ส่งจากแบบร่าง)' : 'ยื่นเสนอขอรับสิทธิสินไหม (สร้างคำร้องใหม่)',
         by: currentUser ? `${currentUser.name} (${currentUser.role})` : 'เจ้าหน้าที่หน่วย',
         ref: resData.claim.trackingCode
       });
@@ -543,7 +760,7 @@ export default function SubmitClaimPage() {
     <div className="container" style={{ paddingTop: '28px' }}>
       
       {/* Navigation & Header */}
-      <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
         <div>
           <button 
             onClick={() => router.back()} 
@@ -553,9 +770,18 @@ export default function SubmitClaimPage() {
             <ArrowLeft size={14} />
             <span>ย้อนกลับ</span>
           </button>
-          <h1 style={{ fontSize: '24px' }}>แบบรายงานเสนอขอรับสิทธิเงินค่าสินไหมทดแทน</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>
-            สำหรับเจ้าหน้าที่หน่วยต้นสังกัดบันทึกรายงานผู้สูญเสีย (เสียชีวิต หรือ พิการทุพพลภาพ)
+          <h1 style={{ fontSize: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>{isEditingDraft ? 'แก้ไขแบบร่างคำร้องเสนอขอรับสิทธิ' : 'แบบรายงานเสนอขอรับสิทธิเงินค่าสินไหมทดแทน'}</span>
+            {isEditingDraft && (
+              <span className="badge badge-amber" style={{ fontSize: '12px' }}>
+                {draftTrackingCode || 'แบบร่าง'}
+              </span>
+            )}
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
+            {isEditingDraft 
+              ? 'ท่านสามารถปรับปรุงข้อมูล แนบเอกสารเพิ่มเติมที่ได้รับมา และกดบันทึกแบบร่างต่อ หรือกดยื่นเสนอเรื่องสมบูรณ์เข้าสู่ระบบ' 
+              : 'สำหรับเจ้าหน้าที่หน่วยต้นสังกัดบันทึกรายงานผู้สูญเสีย (เสียชีวิต หรือ พิการทุพพลภาพ)'}
           </p>
         </div>
 
@@ -565,6 +791,59 @@ export default function SubmitClaimPage() {
           <div style={{ fontSize: '12px', color: 'var(--gold-primary)' }}>{formData.unitName}</div>
         </div>
       </div>
+
+      {/* Loading Draft Indicator */}
+      {loadingDraft && (
+        <div className="glass-panel" style={{ padding: '20px', textAlign: 'center', marginBottom: '20px', color: 'var(--gold-primary)' }}>
+          <Clock size={24} className="spin" style={{ margin: '0 auto 8px' }} />
+          <div>กำลังโหลดข้อมูลแบบร่างคำร้อง...</div>
+        </div>
+      )}
+
+      {/* Draft Mode Notice Banner */}
+      {isEditingDraft && !loadingDraft && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.45)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '10px',
+              background: 'rgba(245, 158, 11, 0.25)',
+              color: '#fbbf24',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <FileEdit size={22} />
+            </div>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: '#fbbf24' }}>
+                โหมดปรับปรุงแบบร่าง: {draftTrackingCode}
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                คำร้องนี้ถูกบันทึกร่างไว้เพื่อรอรวบรวมเอกสารอื่นเพิ่มเติม ท่านสามารถแก้ไขข้อมูล กรอกรายละเอียด และแนบไฟล์เอกสารต่อได้ เมื่อพร้อมส่งเรื่องให้กดปุ่ม <strong>"ยื่นเสนอเรื่องขอรับสิทธิเงินสินไหม"</strong> ด้านล่าง
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <span className="badge badge-amber" style={{ padding: '6px 12px', fontSize: '12px' }}>
+              📝 ร่างคำร้อง (รอเอกสาร)
+            </span>
+          </div>
+        </div>
+      )}
 
       {errorMsg && (
         <div style={{
@@ -1534,24 +1813,64 @@ export default function SubmitClaimPage() {
         </div>
 
         {/* Submit Actions */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '14px' }}>
-          <button 
-            type="button" 
-            onClick={() => router.push('/')} 
-            className="btn btn-secondary"
-            disabled={submitting}
-          >
-            ยกเลิก
-          </button>
-          <button 
-            type="submit" 
-            className="btn btn-primary"
-            style={{ padding: '12px 28px', fontSize: '15px' }}
-            disabled={submitting}
-          >
-            <FileCheck size={18} />
-            <span>{submitting ? 'กำลังบันทึกและส่งเรื่อง...' : 'ยื่นเสนอเรื่องขอรับสิทธิเงินสินไหม'}</span>
-          </button>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          flexWrap: 'wrap', 
+          gap: '16px',
+          padding: '20px 24px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px solid var(--border-glass)',
+          borderRadius: '12px'
+        }}>
+          <div>
+            <button 
+              type="button" 
+              onClick={() => router.push('/claims')} 
+              className="btn btn-secondary"
+              disabled={submitting || savingDraft}
+            >
+              ยกเลิก / กลับหน้ารายการ
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            {/* ปุ่มบันทึกร่าง: กรณีรอเอกสารอื่น กรอกข้อมูลค้างไว้แล้วกลับมาต่อภายหลังได้ */}
+            <button 
+              type="button"
+              onClick={handleSaveDraft}
+              className="btn btn-secondary"
+              style={{ 
+                background: 'rgba(245, 158, 11, 0.15)', 
+                color: '#fbbf24', 
+                border: '1px solid rgba(245, 158, 11, 0.45)',
+                padding: '12px 24px', 
+                fontSize: '14px',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              disabled={submitting || savingDraft}
+              title="บันทึกข้อมูลและไฟล์ที่แนบไว้ชั่วคราว เพื่อรอรวบรวมเอกสารอื่นเพิ่มเติม"
+            >
+              <Save size={18} />
+              <span>{savingDraft ? 'กำลังบันทึกแบบร่าง...' : isEditingDraft ? '💾 บันทึกแบบร่างต่อ (ยังไม่ส่งเรื่อง)' : '💾 บันทึกร่าง (รอเอกสารอื่น)'}</span>
+            </button>
+
+            {/* ปุ่มส่งเรื่องเสนอขอรับสิทธิสินไหม */}
+            <button 
+              type="submit" 
+              className="btn btn-primary"
+              style={{ padding: '12px 28px', fontSize: '15px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+              disabled={submitting || savingDraft}
+              title="ตรวจสอบเอกสารครบถ้วนแล้วและส่งเรื่องเสนอขอรับสิทธิสินไหมเข้าสู่ระบบ"
+            >
+              <FileCheck size={18} />
+              <span>{submitting ? 'กำลังส่งเรื่องเสนอ...' : isEditingDraft ? '🚀 ส่งเรื่องเสนอขอรับสิทธิสินไหม' : '🚀 ยื่นเสนอเรื่องขอรับสิทธิเงินสินไหม'}</span>
+            </button>
+          </div>
         </div>
 
       </form>

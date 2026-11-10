@@ -25,7 +25,7 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { userId, claimData } = body;
+    const { userId, claimData, isDraft } = body;
 
     const user = db.findUserById(userId);
     if (!user) {
@@ -34,14 +34,6 @@ export async function POST(request) {
 
     if (user.role !== 'UNIT_OFFICER' && user.role !== 'ADMIN') {
       return NextResponse.json({ success: false, message: 'เฉพาะเจ้าหน้าที่หน่วยเสนอเรื่องเท่านั้นที่สามารถสร้างรายงานได้' }, { status: 403 });
-    }
-
-    // ตรวจสอบเลข ปชช. ผู้สูญเสีย
-    if (claimData.casualtyCitizenId && !validateCitizenId(claimData.casualtyCitizenId)) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'เลขประจำตัวประชาชนของผู้สูญเสียไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)' 
-      }, { status: 400 });
     }
 
     // กำหนดยอดเงินตามประเภทสินไหม
@@ -62,7 +54,6 @@ export async function POST(request) {
       }
     }
 
-    // ตรวจสอบเงื่อนไขตามประเภทการสูญเสีย (ผู้เสียชีวิต vs พิการทุพพลภาพ)
     const specificCause = (
       claimData.lossSpecificCause || 
       (claimData.lossType === 'DECEASED' ? claimData.deathCertificateCause : claimData.disabledOrganDetail) || 
@@ -71,6 +62,55 @@ export async function POST(request) {
       ''
     ).trim();
 
+    // ==========================================
+    // กรณีบันทึกแบบร่าง (DRAFT MODE)
+    // ==========================================
+    if (isDraft) {
+      const isAccident = claimData.incidentType === 'ACCIDENT';
+      const draftClaim = db.createClaim({
+        ...claimData,
+        incidentType: claimData.incidentType || 'ILLNESS',
+        isDriver: isAccident ? (claimData.isDriver || 'YES') : null,
+        alcoholTestResult: isAccident ? (claimData.alcoholTestResult || 'NOT_EXCEEDED') : null,
+        lossSpecificCause: specificCause,
+        deathCertificateCause: claimData.lossType === 'DECEASED' ? specificCause : (claimData.deathCertificateCause || ''),
+        disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
+        compensationAmount
+      }, user, true);
+
+      return NextResponse.json({
+        success: true,
+        message: 'บันทึกแบบร่างคำร้องเรียบร้อยแล้ว (สามารถกลับมาแก้ไขและแนบเอกสารเพิ่มเติมได้)',
+        claim: draftClaim,
+        isDraft: true
+      });
+    }
+
+    // ==========================================
+    // กรณียื่นเสนอเรื่องจริง (OFFICIAL SUBMIT)
+    // ==========================================
+    if (!claimData.casualtyFirstName || !claimData.casualtyLastName) {
+      return NextResponse.json({ success: false, message: 'กรุณากรอกชื่อและนามสกุลของผู้สูญเสีย' }, { status: 400 });
+    }
+
+    // ตรวจสอบเลข ปชช. ผู้สูญเสีย
+    if (!validateCitizenId(claimData.casualtyCitizenId)) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'เลขประจำตัวประชาชนของผู้สูญเสียไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)' 
+      }, { status: 400 });
+    }
+
+    // ตรวจสอบเอกสารข้อที่ 1 (รายงาน กพ.4)
+    const doc1 = docs.find((d) => d.index === 1);
+    if (!doc1 || !doc1.uploaded) {
+      return NextResponse.json({
+        success: false,
+        message: 'บังคับต้องแนบเอกสารข้อที่ 1 (รายงาน กพ.4)'
+      }, { status: 400 });
+    }
+
+    // ตรวจสอบเงื่อนไขตามประเภทการสูญเสีย (ผู้เสียชีวิต vs พิการทุพพลภาพ)
     if (claimData.lossType === 'DECEASED') {
       // กรณีผู้เสียชีวิต: บังคับแนบใบมรณบัตร (เอกสารข้อ 2)
       const doc2 = docs.find((d) => d.index === 2);
@@ -87,7 +127,14 @@ export async function POST(request) {
         }, { status: 400 });
       }
     } else if (claimData.lossType === 'DISABLED') {
-      // กรณีพิการทุพพลภาพ: เอกสารข้อ 2 (ใบมรณบัตร) ไม่ต้องแนบ แต่ต้องระบุสาเหตุการสูญเสียหรืออวัยวะที่สูญเสีย
+      // กรณีพิการทุพพลภาพ: เอกสารข้อ 7 บังคับแนบ และต้องระบุอวัยวะที่สูญเสีย
+      const doc7 = docs.find((d) => d.index === 7);
+      if (!doc7 || !doc7.uploaded) {
+        return NextResponse.json({
+          success: false,
+          message: 'กรณีพิการทุพพลภาพ บังคับต้องแนบเอกสารข้อที่ 7 (คำสั่งปลดฯ)'
+        }, { status: 400 });
+      }
       if (!specificCause) {
         return NextResponse.json({
           success: false,
@@ -118,7 +165,7 @@ export async function POST(request) {
       deathCertificateCause: claimData.lossType === 'DECEASED' ? specificCause : (claimData.deathCertificateCause || ''),
       disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
       compensationAmount
-    }, user);
+    }, user, false);
 
     return NextResponse.json({ 
       success: true, 

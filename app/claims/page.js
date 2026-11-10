@@ -161,6 +161,7 @@ export default function ClaimsListPage() {
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               <option value="ALL">สถานะทั้งหมด</option>
+              <option value="DRAFT">📝 ร่างคำร้อง (รอแนบเอกสาร)</option>
               <option value="SUBMITTED">1. เสนอเรื่องใหม่</option>
               <option value="UNDER_REVIEW">2. กสพ. กำลังตรวจเอกสาร</option>
               <option value="REJECTED_BY_KSP">ตีกลับให้หน่วยแก้ไข</option>
@@ -249,9 +250,15 @@ export default function ClaimsListPage() {
                         </span>
                       </td>
                       <td style={{ padding: '14px' }}>
-                        <span className="badge badge-emerald">
-                          {claim.status}
-                        </span>
+                        {claim.status === 'DRAFT' ? (
+                          <span className="badge badge-slate" style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.35)' }}>
+                            📝 ร่างคำร้อง (รอเอกสาร)
+                          </span>
+                        ) : (
+                          <span className="badge badge-emerald">
+                            {CLAIM_STATUS[claim.status]?.label || claim.status}
+                          </span>
+                        )}
                         {claim.status === 'REJECTED_BY_KSP' && (
                           <div style={{ fontSize: '11px', color: 'var(--ruby-danger)', marginTop: '4px' }}>
                             * กสพ. แจ้งให้แก้ไขเอกสาร
@@ -259,7 +266,11 @@ export default function ClaimsListPage() {
                         )}
                       </td>
                       <td style={{ padding: '14px' }}>
-                        {claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? (
+                        {claim.status === 'DRAFT' ? (
+                          <span className="badge badge-slate" style={{ fontSize: '11px' }}>
+                            ⏳ รอแนบเอกสารเพื่อส่งเรื่อง
+                          </span>
+                        ) : claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? (
                           <span className="sla-pill sla-normal">
                             <CheckCircle2 size={12} /> เสร็จสิ้น
                           </span>
@@ -289,21 +300,41 @@ export default function ClaimsListPage() {
                         )}
                       </td>
                       <td style={{ padding: '14px', textAlign: 'right' }}>
-                        <Link 
-                          href={`/claims/${claim.id}`} 
-                          className={`btn btn-sm ${
-                            (currentUser?.role === 'INSURANCE_REP' && claim.status !== 'PAID' && claim.status !== 'SK_NOTIFIED') ||
-                            (currentUser?.role === 'KSP_OFFICER' && (claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW'))
-                              ? 'btn-primary' 
-                              : 'btn-secondary'
-                          }`}
-                        >
-                          {currentUser?.role === 'INSURANCE_REP' 
-                            ? (claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? 'ดูหลักฐานโอน' : '🔍 ตรวจเอกสาร/โอนเงิน') 
-                            : currentUser?.role === 'KSP_OFFICER'
-                            ? (claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW' ? '🔍 พรีวิว & ตรวจเอกสาร' : 'ตรวจสอบคำร้อง')
-                            : 'จัดการเรื่อง'}
-                        </Link>
+                        {claim.status === 'DRAFT' ? (
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
+                            <Link 
+                              href={`/submit?draftId=${claim.id}`}
+                              className="btn btn-warning btn-sm"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '6px 14px' }}
+                              title="เปิดฟอร์มเพื่อแก้ไขข้อมูล แนบเอกสารเพิ่มเติม และส่งเรื่อง"
+                            >
+                              <span>✏️ แก้ไข/แนบเอกสารต่อ</span>
+                            </Link>
+                            <Link 
+                              href={`/claims/${claim.id}`} 
+                              className="btn btn-secondary btn-sm"
+                              title="ดูรายละเอียดแบบร่าง"
+                            >
+                              ดูข้อมูล
+                            </Link>
+                          </div>
+                        ) : (
+                          <Link 
+                            href={`/claims/${claim.id}`} 
+                            className={`btn btn-sm ${
+                              (currentUser?.role === 'INSURANCE_REP' && claim.status !== 'PAID' && claim.status !== 'SK_NOTIFIED') ||
+                              (currentUser?.role === 'KSP_OFFICER' && (claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW'))
+                                ? 'btn-primary' 
+                                : 'btn-secondary'
+                            }`}
+                          >
+                            {currentUser?.role === 'INSURANCE_REP' 
+                              ? (claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? 'ดูหลักฐานโอน' : '🔍 ตรวจเอกสาร/โอนเงิน') 
+                              : currentUser?.role === 'KSP_OFFICER'
+                              ? (claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW' ? '🔍 พรีวิว & ตรวจเอกสาร' : 'ตรวจสอบคำร้อง')
+                              : 'จัดการเรื่อง'}
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   );

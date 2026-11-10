@@ -542,6 +542,14 @@ export default function ClaimDetailPage({ params }) {
   // ข้อมูลขั้นตอน Workflow และคำอธิบายสถานะสำหรับระบบควบคุมการ Hold
   const getWorkflowStepInfo = (status) => {
     switch (status) {
+      case 'DRAFT':
+        return {
+          step: 0,
+          name: 'ขั้นที่ 0: ร่างคำร้อง (รอแนบเอกสารเพิ่มเติม)',
+          desc: 'หน่วยต้นสังกัดบันทึกข้อมูลไว้ชั่วคราวเพื่อรอรวบรวมเอกสารอื่นเพิ่มเติม ยังไม่ได้ส่งเรื่องเสนอเข้าสู่กระบวนการพิจารณา',
+          activeRole: 'UNIT_OFFICER',
+          activeRoleLabel: 'เจ้าหน้าที่หน่วยต้นสังกัด'
+        };
       case 'SUBMITTED':
         return {
           step: 1,
@@ -664,7 +672,7 @@ export default function ClaimDetailPage({ params }) {
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>สถานะ Workflow ปัจจุบัน</div>
             <div style={{ marginTop: '4px' }}>
-              <span className={`badge ${claim.status === 'PAID' ? 'badge-emerald' : claim.status === 'APPROVED' ? 'badge-amber' : 'badge-blue'}`} style={{ fontSize: '14px', padding: '6px 14px' }}>
+              <span className={`badge ${claim.status === 'PAID' ? 'badge-emerald' : claim.status === 'APPROVED' ? 'badge-amber' : claim.status === 'DRAFT' ? 'badge-slate' : 'badge-blue'}`} style={{ fontSize: '14px', padding: '6px 14px' }}>
                 {CLAIM_STATUS[claim.status]?.label || claim.status}
               </span>
             </div>
@@ -679,20 +687,69 @@ export default function ClaimDetailPage({ params }) {
               <strong>การติดตามกรอบเวลา (SLA 30 วัน):</strong>
             </span>
             <span style={{ color: sla.color, fontWeight: 700 }}>
-              {claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? '✓ สำเร็จเรียบร้อย' : sla.label}
+              {claim.status === 'DRAFT' ? '📝 บันทึกแบบร่าง (ยังไม่เริ่มนับ SLA)' : claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? '✓ สำเร็จเรียบร้อย' : sla.label}
             </span>
           </div>
 
           <div style={{ width: '100%', height: '10px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '6px', overflow: 'hidden' }}>
             <div style={{
-              width: `${Math.min(100, Math.round((sla.daysElapsed / 30) * 100))}%`,
+              width: `${claim.status === 'DRAFT' ? 0 : Math.min(100, Math.round((sla.daysElapsed / 30) * 100))}%`,
               height: '100%',
-              background: sla.color,
+              background: claim.status === 'DRAFT' ? '#94a3b8' : sla.color,
               transition: 'width 0.4s ease'
             }}></div>
           </div>
         </div>
       </div>
+
+      {/* Draft Notification Banner */}
+      {claim.status === 'DRAFT' && (
+        <div className="glass-panel" style={{
+          padding: '20px 24px',
+          marginBottom: '24px',
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.45)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '16px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '46px',
+              height: '46px',
+              borderRadius: '12px',
+              background: 'rgba(245, 158, 11, 0.25)',
+              color: '#fbbf24',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <FileCheck2 size={24} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '16px', color: '#fbbf24', margin: 0 }}>
+                คำร้องนี้อยู่ในสถานะแบบร่าง (Draft) — รอแนบเอกสารเพิ่มเติม
+              </h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>
+                หน่วยต้นสังกัดได้บันทึกข้อมูลไว้ชั่วคราวเพื่อรอรวบรวมเอกสารอื่นเพิ่มเติม เมื่อได้รับเอกสารครบถ้วนแล้ว ให้กดปุ่มแก้ไขด้านขวาเพื่อแนบไฟล์และส่งเรื่องเสนอขอรับสิทธิสินไหมเข้าสู่กระบวนการพิจารณา
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <button
+              onClick={() => router.push(`/submit?draftId=${claim.id}`)}
+              className="btn btn-warning"
+              style={{ padding: '10px 22px', fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <span>✏️ แก้ไขข้อมูลและแนบเอกสารต่อ</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Warning Box: กรณีเกิน 30 วัน */}
       {isOverdue && (
@@ -1462,7 +1519,15 @@ export default function ClaimDetailPage({ params }) {
               </div>
               
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {claim.status === 'REJECTED_BY_KSP' ? (
+                {claim.status === 'DRAFT' ? (
+                  <button 
+                    onClick={() => router.push(`/submit?draftId=${claim.id}`)}
+                    className="btn btn-warning"
+                    style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <span>✏️ แก้ไขข้อมูลและแนบเอกสารต่อ (ส่งเรื่องขอรับสิทธิ)</span>
+                  </button>
+                ) : claim.status === 'REJECTED_BY_KSP' ? (
                   <button 
                     onClick={() => handleWorkflowAction('SUBMITTED', 'หน่วยได้ดำเนินการแก้ไขเอกสารตามข้อคิดเห็นและส่งตรวจใหม่เรียบร้อย')}
                     className="btn btn-primary"
