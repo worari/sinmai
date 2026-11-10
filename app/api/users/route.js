@@ -1,6 +1,7 @@
 // app/api/users/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { extractClientInfo } from '@/lib/client-info';
 
 // ดึงรายชื่อผู้ใช้งานทั้งหมด พร้อมสถิติสรุป
 export async function GET(request) {
@@ -16,12 +17,19 @@ export async function GET(request) {
 // แอดมินเพิ่มผู้ใช้งานใหม่โดยตรง
 export async function POST(request) {
   try {
+    const clientInfo = extractClientInfo(request);
     const data = await request.json();
     const { citizenId, rank, firstName, lastName, position, unitId, unitName, phone, email, password, role, status, adminUser } = data;
 
     if (!citizenId || !firstName || !lastName || !email || !password) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' }, { status: 400 });
     }
+
+    const currentAdmin = {
+      ...(adminUser || { id: 'usr-admin-1', name: 'ผู้ดูแลระบบ', role: 'ADMIN' }),
+      ip: clientInfo.ip,
+      device: clientInfo.device
+    };
 
     const newUser = db.createUser({
       citizenId,
@@ -36,8 +44,10 @@ export async function POST(request) {
       password,
       role: role || 'UNIT_OFFICER',
       status: status || 'APPROVED',
-      isActive: status !== 'SUSPENDED' && status !== 'PENDING'
-    }, adminUser || { id: 'usr-admin-1', name: 'ผู้ดูแลระบบ', role: 'ADMIN' });
+      isActive: status !== 'SUSPENDED' && status !== 'PENDING',
+      ip: clientInfo.ip,
+      device: clientInfo.device
+    }, currentAdmin);
 
     const { password: _, ...safeUser } = newUser;
     return NextResponse.json({ 
@@ -53,12 +63,19 @@ export async function POST(request) {
 // แอดมินแก้ไขข้อมูลผู้ใช้งาน
 export async function PUT(request) {
   try {
+    const clientInfo = extractClientInfo(request);
     const { userId, adminUser, ...updateData } = await request.json();
     if (!userId) {
       return NextResponse.json({ success: false, message: 'ต้องระบุ userId' }, { status: 400 });
     }
 
-    const updated = db.updateUser(userId, updateData, adminUser);
+    const currentAdmin = {
+      ...(adminUser || { id: 'usr-admin-1', name: 'ผู้ดูแลระบบ', role: 'ADMIN' }),
+      ip: clientInfo.ip,
+      device: clientInfo.device
+    };
+
+    const updated = db.updateUser(userId, updateData, currentAdmin);
     const { password: _, ...safeUser } = updated;
     return NextResponse.json({ 
       success: true, 
@@ -73,15 +90,22 @@ export async function PUT(request) {
 // ปรับสถานะ / บทบาท / อนุมัติ / ปฏิเสธ ผู้ใช้งาน
 export async function PATCH(request) {
   try {
+    const clientInfo = extractClientInfo(request);
     const { userId, action, newRole, reason, adminUser } = await request.json();
 
     if (!userId) {
       return NextResponse.json({ success: false, message: 'ต้องระบุ userId' }, { status: 400 });
     }
 
+    const currentAdmin = {
+      ...(adminUser || { id: 'usr-admin-1', name: 'ผู้ดูแลระบบ', role: 'ADMIN' }),
+      ip: clientInfo.ip,
+      device: clientInfo.device
+    };
+
     // 1. อนุมัติผู้ใช้งาน
     if (action === 'APPROVE') {
-      const user = db.approveUser(userId, { role: newRole, adminUser });
+      const user = db.approveUser(userId, { role: newRole, adminUser: currentAdmin });
       return NextResponse.json({ 
         success: true, 
         message: `อนุมัติบัญชี ${user.rank || ''} ${user.firstName} ${user.lastName} เรียบร้อยแล้ว (บทบาท: ${user.role})`, 
@@ -91,7 +115,7 @@ export async function PATCH(request) {
 
     // 2. ปฏิเสธคำขอลงทะเบียน
     if (action === 'REJECT') {
-      const user = db.rejectUser(userId, { reason, adminUser });
+      const user = db.rejectUser(userId, { reason, adminUser: currentAdmin });
       return NextResponse.json({ 
         success: true, 
         message: `ปฏิเสธคำขอลงทะเบียนของ ${user.rank || ''} ${user.firstName} ${user.lastName} เรียบร้อยแล้ว`, 
@@ -101,7 +125,7 @@ export async function PATCH(request) {
 
     // 3. เปลี่ยนแปลงบทบาท (Role)
     if (action === 'CHANGE_ROLE') {
-      const user = db.updateUserRole(userId, newRole, adminUser);
+      const user = db.updateUserRole(userId, newRole, currentAdmin);
       return NextResponse.json({ 
         success: true, 
         message: `ปรับบทบาท ${user.rank || ''} ${user.firstName} เป็น "${newRole}" เรียบร้อย`, 
@@ -111,7 +135,7 @@ export async function PATCH(request) {
 
     // 4. สลับสถานะ ระงับ / เปิดใช้งาน (Toggle Active/Suspend)
     if (action === 'TOGGLE_ACTIVE') {
-      const user = db.toggleUserActive(userId, adminUser);
+      const user = db.toggleUserActive(userId, currentAdmin);
       const statusText = user.isActive ? 'เปิดใช้งาน' : 'ระงับการใช้งาน';
       return NextResponse.json({ 
         success: true, 
@@ -129,13 +153,22 @@ export async function PATCH(request) {
 // แอดมินลบผู้ใช้งาน
 export async function DELETE(request) {
   try {
+    const clientInfo = extractClientInfo(request);
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const adminId = searchParams.get('adminId');
     if (!userId) {
       return NextResponse.json({ success: false, message: 'ต้องระบุ userId ที่ต้องการลบ' }, { status: 400 });
     }
 
-    db.deleteUser(userId);
+    const adminUser = adminId ? db.findUserById(adminId) : null;
+    const currentAdmin = {
+      ...(adminUser || { id: 'usr-admin-1', name: 'ผู้ดูแลระบบ', role: 'ADMIN' }),
+      ip: clientInfo.ip,
+      device: clientInfo.device
+    };
+
+    db.deleteUser(userId, currentAdmin);
     return NextResponse.json({ success: true, message: 'ลบข้อมูลผู้ใช้งานออกจากระบบเรียบร้อยแล้ว' });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

@@ -1,9 +1,11 @@
 // app/api/auth/login/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { extractClientInfo } from '@/lib/client-info';
 
 export async function POST(request) {
   try {
+    const clientInfo = extractClientInfo(request);
     const { identifier, password } = await request.json();
     if (!identifier || !password) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบถ้วน' }, { status: 400 });
@@ -25,7 +27,9 @@ export async function POST(request) {
           action: 'LOGIN_FAILED',
           actionBadge: 'red',
           actionLabel: 'รหัสผ่านผิด',
-          details: `เข้าสู่ระบบไม่สำเร็จ: รหัสผ่านไม่ถูกต้องสำหรับบัญชี ${user.email || user.citizenId}`
+          details: `เข้าสู่ระบบไม่สำเร็จ: รหัสผ่านไม่ถูกต้องสำหรับบัญชี ${user.email || user.citizenId}`,
+          ip: clientInfo.ip,
+          device: clientInfo.device
         });
       }
       return NextResponse.json({ success: false, message: 'เลขประจำตัวประชาชน/อีเมล หรือรหัสผ่านไม่ถูกต้อง' }, { status: 401 });
@@ -42,7 +46,9 @@ export async function POST(request) {
         action: 'LOGIN_PENDING',
         actionBadge: 'amber',
         actionLabel: 'รออนุมัติ',
-        details: `พยายามเข้าสู่ระบบขณะสถานะบัญชี "รอการอนุมัติจากผู้ดูแลระบบ"`
+        details: `พยายามเข้าสู่ระบบขณะสถานะบัญชี "รอการอนุมัติจากผู้ดูแลระบบ"`,
+        ip: clientInfo.ip,
+        device: clientInfo.device
       });
       return NextResponse.json({ 
         success: false, 
@@ -59,7 +65,9 @@ export async function POST(request) {
         action: 'LOGIN_BLOCKED',
         actionBadge: 'red',
         actionLabel: 'ถูกระงับ',
-        details: `พยายามเข้าสู่ระบบขณะบัญชีถูกระงับการใช้งาน`
+        details: `พยายามเข้าสู่ระบบขณะบัญชีถูกระงับการใช้งาน`,
+        ip: clientInfo.ip,
+        device: clientInfo.device
       });
       return NextResponse.json({ 
         success: false, 
@@ -85,7 +93,9 @@ export async function POST(request) {
       action: 'LOGIN',
       actionBadge: 'cyan',
       actionLabel: 'เข้าสู่ระบบ',
-      details: `${fullName} เข้าสู่ระบบสำเร็จ (สังกัด: ${user.unitName || '-'}, บทบาท: ${user.role})`
+      details: `${fullName} เข้าสู่ระบบสำเร็จ (สังกัด: ${user.unitName || '-'}, บทบาท: ${user.role})`,
+      ip: clientInfo.ip,
+      device: clientInfo.device
     });
 
     const { password: _, ...userWithoutPass } = user;

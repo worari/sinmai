@@ -173,6 +173,7 @@ export default function PortalHomePage() {
 
   // --- Admin Card Handlers ---
   const handleOpenEditCardDoc = (doc = null) => {
+    if (!isAdmin) return;
     if (doc) {
       setEditingCardDoc(doc);
       setCardDocForm({
@@ -202,6 +203,10 @@ export default function PortalHomePage() {
 
   const handleSaveCardDoc = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่มีสิทธิ์จัดการหรือแก้ไขข้อมูลนี้');
+      return;
+    }
     if (!editingCardDoc) return;
 
     try {
@@ -209,7 +214,8 @@ export default function PortalHomePage() {
       const payload = {
         id: isNew ? `man-${Date.now()}` : (editingCardDoc.id || `man-${Date.now()}`),
         ...cardDocForm,
-        hasAttachment: !!(cardDocForm.fileName || cardDocForm.fileData)
+        hasAttachment: !!(cardDocForm.fileName || cardDocForm.fileData),
+        userId: currentUser?.id
       };
 
       const res = await fetch('/api/content/manuals', {
@@ -241,6 +247,10 @@ export default function PortalHomePage() {
 
   const handleSaveBenefits = (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่มีสิทธิ์จัดการหรือแก้ไขข้อมูลนี้');
+      return;
+    }
     localStorage.setItem('rta_benefits_info', JSON.stringify(benefitsData));
     setEditingBenefits(false);
 
@@ -254,6 +264,7 @@ export default function PortalHomePage() {
   };
 
   const handleOpenEditVideoCard = (vid) => {
+    if (!isAdmin) return;
     setEditingVideoCard(vid);
     setVideoCardForm({
       title: vid.title || '',
@@ -266,6 +277,10 @@ export default function PortalHomePage() {
 
   const handleSaveVideoCard = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert('เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่มีสิทธิ์จัดการหรือแก้ไขข้อมูลนี้');
+      return;
+    }
     if (!editingVideoCard) return;
 
     try {
@@ -275,7 +290,8 @@ export default function PortalHomePage() {
         role: videoCardForm.role,
         duration: videoCardForm.duration,
         videoUrl: videoCardForm.videoUrl,
-        steps: videoCardForm.stepsText.split('\n').filter(Boolean)
+        steps: videoCardForm.stepsText.split('\n').filter(Boolean),
+        userId: currentUser?.id
       };
 
       const res = await fetch('/api/content/videos', {

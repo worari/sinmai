@@ -33,66 +33,6 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
-  // บัญชีจำลองสำหรับทดสอบ Role-Based Access Control ทั้ง 6 บทบาท
-  const DEMO_USERS = [
-    {
-      id: 'usr-unit-1',
-      role: 'UNIT_OFFICER',
-      name: 'ร.อ. สมหมาย กล้าหาญ',
-      unitName: 'กองพลทหารราบที่ 9 (พล.ร.9)',
-      badge: 'เจ้าหน้าที่หน่วย (ผู้เสนอเรื่อง)',
-      desc: 'ยื่นเสนอเรื่อง กพ.4, ปักหมุดที่เกิดเหตุ, แนบเอกสาร 10 รายการ'
-    },
-    {
-      id: 'usr-unit-2',
-      role: 'UNIT_OFFICER',
-      name: 'พ.ต. ยุทธนา มีชัย',
-      unitName: 'กรมทหารพรานที่ 41 (ทภ.4)',
-      badge: 'เจ้าหน้าที่หน่วย (ทภ.4/อส.ทพ.)',
-      desc: 'ยื่นเรื่องกำลังพลพื้นที่เสี่ยงภัย ชายแดนภาคใต้'
-    },
-    {
-      id: 'usr-ksp-1',
-      role: 'KSP_OFFICER',
-      name: 'พ.ท. อภิสิทธิ์ กสพการ',
-      unitName: 'กพ.ทบ. (กสพ.ฯ)',
-      badge: 'กพ.ทบ. (กสพ.ฯ ตรวจ 10 เอกสาร)',
-      desc: 'ตรวจความสมบูรณ์ 10 เอกสาร, ตีกลับให้แก้ไข, เสนอ จก.กพ.ทบ.'
-    },
-    {
-      id: 'usr-cmd-1',
-      role: 'COMMANDER',
-      name: 'พล.ท. พงศกร (จก.กพ.ทบ.)',
-      unitName: 'บก.ทบ. / กรมกำลังพลทหารบก',
-      badge: 'ผู้บังคับบัญชา (ลงนามอนุมัติ)',
-      desc: 'พิจารณาอนุมัติสั่งจ่ายเงินสินไหมทดแทน'
-    },
-    {
-      id: 'usr-ins-1',
-      role: 'INSURANCE_REP',
-      name: 'คุณวิชัย (บ.ทิพยประกันภัย)',
-      unitName: 'บริษัทประกันภัย',
-      badge: 'บ.ประกันภัย (โอนเงินสินไหม)',
-      desc: 'โอนเงิน 60,000 / 300,000 บ. เข้าบัญชีทายาท พร้อมแนบสลิป'
-    },
-    {
-      id: 'usr-sk-1',
-      role: 'SK_OFFICER',
-      name: 'พ.อ. ธนากร (สก.ทบ.)',
-      unitName: 'กรมสวัสดิการทหารบก',
-      badge: 'สก.ทบ. (รับทราบยอดจ่าย)',
-      desc: 'รับทราบยอดการจ่ายเงินสินไหม และสรุปปิดเคส'
-    },
-    {
-      id: 'usr-admin-1',
-      role: 'ADMIN',
-      name: 'พ.อ. ชนินทร์ ปฏิบัติการ',
-      unitName: 'ศูนย์เทคโนโลยีสารสนเทศ ทบ.',
-      badge: 'ผู้ดูแลระบบ (Admin สูงสุด)',
-      desc: 'จัดการสิทธิ์ผู้ใช้, โครงสร้างหน่วย, ตั้งค่า SLA และบอทแจ้งเตือน'
-    }
-  ];
-
   // ธีมที่มีให้เลือก (Default: เขียวคราม ไล่เฉด สะอาดตาอ่านง่าย)
   const THEMES = [
     {
@@ -185,14 +125,6 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
     if (propSetTheme) propSetTheme(themeId);
     setShowThemeMenu(false);
     window.dispatchEvent(new CustomEvent('rta_theme_change', { detail: themeId }));
-  };
-
-  // สลับสิทธิ์ผู้ใช้ (Demo Role Switcher)
-  const handleSwitchUser = (u) => {
-    localStorage.setItem('rta_user', JSON.stringify(u));
-    setCurrentUser(u);
-    setShowRoleSwitcher(false);
-    window.dispatchEvent(new Event('rta_auth_change'));
   };
 
   // ออกจากระบบ (Logout)
@@ -584,49 +516,6 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                           <span style={{ fontSize: '11px', color: 'var(--cyan-accent)' }}>เปิดหน้า →</span>
                         </Link>
                       </div>
-                    )}
-
-                    {/* รายการสลับสิทธิ์เฉพาะผู้ดูแลระบบ (Admin Testing) */}
-                    {currentUser?.role === 'ADMIN' && (
-                      <>
-                        <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span>ทดสอบสิทธิ์ในมุมมองบทบาท (Role View):</span>
-                          <span style={{ color: 'var(--gold-primary)', fontSize: '10.5px' }}>RBAC</span>
-                        </div>
-
-                        <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
-                          {DEMO_USERS.map((u) => {
-                            const isCurrent = currentUser?.id === u.id;
-                            return (
-                              <button
-                                key={u.id}
-                                onClick={() => handleSwitchUser(u)}
-                                style={{
-                                  width: '100%',
-                                  padding: '7px 10px',
-                                  background: isCurrent ? 'rgba(20, 184, 166, 0.22)' : 'rgba(255, 255, 255, 0.02)',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  color: '#fff',
-                                  textAlign: 'left',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '2px',
-                                  borderLeft: isCurrent ? '3px solid var(--cyan-accent)' : '3px solid transparent',
-                                  transition: 'all 0.15s ease'
-                                }}
-                              >
-                                <div style={{ fontSize: '12px', fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
-                                  <span>{u.name}</span>
-                                  {isCurrent && <span style={{ fontSize: '10px', color: 'var(--cyan-accent)' }}>● ปัจจุบัน</span>}
-                                </div>
-                                <div style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>{u.badge}</div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </>
                     )}
 
                     {/* ปุ่มออกจากระบบ (Logout) */}

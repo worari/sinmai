@@ -28,7 +28,14 @@ import {
   Key,
   Eye,
   AlertTriangle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Laptop,
+  Smartphone,
+  Globe
 } from 'lucide-react';
 import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId, formatThaiDate } from '@/lib/thai-utils';
 import { USER_ROLES, USER_STATUS } from '@/lib/constants';
@@ -52,6 +59,8 @@ export default function UserManagementPage() {
   const [logsTotal, setLogsTotal] = useState(0);
   const [logsQuery, setLogsQuery] = useState('');
   const [logsActionFilter, setLogsActionFilter] = useState('ALL');
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsTotalPages, setLogsTotalPages] = useState(1);
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -83,12 +92,20 @@ export default function UserManagementPage() {
   const [savingAction, setSavingAction] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('rta_user');
-    if (saved) {
-      try { setCurrentUser(JSON.parse(saved)); } catch (e) {}
-    }
+    const checkAuth = () => {
+      const saved = localStorage.getItem('rta_user');
+      if (saved) {
+        try { setCurrentUser(JSON.parse(saved)); } catch (e) { setCurrentUser(null); }
+      } else {
+        setCurrentUser(null);
+      }
+    };
+    checkAuth();
     loadUsers();
-    loadLogs();
+    loadLogs('', 'ALL', 1);
+
+    window.addEventListener('rta_auth_change', checkAuth);
+    return () => window.removeEventListener('rta_auth_change', checkAuth);
   }, []);
 
   const loadUsers = async () => {
@@ -109,23 +126,49 @@ export default function UserManagementPage() {
     }
   };
 
-  const loadLogs = async (query = logsQuery, action = logsActionFilter) => {
+  const loadLogs = async (query = logsQuery, action = logsActionFilter, page = logsPage) => {
     setLogsLoading(true);
     try {
       const params = new URLSearchParams();
       if (query.trim()) params.set('q', query.trim());
       if (action !== 'ALL') params.set('action', action);
-      params.set('limit', '100');
+      params.set('limit', '10');
+      params.set('page', String(page));
 
       const res = await fetch(`/api/users/logs?${params.toString()}`);
       const data = await res.json();
       if (data.success) {
         setLogs(data.logs || []);
         setLogsTotal(data.total || 0);
+        setLogsTotalPages(data.totalPages || 1);
+        setLogsPage(data.page || 1);
       }
     } catch (e) {
       console.error('Failed to load logs', e);
     } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const handleClearLogs = async () => {
+    if (!confirm('ยืนยันการลบล้างประวัติการใช้งานและ Audit Logs ทั้งหมดหรือไม่?\nการกระทำนี้จะล้างประวัติการตรวจสอบทั้งหมดในระบบ และไม่สามารถย้อนกลับได้')) {
+      return;
+    }
+    setLogsLoading(true);
+    try {
+      const res = await fetch(`/api/users/logs?adminId=${currentUser?.id || ''}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification(data.message || 'ลบล้างประวัติการใช้งานเรียบร้อยแล้ว');
+        loadLogs('', 'ALL', 1);
+      } else {
+        showNotification(data.message || 'ลบล้างประวัติไม่สำเร็จ', true);
+        setLogsLoading(false);
+      }
+    } catch (e) {
+      showNotification('เกิดข้อผิดพลาด: ' + e.message, true);
       setLogsLoading(false);
     }
   };
@@ -346,7 +389,7 @@ export default function UserManagementPage() {
     if (!selectedUserForAction) return;
     setSavingAction(true);
     try {
-      const res = await fetch(`/api/users?userId=${encodeURIComponent(selectedUserForAction.id)}`, {
+      const res = await fetch(`/api/users?userId=${encodeURIComponent(selectedUserForAction.id)}&adminId=${encodeURIComponent(currentUser?.id || '')}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -886,14 +929,32 @@ export default function UserManagementPage() {
                 </div>
               </div>
 
-              <button 
-                type="button"
-                onClick={() => loadLogs(logsQuery, logsActionFilter)}
-                className="btn btn-secondary"
-              >
-                <RefreshCw size={14} />
-                <span>รีเฟรช Log</span>
-              </button>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button 
+                  type="button"
+                  onClick={() => loadLogs(logsQuery, logsActionFilter, logsPage)}
+                  className="btn btn-secondary"
+                  title="รีเฟรชประวัติ Log ล่าสุด"
+                >
+                  <RefreshCw size={14} />
+                  <span>รีเฟรช Log</span>
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={handleClearLogs}
+                  className="btn btn-secondary"
+                  style={{
+                    color: '#f87171',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    background: 'rgba(239, 68, 68, 0.1)'
+                  }}
+                  title="ลบล้างประวัติ Audit Logs ทั้งหมด"
+                >
+                  <Trash2 size={14} />
+                  <span>ลบล้างข้อมูล Log</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -908,11 +969,12 @@ export default function UserManagementPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '12px 14px', width: '170px' }}>วันและเวลา (ประทับเวลา)</th>
-                      <th style={{ padding: '12px 14px', width: '180px' }}>ผู้ดำเนินการ</th>
-                      <th style={{ padding: '12px 14px', width: '140px' }}>กิจกรรม / Action</th>
+                      <th style={{ padding: '12px 14px', width: '160px' }}>วันและเวลา (ประทับเวลา)</th>
+                      <th style={{ padding: '12px 14px', width: '170px' }}>ผู้ดำเนินการ</th>
+                      <th style={{ padding: '12px 14px', width: '135px' }}>กิจกรรม / Action</th>
                       <th style={{ padding: '12px 14px' }}>รายละเอียดการดำเนินการ</th>
-                      <th style={{ padding: '12px 14px', width: '110px', textAlign: 'center' }}>IP Address</th>
+                      <th style={{ padding: '12px 14px', width: '180px' }}>อุปกรณ์ / เครื่องมือ</th>
+                      <th style={{ padding: '12px 14px', width: '140px', textAlign: 'center' }}>IP Address จริง</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -926,6 +988,10 @@ export default function UserManagementPage() {
                         minute: '2-digit',
                         second: '2-digit'
                       });
+
+                      const isMobile = log.device?.toLowerCase().includes('android') || 
+                                       log.device?.toLowerCase().includes('iphone') || 
+                                       log.device?.toLowerCase().includes('mobile');
 
                       return (
                         <tr key={log.id} style={{ borderBottom: '1px solid var(--border-glass)' }}>
@@ -956,8 +1022,32 @@ export default function UserManagementPage() {
                               </div>
                             )}
                           </td>
-                          <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--text-dim)', fontFamily: 'monospace', fontSize: '11px' }}>
-                            {log.ip || '-'}
+                          <td style={{ padding: '12px 14px', color: 'var(--text-dim)', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {isMobile ? (
+                                <Smartphone size={14} color="var(--cyan-accent)" style={{ flexShrink: 0 }} />
+                              ) : (
+                                <Laptop size={14} color="var(--gold-primary)" style={{ flexShrink: 0 }} />
+                              )}
+                              <span style={{ color: '#fff', fontSize: '11.5px' }}>{log.device || 'คอมพิวเตอร์ (Web Browser)'}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: '5px', 
+                              background: 'rgba(6, 182, 212, 0.08)', 
+                              border: '1px solid rgba(6, 182, 212, 0.2)',
+                              color: 'var(--cyan-accent)', 
+                              padding: '3px 8px', 
+                              borderRadius: '4px', 
+                              fontFamily: 'monospace', 
+                              fontSize: '11.5px' 
+                            }}>
+                              <Globe size={11} />
+                              <span>{log.ip || '127.0.0.1'}</span>
+                            </span>
                           </td>
                         </tr>
                       );
@@ -966,6 +1056,118 @@ export default function UserManagementPage() {
                 </table>
               </div>
             )}
+
+            {/* Pagination Controls (หน้าละ 10 แถว พร้อมปุ่มหน้าแรก / หน้าสุดท้าย) */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
+              paddingTop: '18px',
+              marginTop: '16px',
+              borderTop: '1px solid var(--border-glass)',
+              fontSize: '13px',
+              color: 'var(--text-muted)'
+            }}>
+              <div>
+                แสดงรายการที่ <strong>{logs.length > 0 ? (logsPage - 1) * 10 + 1 : 0} - {Math.min(logsPage * 10, logsTotal)}</strong> จากทั้งหมด <strong>{logsTotal}</strong> รายการ (10 แถวต่อหน้า)
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {/* หน้าแรก */}
+                <button
+                  type="button"
+                  onClick={() => loadLogs(logsQuery, logsActionFilter, 1)}
+                  disabled={logsPage <= 1 || logsLoading}
+                  className="btn btn-secondary btn-sm"
+                  style={{ opacity: logsPage <= 1 ? 0.4 : 1, padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="ไปยังหน้าแรก"
+                >
+                  <ChevronsLeft size={14} />
+                  <span>หน้าแรก</span>
+                </button>
+
+                {/* หน้าก่อนหน้า */}
+                <button
+                  type="button"
+                  onClick={() => loadLogs(logsQuery, logsActionFilter, logsPage - 1)}
+                  disabled={logsPage <= 1 || logsLoading}
+                  className="btn btn-secondary btn-sm"
+                  style={{ opacity: logsPage <= 1 ? 0.4 : 1, padding: '4px 8px' }}
+                  title="หน้าก่อนหน้า"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+
+                {/* ตัวเลขหน้า */}
+                <div style={{ display: 'flex', gap: '4px', margin: '0 4px' }}>
+                  {Array.from({ length: Math.min(5, logsTotalPages) }, (_, i) => {
+                    let pageNum;
+                    if (logsTotalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (logsPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (logsPage >= logsTotalPages - 2) {
+                      pageNum = logsTotalPages - 4 + i;
+                    } else {
+                      pageNum = logsPage - 2 + i;
+                    }
+
+                    const isCurrent = pageNum === logsPage;
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => loadLogs(logsQuery, logsActionFilter, pageNum)}
+                        disabled={logsLoading}
+                        style={{
+                          minWidth: '32px',
+                          height: '32px',
+                          borderRadius: '6px',
+                          border: isCurrent ? '1px solid var(--cyan-accent)' : '1px solid var(--border-subtle)',
+                          background: isCurrent ? 'rgba(20, 184, 166, 0.25)' : 'rgba(255, 255, 255, 0.03)',
+                          color: isCurrent ? '#fff' : 'var(--text-muted)',
+                          fontWeight: isCurrent ? 700 : 400,
+                          cursor: isCurrent ? 'default' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '12.5px'
+                        }}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* หน้าถัดไป */}
+                <button
+                  type="button"
+                  onClick={() => loadLogs(logsQuery, logsActionFilter, logsPage + 1)}
+                  disabled={logsPage >= logsTotalPages || logsLoading}
+                  className="btn btn-secondary btn-sm"
+                  style={{ opacity: logsPage >= logsTotalPages ? 0.4 : 1, padding: '4px 8px' }}
+                  title="หน้าถัดไป"
+                >
+                  <ChevronRight size={14} />
+                </button>
+
+                {/* หน้าสุดท้าย */}
+                <button
+                  type="button"
+                  onClick={() => loadLogs(logsQuery, logsActionFilter, logsTotalPages)}
+                  disabled={logsPage >= logsTotalPages || logsLoading}
+                  className="btn btn-secondary btn-sm"
+                  style={{ opacity: logsPage >= logsTotalPages ? 0.4 : 1, padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="ไปยังหน้าสุดท้าย"
+                >
+                  <span>หน้าสุดท้าย</span>
+                  <ChevronsRight size={14} />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
