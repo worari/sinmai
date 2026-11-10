@@ -148,8 +148,31 @@ export default function ManualsManagementPage() {
     stepsText: ''
   });
 
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
   useEffect(() => {
-    loadData();
+    const checkUserAndLoad = () => {
+      const saved = localStorage.getItem('rta_user');
+      let u = null;
+      if (saved) {
+        try {
+          u = JSON.parse(saved);
+        } catch (e) {}
+      }
+      setCurrentUser(u);
+      setAuthChecked(true);
+
+      if (u && u.role === 'ADMIN') {
+        loadData();
+      } else {
+        setLoading(false);
+      }
+    };
+
+    checkUserAndLoad();
+    window.addEventListener('rta_auth_change', checkUserAndLoad);
+    return () => window.removeEventListener('rta_auth_change', checkUserAndLoad);
   }, []);
 
   const loadData = async () => {
@@ -281,8 +304,8 @@ export default function ManualsManagementPage() {
       const url = '/api/content/manuals';
       const method = isEdit ? 'PUT' : 'POST';
       const payload = isEdit 
-        ? { id: editingManual.id, ...manualForm, hasAttachment: !!(manualForm.fileName || manualForm.fileData) } 
-        : { ...manualForm, hasAttachment: !!(manualForm.fileName || manualForm.fileData) };
+        ? { id: editingManual.id, ...manualForm, hasAttachment: !!(manualForm.fileName || manualForm.fileData), userId: currentUser?.id } 
+        : { ...manualForm, hasAttachment: !!(manualForm.fileName || manualForm.fileData), userId: currentUser?.id };
 
       const res = await fetch(url, {
         method,
@@ -316,7 +339,7 @@ export default function ManualsManagementPage() {
     setMessage('');
     setError('');
     try {
-      const res = await fetch(`/api/content/manuals?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/content/manuals?id=${id}&userId=${currentUser?.id || ''}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'ลบคู่มือไม่สำเร็จ');
       setMessage(data.message);
@@ -372,8 +395,8 @@ export default function ManualsManagementPage() {
       const url = '/api/content/videos';
       const method = isEdit ? 'PUT' : 'POST';
       const payload = isEdit 
-        ? { id: editingVideo.id, ...videoForm, steps: videoForm.stepsText.split('\n').filter(Boolean) }
-        : { ...videoForm, steps: videoForm.stepsText.split('\n').filter(Boolean) };
+        ? { id: editingVideo.id, ...videoForm, steps: videoForm.stepsText.split('\n').filter(Boolean), userId: currentUser?.id }
+        : { ...videoForm, steps: videoForm.stepsText.split('\n').filter(Boolean), userId: currentUser?.id };
 
       const res = await fetch(url, {
         method,
@@ -407,7 +430,7 @@ export default function ManualsManagementPage() {
     setMessage('');
     setError('');
     try {
-      const res = await fetch(`/api/content/videos?id=${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/content/videos?id=${id}&userId=${currentUser?.id || ''}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'ลบวิดีโอไม่สำเร็จ');
       setMessage(data.message);
@@ -426,6 +449,44 @@ export default function ManualsManagementPage() {
       setError(err.message);
     }
   };
+
+  // ตรวจสอบสิทธิ์การเข้าถึง: สงวนสิทธิ์เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้น
+  if (authChecked && currentUser?.role !== 'ADMIN') {
+    return (
+      <div className="container" style={{ paddingTop: '60px', paddingBottom: '60px', maxWidth: '680px', margin: '0 auto', textAlign: 'center' }}>
+        <div className="glass-panel" style={{ padding: '44px 32px', border: '1px solid rgba(239, 68, 68, 0.35)', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.15)' }}>
+          <div style={{
+            width: '72px',
+            height: '72px',
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px',
+            color: '#ef4444'
+          }}>
+            <BookOpen size={38} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#fff', marginBottom: '12px' }}>
+            จำกัดสิทธิ์เฉพาะผู้ดูแลระบบ (ADMIN Only)
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: '1.7', marginBottom: '28px' }}>
+            เมนู <strong>"จัดการคู่มือและวิดีโอ"</strong> สำหรับการอัปโหลด แก้ไข และลบเนื้อหา สงวนสิทธิ์สำหรับผู้ดูแลระบบ (ADMIN) เท่านั้น<br />
+            สำหรับกำลังพลและผู้ใช้งานทั่วไป สามารถเข้าศึกษาคู่มือและรับชมวิดีโอแนะนำการใช้งานได้ที่เมนู <strong>"คลังความรู้"</strong>
+          </p>
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => window.location.href = '/knowledge'} className="btn btn-primary" style={{ minWidth: '160px' }}>
+              ไปยังหน้า "คลังความรู้"
+            </button>
+            <button onClick={() => window.location.href = '/claims'} className="btn btn-secondary" style={{ minWidth: '160px' }}>
+              ดูรายการคำร้อง
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container" style={{ paddingTop: '28px' }}>

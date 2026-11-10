@@ -29,12 +29,27 @@ export default function DashboardPage() {
   const [lastEvent, setLastEvent] = useState(null);
 
   useEffect(() => {
+    let user = null;
     const saved = localStorage.getItem('rta_user');
     if (saved) {
-      try { setCurrentUser(JSON.parse(saved)); } catch (e) {}
+      try { 
+        user = JSON.parse(saved);
+        setCurrentUser(user); 
+      } catch (e) {}
     }
 
-    loadDashboardData();
+    loadDashboardData(user);
+
+    const handleAuth = () => {
+      let u = null;
+      const s = localStorage.getItem('rta_user');
+      if (s) {
+        try { u = JSON.parse(s); } catch (e) {}
+      }
+      setCurrentUser(u);
+      loadDashboardData(u);
+    };
+    window.addEventListener('rta_auth_change', handleAuth);
 
     // เชื่อมต่อ Socket.io สำหรับ Live Dashboard
     const socket = io();
@@ -63,15 +78,17 @@ export default function DashboardPage() {
     });
 
     return () => {
+      window.removeEventListener('rta_auth_change', handleAuth);
       socket.disconnect();
     };
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (user = currentUser) => {
     try {
+      const claimsUrl = user?.id ? `/api/claims?userId=${user.id}` : '/api/claims';
       const [resStats, resClaims] = await Promise.all([
         fetch('/api/stats').then((r) => r.json()),
-        fetch('/api/claims').then((r) => r.json())
+        fetch(claimsUrl).then((r) => r.json())
       ]);
 
       if (resStats.success) setStats(resStats.stats);

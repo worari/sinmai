@@ -31,15 +31,23 @@ export default function ClaimsListPage() {
   const [slaFilter, setSlaFilter] = useState('ALL');
 
   useEffect(() => {
-    const saved = localStorage.getItem('rta_user');
-    let user = null;
-    if (saved) {
-      try {
-        user = JSON.parse(saved);
-        setCurrentUser(user);
-      } catch (e) {}
-    }
-    loadClaims(user);
+    const handleAuth = () => {
+      const saved = localStorage.getItem('rta_user');
+      let user = null;
+      if (saved) {
+        try {
+          user = JSON.parse(saved);
+          setCurrentUser(user);
+        } catch (e) {}
+      } else {
+        setCurrentUser(null);
+      }
+      loadClaims(user);
+    };
+
+    handleAuth();
+    window.addEventListener('rta_auth_change', handleAuth);
+    return () => window.removeEventListener('rta_auth_change', handleAuth);
   }, []);
 
   const loadClaims = async (user) => {
@@ -108,7 +116,7 @@ export default function ClaimsListPage() {
             <span>รายการคำร้องเสนอขอรับสิทธิเงินค่าสินไหมทดแทน</span>
             {currentUser?.role === 'UNIT_OFFICER' ? (
               <span className="badge badge-amber" style={{ fontSize: '12px' }}>
-                เฉพาะสังกัด: {currentUser.unitName}
+                เฉพาะโครงสร้างสังกัด: {currentUser.unitName}
               </span>
             ) : (
               <span className="badge badge-blue" style={{ fontSize: '12px' }}>
@@ -118,7 +126,7 @@ export default function ClaimsListPage() {
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
             {currentUser?.role === 'UNIT_OFFICER'
-              ? 'ระบบกำหนดสิทธิให้เจ้าหน้าที่หน่วยเห็นและจัดการเฉพาะข้อมูลในหน่วยสังกัดตัวเองเท่านั้น'
+              ? `ระบบจำกัดสิทธิ์ (RBAC) ให้มองเห็นเฉพาะรายงานภายในโครงสร้างสายการบังคับบัญชาของ ${currentUser.unitName || 'สังกัดตนเอง'} เท่านั้น ไม่สามารถดูรายงานของหน่วยอื่นได้`
               : 'ตรวจสอบและกำกับดูแลภาพรวม ติดตามสถานะ Workflows 5 ขั้นตอน และกรอบเวลา SLA 30 วัน'}
           </p>
         </div>

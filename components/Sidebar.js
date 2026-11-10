@@ -117,13 +117,15 @@ export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser }) {
       label: 'จัดการโครงสร้างหน่วย', 
       href: '/units', 
       icon: GitFork, 
-      allowedRoles: ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER'] 
+      allowedRoles: ['ADMIN'],
+      badge: 'Admin'
     },
     { 
       label: 'จัดการคู่มือและวิดีโอ', 
       href: '/manuals', 
       icon: BookOpen, 
-      allowedRoles: ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER'] 
+      allowedRoles: ['ADMIN'],
+      badge: 'Admin'
     },
     { label: 'คลังความรู้', href: '/knowledge', icon: BookOpen, allowedRoles: ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER', 'INSURANCE_REP', 'SK_OFFICER'], desc: 'คู่มือและวิดีโอสอนการใช้งาน' },
     { label: 'แบบทดสอบความรู้', href: '/knowledge/exam', icon: CheckCircle2, allowedRoles: ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER', 'INSURANCE_REP', 'SK_OFFICER'], desc: 'ทดสอบก่อนใช้งานระบบ' },

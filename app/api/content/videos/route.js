@@ -14,6 +14,14 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
+    const userId = body.userId || body.adminId;
+    if (userId) {
+      const user = db.findUserById(userId);
+      if (user && user.role !== 'ADMIN') {
+        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถเพิ่มวิดีโอได้' }, { status: 403 });
+      }
+    }
+
     if (!body.title) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุชื่อคลิปวิดีโอ' }, { status: 400 });
     }
@@ -27,6 +35,14 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     const body = await request.json();
+    const userId = body.userId || body.adminId;
+    if (userId) {
+      const user = db.findUserById(userId);
+      if (user && user.role !== 'ADMIN') {
+        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถแก้ไขวิดีโอได้' }, { status: 403 });
+      }
+    }
+
     const { id, ...updateData } = body;
     if (!id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสวิดีโอที่ต้องการแก้ไข' }, { status: 400 });
@@ -42,6 +58,14 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const userId = searchParams.get('userId');
+    if (userId) {
+      const user = db.findUserById(userId);
+      if (user && user.role !== 'ADMIN') {
+        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถลบวิดีโอได้' }, { status: 403 });
+      }
+    }
+
     if (!id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสวิดีโอที่ต้องการลบ' }, { status: 400 });
     }

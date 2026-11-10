@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { triggerStatusPopup } from '@/components/StatusModal';
 
-const ADMIN_ROLES = ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER'];
+const ADMIN_ROLES = ['ADMIN'];
 
 export default function KnowledgeAdminPage() {
   const [user, setUser] = useState(null);

@@ -26,6 +26,7 @@ import { FISCAL_YEAR_MONTHS } from '@/lib/thai-utils';
 export default function ReportsPage() {
   const [stats, setStats] = useState(null);
   const [claims, setClaims] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Fiscal Year Filters
@@ -38,19 +39,40 @@ export default function ReportsPage() {
   const [hoveredMonth, setHoveredMonth] = useState(null);
 
   useEffect(() => {
-    loadReportsData(selectedFiscalYear, compareFiscalYear);
+    const saved = localStorage.getItem('rta_user');
+    let u = null;
+    if (saved) {
+      try {
+        u = JSON.parse(saved);
+        setCurrentUser(u);
+      } catch (e) {}
+    }
+    loadReportsData(selectedFiscalYear, compareFiscalYear, u);
+
+    const handleAuth = () => {
+      let userObj = null;
+      const s = localStorage.getItem('rta_user');
+      if (s) {
+        try { userObj = JSON.parse(s); } catch (e) {}
+      }
+      setCurrentUser(userObj);
+      loadReportsData(selectedFiscalYear, compareFiscalYear, userObj);
+    };
+    window.addEventListener('rta_auth_change', handleAuth);
+    return () => window.removeEventListener('rta_auth_change', handleAuth);
   }, [selectedFiscalYear, compareFiscalYear]);
 
-  const loadReportsData = async (fy, compFy) => {
+  const loadReportsData = async (fy, compFy, user = currentUser) => {
     setLoading(true);
     try {
       const q = new URLSearchParams();
       if (fy) q.append('fiscalYear', fy);
       if (compFy) q.append('compareFiscalYear', compFy);
 
+      const claimsUrl = user?.id ? `/api/claims?userId=${user.id}` : '/api/claims';
       const [resStats, resClaims] = await Promise.all([
         fetch(`/api/stats?${q.toString()}`).then((r) => r.json()),
-        fetch('/api/claims').then((r) => r.json())
+        fetch(claimsUrl).then((r) => r.json())
       ]);
 
       if (resStats.success && resStats.stats) {

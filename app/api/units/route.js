@@ -25,6 +25,13 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
+    const userId = body.userId || body.adminId;
+    if (userId) {
+      const user = db.findUserById(userId);
+      if (user && user.role !== 'ADMIN') {
+        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถจัดการโครงสร้างหน่วยได้' }, { status: 403 });
+      }
+    }
 
     if (body.action === 'RESET_DEFAULT') {
       const units = db.resetUnits();
@@ -49,6 +56,14 @@ export async function POST(request) {
 export async function PUT(request) {
   try {
     const body = await request.json();
+    const userId = body.userId || body.adminId;
+    if (userId) {
+      const user = db.findUserById(userId);
+      if (user && user.role !== 'ADMIN') {
+        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถแก้ไขโครงสร้างหน่วยได้' }, { status: 403 });
+      }
+    }
+
     if (!body.id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสหน่วยที่ต้องการแก้ไข' }, { status: 400 });
     }
@@ -68,6 +83,14 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const userId = searchParams.get('userId');
+    if (userId) {
+      const user = db.findUserById(userId);
+      if (user && user.role !== 'ADMIN') {
+        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถลบโครงสร้างหน่วยได้' }, { status: 403 });
+      }
+    }
+
     if (!id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสหน่วยที่ต้องการลบ' }, { status: 400 });
     }

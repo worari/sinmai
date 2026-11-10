@@ -81,9 +81,31 @@ export default function MilitaryUnitsPage() {
 
   // Expanded nodes for Tree View
   const [expandedNodes, setExpandedNodes] = useState({});
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    loadUnits();
+    const checkUserAndLoad = () => {
+      const saved = localStorage.getItem('rta_user');
+      let u = null;
+      if (saved) {
+        try {
+          u = JSON.parse(saved);
+        } catch (e) {}
+      }
+      setCurrentUser(u);
+      setAuthChecked(true);
+
+      if (u && u.role === 'ADMIN') {
+        loadUnits();
+      } else {
+        setLoading(false);
+      }
+    };
+
+    checkUserAndLoad();
+    window.addEventListener('rta_auth_change', checkUserAndLoad);
+    return () => window.removeEventListener('rta_auth_change', checkUserAndLoad);
   }, []);
 
   const loadUnits = async () => {
@@ -212,7 +234,8 @@ export default function MilitaryUnitsPage() {
         shortName: modalForm.shortName || modalForm.code,
         rtaPhone: modalForm.rtaPhone ? String(modalForm.rtaPhone).replace(/\D/g, '').slice(0, 5) : '',
         lat: modalForm.lat ? parseFloat(modalForm.lat) : null,
-        lng: modalForm.lng ? parseFloat(modalForm.lng) : null
+        lng: modalForm.lng ? parseFloat(modalForm.lng) : null,
+        userId: currentUser?.id
       };
 
       const url = '/api/units';
@@ -257,7 +280,7 @@ export default function MilitaryUnitsPage() {
     }
 
     try {
-      const res = await fetch(`/api/units?id=${unit.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/units?id=${unit.id}&userId=${currentUser?.id || ''}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'ลบหน่วยไม่สำเร็จ');
@@ -288,7 +311,7 @@ export default function MilitaryUnitsPage() {
       const res = await fetch('/api/units', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'RESET_DEFAULT' })
+        body: JSON.stringify({ action: 'RESET_DEFAULT', userId: currentUser?.id })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message);
@@ -329,6 +352,44 @@ export default function MilitaryUnitsPage() {
   const l1Units = units.filter((u) => u.level === 1);
   const getL2Units = (parentId) => units.filter((u) => u.level === 2 && u.parentId === parentId);
   const getL3Units = (parentId) => units.filter((u) => u.level === 3 && u.parentId === parentId);
+
+  // ตรวจสอบสิทธิ์การเข้าถึง: สงวนสิทธิ์เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้น
+  if (authChecked && currentUser?.role !== 'ADMIN') {
+    return (
+      <div className="container" style={{ paddingTop: '60px', paddingBottom: '60px', maxWidth: '680px', margin: '0 auto', textAlign: 'center' }}>
+        <div className="glass-panel" style={{ padding: '44px 32px', border: '1px solid rgba(239, 68, 68, 0.35)', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.15)' }}>
+          <div style={{
+            width: '72px',
+            height: '72px',
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px',
+            color: '#ef4444'
+          }}>
+            <Shield size={38} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#fff', marginBottom: '12px' }}>
+            จำกัดสิทธิ์เฉพาะผู้ดูแลระบบ (ADMIN Only)
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: '1.7', marginBottom: '28px' }}>
+            เมนู <strong>"จัดการโครงสร้างหน่วยงาน"</strong> สงวนสิทธิ์สำหรับผู้ดูแลระบบ (ADMIN) ของ ทบ. เท่านั้น<br />
+            กำลังพลและเจ้าหน้าที่หน่วยสังกัดไม่มีสิทธิ์เข้าถึงหรือปรับแก้โครงสร้างสายการบังคับบัญชา
+          </p>
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => window.location.href = '/dashboard'} className="btn btn-primary" style={{ minWidth: '160px' }}>
+              กลับสู่หน้า Dashboard
+            </button>
+            <button onClick={() => window.location.href = '/claims'} className="btn btn-secondary" style={{ minWidth: '160px' }}>
+              ดูรายการคำร้อง
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container" style={{ paddingTop: '28px', paddingBottom: '60px' }}>
