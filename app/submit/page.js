@@ -40,7 +40,11 @@ import {
   findUnitById,
   getUnitBreadcrumb,
   validateAttachmentFile,
-  MAX_FILE_SIZE_MB
+  MAX_FILE_SIZE_MB,
+  getPersonnelTypeFromRank,
+  INCIDENT_TYPES,
+  DRIVER_STATUSES,
+  ALCOHOL_TEST_RESULTS
 } from '@/lib/thai-utils';
 import { INITIAL_MILITARY_UNITS } from '@/lib/military-units';
 import LocationPicker from '@/components/LocationPicker';
@@ -68,6 +72,9 @@ export default function SubmitClaimPage() {
     lossDate: new Date().toISOString().split('T')[0],
     claimType: 'HIGH_RISK', // NORMAL (60,000) or HIGH_RISK (300,000)
     lossType: 'DECEASED', // DECEASED or DISABLED
+    incidentType: 'ILLNESS', // ILLNESS (ป่วย), ACCIDENT (อุบัติเหตุ), COMBAT (การรบ/ปะทะ), OTHER (อื่นๆ)
+    isDriver: 'YES', // YES (เป็นผู้ขับขี่), NO (ไม่ใช่ผู้ขับขี่)
+    alcoholTestResult: 'NOT_EXCEEDED', // NOT_EXCEEDED (ไม่เกินที่กฎหมายกำหนด), EXCEEDED (เกิน), PENDING (รอผล), NOT_TESTED (ไม่ได้ตรวจ)
     personnelType: 'นายทหารประทวน',
     casualtyGender: 'ชาย',
     causeOfLoss: '',
@@ -265,7 +272,12 @@ export default function SubmitClaimPage() {
 
   const handleRankChange = (val) => {
     setRankInput(val);
-    setFormData((prev) => ({ ...prev, casualtyRank: val }));
+    const autoType = getPersonnelTypeFromRank(val);
+    setFormData((prev) => ({ 
+      ...prev, 
+      casualtyRank: val,
+      personnelType: autoType
+    }));
     if (val.trim()) {
       const matched = MILITARY_RANKS.filter((r) => r.toLowerCase().includes(val.toLowerCase()));
       setFilteredRanks(matched);
@@ -278,7 +290,12 @@ export default function SubmitClaimPage() {
 
   const selectRank = (rank) => {
     setRankInput(rank);
-    setFormData((prev) => ({ ...prev, casualtyRank: rank }));
+    const autoType = getPersonnelTypeFromRank(rank);
+    setFormData((prev) => ({ 
+      ...prev, 
+      casualtyRank: rank,
+      personnelType: autoType
+    }));
     setShowRankDropdown(false);
   };
 
@@ -472,6 +489,9 @@ export default function SubmitClaimPage() {
         userId: currentUser?.id || 'usr-unit-1',
         claimData: {
           ...formData,
+          incidentType: formData.incidentType,
+          isDriver: formData.incidentType === 'ACCIDENT' ? formData.isDriver : null,
+          alcoholTestResult: formData.incidentType === 'ACCIDENT' ? formData.alcoholTestResult : null,
           lossSpecificCause: specificCause,
           deathCertificateCause: formData.lossType === 'DECEASED' ? specificCause : (formData.deathCertificateCause || ''),
           disabledOrganDetail: formData.lossType === 'DISABLED' ? specificCause : '',
@@ -931,7 +951,12 @@ export default function SubmitClaimPage() {
             </div>
 
             <div className="form-group">
-              <label className="form-label required">ประเภทกำลังพล</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <label className="form-label required" style={{ margin: 0 }}>ประเภทกำลังพล</label>
+                <span style={{ fontSize: '11px', color: 'var(--emerald-success)', fontWeight: 500 }}>
+                  ✨ อัตโนมัติตามยศ
+                </span>
+              </div>
               <select 
                 className="form-select"
                 value={formData.personnelType}
@@ -942,6 +967,9 @@ export default function SubmitClaimPage() {
                   <option key={pt} value={pt}>{pt}</option>
                 ))}
               </select>
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                เทียบสัมพันธ์กับยศ {formData.casualtyRank || '...'} (ปรับเปลี่ยนเองได้)
+              </span>
             </div>
 
             <div className="form-group">
@@ -985,6 +1013,126 @@ export default function SubmitClaimPage() {
               </span>
             </div>
 
+          </div>
+
+          {/* ข้อมูลลักษณะการเกิดเหตุ: ป่วย หรือ อุบัติเหตุ */}
+          <div style={{
+            marginTop: '16px',
+            padding: '16px',
+            background: formData.incidentType === 'ACCIDENT' ? 'rgba(234, 179, 8, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+            border: formData.incidentType === 'ACCIDENT' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid var(--border-glass)',
+            borderRadius: '8px'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: formData.incidentType === 'ACCIDENT' ? '1fr 1fr 1.2fr' : '1fr 2fr', gap: '14px', alignItems: 'flex-start' }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label required" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>ลักษณะการเกิดเหตุ</span>
+                  <span className="badge badge-gold" style={{ fontSize: '10.5px' }}>ป่วย / อุบัติเหตุ</span>
+                </label>
+                <select
+                  className="form-select"
+                  value={formData.incidentType}
+                  onChange={(e) => setFormData({ ...formData, incidentType: e.target.value })}
+                  required
+                >
+                  <option value="ILLNESS">ป่วย (โรคประจำตัว / เจ็บป่วยขณะปฏิบัติหน้าที่ / หัวใจวาย)</option>
+                  <option value="ACCIDENT">อุบัติเหตุ (อุบัติเหตุจราจร / ยานพาหนะ / การฝึก / อาวุธ)</option>
+                  <option value="COMBAT">การปฏิบัติการรบ / ปะทะ / ลอบโจมตี / เสี่ยงภัยความมั่นคง</option>
+                  <option value="OTHER">อื่นๆ / ไม่ระบุ</option>
+                </select>
+                <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                  เลือกกรณี ป่วย หรือ อุบัติเหตุ เพื่อระบุข้อมูลประกอบ
+                </span>
+              </div>
+
+              {/* เงื่อนไขเฉพาะกรณีเลือก "อุบัติเหตุ": เลือกว่าเป็นผู้ขับขี่หรือไม่ใช่ผู้ขับขี่ & ผลการตรวจวัดแอลกอฮอล์ */}
+              {formData.incidentType === 'ACCIDENT' ? (
+                <>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label required" style={{ color: 'var(--gold-light)' }}>
+                      สถานะการขับขี่ (กรณีอุบัติเหตุ)
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.isDriver}
+                      onChange={(e) => setFormData({ ...formData, isDriver: e.target.value })}
+                      required
+                      style={{ borderColor: 'rgba(234, 179, 8, 0.4)' }}
+                    >
+                      <option value="YES">🚗 เป็นผู้ขับขี่</option>
+                      <option value="NO">🚶/🚌 ไม่ใช่ผู้ขับขี่ (ผู้โดยสาร / เดินเท้า / ผู้ประสบเหตุ)</option>
+                    </select>
+                    <span style={{ fontSize: '11.5px', color: 'var(--gold-primary)', marginTop: '4px', display: 'block' }}>
+                      {formData.isDriver === 'YES' ? '✓ ผู้สูญเสียเป็นผู้ขับขี่หรือควบคุมยานพาหนะ' : '✓ ผู้สูญเสียเป็นผู้โดยสารหรือบุคคลภายนอก'}
+                    </span>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label required" style={{ color: 'var(--gold-light)' }}>
+                      ผลการตรวจวัดแอลกอฮอล์ในเลือด
+                    </label>
+                    <select
+                      className="form-select"
+                      value={formData.alcoholTestResult}
+                      onChange={(e) => setFormData({ ...formData, alcoholTestResult: e.target.value })}
+                      required
+                      style={{ borderColor: formData.alcoholTestResult === 'EXCEEDED' ? 'var(--ruby-danger)' : 'rgba(234, 179, 8, 0.4)' }}
+                    >
+                      <option value="NOT_EXCEEDED">✓ ไม่เกินที่กฎหมายกำหนด (ไม่พบหรือ ≤ 50 mg%)</option>
+                      <option value="EXCEEDED">⚠️ เกินที่กฎหมายกำหนด (&gt; 50 mg%)</option>
+                      <option value="PENDING">⏳ อยู่ระหว่างรอผลตรวจจากนิติเวช / รพ.</option>
+                      <option value="NOT_TESTED">⚪ ไม่ได้ตรวจ / ไม่สามารถตรวจได้</option>
+                    </select>
+                    <span style={{
+                      fontSize: '11.5px',
+                      color: formData.alcoholTestResult === 'EXCEEDED' ? 'var(--ruby-danger)' : formData.alcoholTestResult === 'NOT_EXCEEDED' ? 'var(--emerald-success)' : 'var(--text-dim)',
+                      marginTop: '4px',
+                      display: 'block'
+                    }}>
+                      {formData.alcoholTestResult === 'EXCEEDED' 
+                        ? '⚠️ ผลตรวจเกิน 50 mg% ต้องแนบหลักฐานข้อ 8 ชี้แจง' 
+                        : 'ผลตรวจระดับแอลกอฮอล์ตามหลักฐานข้อ 8'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px 14px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: '6px',
+                  fontSize: '12.5px',
+                  color: 'var(--text-dim)',
+                  height: '100%',
+                  boxSizing: 'border-box'
+                }}>
+                  {formData.incidentType === 'ILLNESS'
+                    ? '🏥 กรณีป่วย / โรคประจำตัว: ได้รับการยกเว้นไม่ต้องระบุสถานะผู้ขับขี่และผลตรวจแอลกอฮอล์จราจร'
+                    : '🛡️ กรณีปฏิบัติการรบ / เสี่ยงภัยความมั่นคง: เป็นไปตามระเบียบเงินสินไหมทดแทน ทบ.'}
+                </div>
+              )}
+            </div>
+
+            {formData.incidentType === 'ACCIDENT' && (
+              <div style={{
+                marginTop: '12px',
+                padding: '8px 12px',
+                background: 'rgba(234, 179, 8, 0.12)',
+                border: '1px dashed rgba(234, 179, 8, 0.35)',
+                borderRadius: '6px',
+                fontSize: '12px',
+                color: '#fef08a',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <Info size={16} color="var(--gold-primary)" />
+                <span>
+                  <strong>ข้อสังเกตกรณีอุบัติเหตุ:</strong> กรุณาแนบเอกสารข้อที่ 8 (หลักฐานพิสูจน์ระดับแอลกอฮอล์ในเลือด) และเอกสารข้อที่ 9 (ผลการสอบสวนของเจ้าหน้าที่ตำรวจ กรณีอุบัติเหตุทางถนน)
+                </span>
+              </div>
+            )}
           </div>
 
           {/* ข้อมูลสาเหตุการสูญเสียเฉพาะกรณี (เสียชีวิต: ตามใบมรณบัตร / พิการ: อวัยวะที่สูญเสีย) */}

@@ -584,6 +584,37 @@ export default function ClaimDetailPage({ params }) {
               <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>วันที่สูญเสีย (พ.ศ.):</span>
               <span>{formatThaiDate(claim.lossDate)}</span>
             </div>
+
+            <div>
+              <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>ลักษณะการเกิดเหตุ:</span>
+              <span className={`badge ${claim.incidentType === 'ACCIDENT' ? 'badge-amber' : claim.incidentType === 'ILLNESS' ? 'badge-blue' : 'badge-gold'}`}>
+                {claim.incidentType === 'ACCIDENT' ? '⚠️ อุบัติเหตุ' : claim.incidentType === 'ILLNESS' ? '🏥 ป่วย / โรคประจำตัว' : claim.incidentType === 'COMBAT' ? '🛡️ การรบ / เสี่ยงภัย' : (claim.incidentType || 'ไม่ระบุ')}
+              </span>
+            </div>
+
+            {claim.incidentType === 'ACCIDENT' && (
+              <>
+                <div>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>สถานะการขับขี่:</span>
+                  <span style={{ fontWeight: 600, color: claim.isDriver === 'YES' ? 'var(--gold-primary)' : '#93c5fd' }}>
+                    {claim.isDriver === 'YES' ? '🚗 เป็นผู้ขับขี่' : '🚶/🚌 ไม่ใช่ผู้ขับขี่ (ผู้โดยสาร/เดินเท้า)'}
+                  </span>
+                </div>
+
+                <div>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>ผลตรวจวัดแอลกอฮอล์:</span>
+                  <span className={`badge ${claim.alcoholTestResult === 'NOT_EXCEEDED' ? 'badge-emerald' : claim.alcoholTestResult === 'EXCEEDED' ? 'badge-red' : 'badge-amber'}`}>
+                    {claim.alcoholTestResult === 'NOT_EXCEEDED' 
+                      ? '✓ ไม่เกินที่กฎหมายกำหนด (≤ 50 mg%)' 
+                      : claim.alcoholTestResult === 'EXCEEDED' 
+                      ? '⚠️ เกินที่กฎหมายกำหนด (> 50 mg%)' 
+                      : claim.alcoholTestResult === 'PENDING'
+                      ? '⏳ อยู่ระหว่างรอผลตรวจ'
+                      : '⚪ ไม่ได้ตรวจ'}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* ข้อมูลสาเหตุการสูญเสียเฉพาะกรณี (เสียชีวิต: ตามใบมรณบัตร / พิการ: อวัยวะที่สูญเสีย) */}

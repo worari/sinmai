@@ -108,8 +108,12 @@ export async function POST(request) {
       }
     }
 
+    const isAccident = claimData.incidentType === 'ACCIDENT';
     const newClaim = db.createClaim({
       ...claimData,
+      incidentType: claimData.incidentType || 'ILLNESS',
+      isDriver: isAccident ? (claimData.isDriver || 'YES') : null,
+      alcoholTestResult: isAccident ? (claimData.alcoholTestResult || 'NOT_EXCEEDED') : null,
       lossSpecificCause: specificCause,
       deathCertificateCause: claimData.lossType === 'DECEASED' ? specificCause : (claimData.deathCertificateCause || ''),
       disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
