@@ -30,7 +30,11 @@ import {
   Shield,
   FileSpreadsheet,
   Building2,
-  RefreshCw
+  RefreshCw,
+  Lock,
+  ShieldAlert,
+  FileUp,
+  FileCheck2
 } from 'lucide-react';
 import { formatThaiDate, calculateSlaStatus, validateAttachmentFile } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
@@ -109,6 +113,129 @@ export default function ClaimDetailPage({ params }) {
   
   // Full Slip Modal State
   const [showSlipFullModal, setShowSlipFullModal] = useState(false);
+
+  // Commander Approval Modal States (จก.กพ.ทบ. อนุมัติสิทธิเงินสินไหมและแนบตัวเรื่องส่ง บ.ประกันภัย)
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalOrderNo, setApprovalOrderNo] = useState('');
+  const [approvalDate, setApprovalDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [approvalApproverName, setApprovalApproverName] = useState('พล.ท. ชัยพฤกษ์ ด้วงประภัสสร');
+  const [approvalApproverTitle, setApprovalApproverTitle] = useState('เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.)');
+  const [approvalDocName, setApprovalDocName] = useState('');
+  const [approvalDocData, setApprovalDocData] = useState(null);
+  const [approvalDocType, setApprovalDocType] = useState('application/pdf');
+  const [approvalDocSize, setApprovalDocSize] = useState('1.4 MB');
+  const [approvalNotes, setApprovalNotes] = useState('อนุมัติการขอรับสิทธิเงินสินไหมทดแทน และส่งเอกสารตัวเรื่องให้ บริษัท ทิพยประกันภัย จำกัด (มหาชน) ตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา เพื่อดำเนินการโอนเงินให้แก่ทายาทต่อไป');
+  const [approvalFileError, setApprovalFileError] = useState('');
+
+  const handleOpenApprovalModal = () => {
+    const defaultDocNo = claim?.approvalDocument?.docNumber || `กห ๐๔๐๑/อนุมัติ-${claim?.trackingCode ? claim.trackingCode.replace('ทบ-กพ-', '') : '๑๔๒๙'}`;
+    setApprovalOrderNo(defaultDocNo);
+    setApprovalDate(claim?.approvalDocument?.approvedDate || new Date().toISOString().split('T')[0]);
+    if (currentUser?.name && currentUser.role === 'COMMANDER') {
+      setApprovalApproverName(currentUser.name);
+    } else {
+      setApprovalApproverName('พล.ท. ชัยพฤกษ์ ด้วงประภัสสร');
+    }
+    setApprovalApproverTitle('เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.)');
+    setApprovalDocName(claim?.approvalDocument?.fileName || `คำสั่งอนุมัติสิทธิเงินสินไหม_${claim?.trackingCode ? claim.trackingCode.replace('/', '_') : 'official'}.pdf`);
+    setApprovalDocData(claim?.approvalDocument?.fileData || null);
+    setApprovalDocType(claim?.approvalDocument?.fileType || 'application/pdf');
+    setApprovalDocSize(claim?.approvalDocument?.fileSize || '1.4 MB');
+    setApprovalNotes(claim?.approvalDocument?.notes || 'อนุมัติการขอรับสิทธิเงินสินไหมทดแทน และส่งเอกสารตัวเรื่องให้ บริษัท ทิพยประกันภัย จำกัด (มหาชน) ตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา เพื่อดำเนินการโอนเงินให้แก่ทายาทต่อไป');
+    setApprovalFileError('');
+    setShowApprovalModal(true);
+  };
+
+  const handleApprovalFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const val = validateAttachmentFile(file);
+    if (!val.valid) {
+      setApprovalFileError(val.error);
+      e.target.value = '';
+      return;
+    }
+    setApprovalFileError('');
+    setApprovalDocName(file.name);
+    setApprovalDocType(file.type || 'application/pdf');
+    setApprovalDocSize(`${(file.size / 1024).toFixed(0)} KB`);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setApprovalDocData(event.target?.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUseSampleApprovalDoc = () => {
+    setApprovalDocName(`คำสั่งอนุมัติสิทธิเงินสินไหม_ทางการ_ทบ_${claim?.trackingCode ? claim.trackingCode.replace('/', '_') : 'official'}.pdf`);
+    setApprovalDocData(null);
+    setApprovalDocType('application/pdf');
+    setApprovalDocSize('1.4 MB');
+    setApprovalFileError('');
+  };
+
+  const handleConfirmApproval = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (!approvalOrderNo.trim()) {
+      setErrorMsg('กรุณาระบุเลขที่หนังสือ/คำสั่งอนุมัติ ทบ.');
+      return;
+    }
+    if (!approvalDate) {
+      setErrorMsg('กรุณาระบุวันที่ลงนามอนุมัติ');
+      return;
+    }
+    if (!approvalDocName) {
+      setErrorMsg('กรุณาแนบไฟล์เอกสารตัวเรื่องที่อนุมัติส่งให้ บ.ประกันภัย หรือเลือกใช้เอกสารทางการอัตโนมัติ');
+      return;
+    }
+
+    const approvalDocObj = {
+      docNumber: approvalOrderNo.trim(),
+      approvedDate: approvalDate,
+      approverName: approvalApproverName.trim() || 'พล.ท. ชัยพฤกษ์ ด้วงประภัสสร',
+      approverTitle: approvalApproverTitle.trim() || 'เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.)',
+      fileName: approvalDocName,
+      fileData: approvalDocData,
+      fileType: approvalDocType,
+      fileSize: approvalDocSize,
+      notes: approvalNotes.trim() || 'อนุมัติจ่ายเงินสินไหมทดแทนและส่งตัวเรื่องให้ บ.ประกันภัย ตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา',
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: currentUser?.name ? `${currentUser.name} (${currentUser.role || 'จก.กพ.ทบ.'})` : 'จก.กพ.ทบ.'
+    };
+
+    const defaultRemark = `เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.) อนุมัติการจ่ายเงินสินไหมทดแทน (หนังสือเลขที่ ${approvalDocObj.docNumber}) พร้อมแนบเอกสารตัวเรื่องส่งให้ บ.ประกันภัย ตรวจสอบรับทราบ`;
+
+    await handleWorkflowAction('APPROVED', defaultRemark, {
+      approvedAt: new Date().toISOString(),
+      approvalDocument: approvalDocObj,
+      approvalOrderNo: approvalDocObj.docNumber,
+      approvalDate: approvalDocObj.approvedDate
+    });
+
+    setShowApprovalModal(false);
+  };
+
+  const handleOpenApprovalDocPreview = () => {
+    if (!claim?.approvalDocument) return;
+    handleOpenPreviewDoc({
+      index: 'อนุมัติ',
+      name: 'หนังสือคำสั่งอนุมัติสิทธิเงินสินไหมและตัวเรื่องส่ง บ.ประกันภัย (จก.กพ.ทบ.)',
+      title: 'หนังสือคำสั่งอนุมัติสิทธิเงินสินไหม (จก.กพ.ทบ.)',
+      category: 'เอกสารคำสั่งอนุมัติ',
+      isApprovalOrder: true,
+      docNumber: claim.approvalDocument.docNumber,
+      approvedDate: claim.approvalDocument.approvedDate,
+      approverName: claim.approvalDocument.approverName,
+      approverTitle: claim.approvalDocument.approverTitle,
+      fileName: claim.approvalDocument.fileName,
+      fileData: claim.approvalDocument.fileData,
+      notes: claim.approvalDocument.notes,
+      desc: claim.approvalDocument.notes,
+      status: 'VERIFIED'
+    });
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('rta_user');
@@ -411,6 +538,80 @@ export default function ClaimDetailPage({ params }) {
   // สิทธิ์ในการตรวจและพรีวิวเอกสาร
   const canReviewDocs = currentUser?.role === 'KSP_OFFICER' || currentUser?.role === 'INSURANCE_REP' || currentUser?.role === 'ADMIN';
   const isInsuranceRep = currentUser?.role === 'INSURANCE_REP' || currentUser?.role === 'ADMIN';
+
+  // ข้อมูลขั้นตอน Workflow และคำอธิบายสถานะสำหรับระบบควบคุมการ Hold
+  const getWorkflowStepInfo = (status) => {
+    switch (status) {
+      case 'SUBMITTED':
+        return {
+          step: 1,
+          name: 'ขั้นที่ 1: เสนอเรื่องใหม่',
+          desc: 'รอเจ้าหน้าที่ กพ.ทบ. (กสพ.ฯ) รับเรื่องเข้าสู่กระบวนการตรวจเอกสาร',
+          activeRole: 'KSP_OFFICER',
+          activeRoleLabel: 'กพ.ทบ. (กสพ.ฯ)'
+        };
+      case 'UNDER_REVIEW':
+        return {
+          step: 2,
+          name: 'ขั้นที่ 2: กสพ. กำลังตรวจเอกสาร 10 รายการ',
+          desc: 'กสพ.ฯ อยู่ระหว่างตรวจความถูกต้องของเอกสารหลักฐาน และพิจารณาเสนอ จก.กพ.ทบ.',
+          activeRole: 'KSP_OFFICER',
+          activeRoleLabel: 'กพ.ทบ. (กสพ.ฯ)'
+        };
+      case 'REJECTED_BY_KSP':
+        return {
+          step: 2,
+          name: 'ขั้นที่ 2 (ส่งกลับแก้ไข): ตีกลับให้หน่วยแก้ไขเอกสาร',
+          desc: 'กสพ.ฯ ตีกลับเอกสารให้หน่วยแก้ไขตามคอมเมนต์ รอหน่วยส่งเรื่องใหม่',
+          activeRole: 'UNIT_OFFICER',
+          activeRoleLabel: 'เจ้าหน้าที่หน่วยต้นสังกัด'
+        };
+      case 'PENDING_APPROVAL':
+        return {
+          step: 3,
+          name: 'ขั้นที่ 3: รอผู้บังคับบัญชา (จก.กพ.ทบ.) ลงนามอนุมัติ',
+          desc: 'เอกสารผ่านการตรวจแล้ว รอ จก.กพ.ทบ. พิจารณาลงนามอนุมัติและส่งตัวเรื่องให้ บ.ประกันภัย',
+          activeRole: 'COMMANDER',
+          activeRoleLabel: 'ผู้บังคับบัญชา (จก.กพ.ทบ.)'
+        };
+      case 'APPROVED':
+      case 'INSURANCE_PROCESSING':
+      case 'DOC_REQUESTED':
+        return {
+          step: 4,
+          name: 'ขั้นที่ 4: บ.ประกันภัย ตรวจสอบรับทราบการอนุมัติและโอนเงิน',
+          desc: 'ได้รับเอกสารตัวเรื่องอนุมัติจาก จก.กพ.ทบ. แล้ว อยู่ระหว่าง บ.ประกันภัย ตรวจสอบและโอนเงิน',
+          activeRole: 'INSURANCE_REP',
+          activeRoleLabel: 'บริษัทประกันภัย'
+        };
+      case 'PAID':
+        return {
+          step: 5,
+          name: 'ขั้นที่ 5: บ.ประกันภัยโอนเงินแล้ว รอ สก.ทบ. รับทราบยอดปิดเรื่อง',
+          desc: 'โอนเงินสินไหมเข้าบัญชีทายาทเรียบร้อยแล้ว รอ กรมสวัสดิการทหารบก (สก.ทบ.) รับทราบยอดและปิดเรื่องสมบูรณ์',
+          activeRole: 'SK_OFFICER',
+          activeRoleLabel: 'กรมสวัสดิการทหารบก (สก.ทบ.)'
+        };
+      case 'SK_NOTIFIED':
+        return {
+          step: 5,
+          name: 'ขั้นที่ 5: สก.ทบ. รับทราบยอด (ปิดเรื่องสมบูรณ์ 100%)',
+          desc: 'เสร็จสิ้นกระบวนการจ่ายเงินสินไหมทดแทนและรายงานผลเรียบร้อยสมบูรณ์ทุกขั้นตอน',
+          activeRole: 'NONE',
+          activeRoleLabel: 'เสร็จสิ้นสมบูรณ์'
+        };
+      default:
+        return {
+          step: 1,
+          name: status || 'กำลังดำเนินการ',
+          desc: 'อยู่ระหว่างดำเนินการตามกระบวนการ',
+          activeRole: 'ALL',
+          activeRoleLabel: 'เจ้าหน้าที่'
+        };
+    }
+  };
+
+  const currentStepInfo = getWorkflowStepInfo(claim.status);
 
   return (
     <div className="container" style={{ paddingTop: '28px' }}>
@@ -796,16 +997,48 @@ export default function ClaimDetailPage({ params }) {
                 เมื่อผู้บังคับบัญชาอนุมัติแล้ว ตัวแทนบริษัทประกันภัยจะทำหน้าที่ตรวจเอกสารและกดบันทึกการโอนเงินพร้อมแนบสลิป
               </div>
 
-              {/* ปุ่มเปิดฟอร์มบันทึกการโอนเงินสำหรับ บ.ประกันภัย */}
+              {/* กล่องสถานะการตรวจสอบเอกสารอนุมัติของ บ.ประกันภัย */}
+              {claim.approvalDocument ? (
+                <div style={{ marginTop: '10px', padding: '10px 14px', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#6ee7b7', fontSize: '12.5px', textAlign: 'left' }}>
+                  <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CheckCircle2 size={15} />
+                    <span>✓ ตรวจสอบรับทราบการอนุมัติ:</span>
+                  </div>
+                  <div style={{ marginTop: '3px', color: '#e2e8f0' }}>
+                    หนังสือคำสั่งอนุมัติเลขที่: <strong>{claim.approvalDocument.docNumber}</strong> ({formatThaiDate(claim.approvalDocument.approvedDate)})
+                  </div>
+                </div>
+              ) : null}
+
+              {/* ปุ่มเปิดฟอร์มบันทึกการโอนเงินสำหรับ บ.ประกันภัย (พร้อมระบบ Hold ตาม Workflow) */}
               {isInsuranceRep && (
-                <button
-                  onClick={() => setShowTransferModal(true)}
-                  className="btn btn-primary"
-                  style={{ marginTop: '14px', padding: '10px 20px', width: '100%' }}
-                >
-                  <CreditCard size={16} />
-                  <span>เปิดฟอร์มบันทึกการโอนเงิน (พร้อมเลือกวันที่และแนบสลิป)</span>
-                </button>
+                claim.status === 'APPROVED' || claim.status === 'INSURANCE_PROCESSING' || claim.status === 'DOC_REQUESTED' ? (
+                  <button
+                    onClick={() => setShowTransferModal(true)}
+                    className="btn btn-primary"
+                    style={{ marginTop: '14px', padding: '10px 20px', width: '100%', fontWeight: 700 }}
+                  >
+                    <CreditCard size={16} />
+                    <span>เปิดฟอร์มบันทึกการโอนเงิน (พร้อมเลือกวันที่และแนบสลิป)</span>
+                  </button>
+                ) : (
+                  <div style={{
+                    marginTop: '14px',
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    color: '#fca5a5',
+                    fontSize: '12.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}>
+                    <Lock size={15} />
+                    <span>🔒 Hold ไว้: รอ จก.กพ.ทบ. ลงนามอนุมัติและส่งเอกสารตัวเรื่องสั่งจ่ายเงินก่อน</span>
+                  </div>
+                )
               )}
             </div>
           )}
@@ -813,6 +1046,128 @@ export default function ClaimDetailPage({ params }) {
         </div>
 
       </div>
+
+      {/* Section: เอกสารตัวเรื่องที่อนุมัติส่งให้ บ.ประกันภัย ตรวจสอบรับทราบ (เมื่อ จก.กพ.ทบ. อนุมัติแล้ว) */}
+      {claim.approvalDocument && (
+        <div className="glass-panel" style={{
+          padding: '24px',
+          marginBottom: '24px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(212, 175, 55, 0.08) 100%)',
+          border: '1.5px solid var(--emerald-success)',
+          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '10px',
+                background: 'rgba(16, 185, 129, 0.2)',
+                color: 'var(--emerald-success)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <FileCheck size={26} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <h2 style={{ fontSize: '17px', color: '#fff', margin: 0, fontWeight: 700 }}>
+                    เอกสารตัวเรื่องที่อนุมัติส่งให้ บ.ประกันภัย ตรวจสอบรับทราบ
+                  </h2>
+                  <span className="badge badge-emerald" style={{ fontSize: '11px' }}>
+                    ✓ ผู้บังคับบัญชา (จก.กพ.ทบ.) อนุมัติจ่ายเงินแล้ว
+                  </span>
+                </div>
+                <p style={{ fontSize: '12.5px', color: 'var(--text-dim)', marginTop: '3px', margin: 0 }}>
+                  ส่งเรื่องให้ บริษัท ทิพยประกันภัย จำกัด (มหาชน) ตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleOpenApprovalDocPreview}
+                className="btn btn-primary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+              >
+                <Eye size={15} />
+                <span>👁️ เปิดดูเอกสารตัวเรื่องที่อนุมัติ</span>
+              </button>
+
+              <button
+                onClick={() => handleDownloadDoc({
+                  name: 'คำสั่งอนุมัติสิทธิเงินสินไหม_จก_กพ_ทบ',
+                  fileName: claim.approvalDocument.fileName || 'คำสั่งอนุมัติสิทธิเงินสินไหม.pdf',
+                  fileData: claim.approvalDocument.fileData
+                })}
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Download size={15} />
+                <span>ดาวน์โหลดคำสั่ง</span>
+              </button>
+            </div>
+          </div>
+
+          {/* ข้อมูลสรุปเอกสารคำสั่งอนุมัติ */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+            gap: '12px',
+            padding: '14px',
+            borderRadius: '8px',
+            background: 'rgba(0, 0, 0, 0.25)',
+            fontSize: '13.5px'
+          }}>
+            <div>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', display: 'block' }}>เลขที่หนังสือ / คำสั่งอนุมัติ:</span>
+              <strong style={{ color: 'var(--gold-primary)', fontSize: '14.5px' }}>{claim.approvalDocument.docNumber || '-'}</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', display: 'block' }}>ลงวันที่อนุมัติ:</span>
+              <strong style={{ color: '#fff' }}>{formatThaiDate(claim.approvalDocument.approvedDate)}</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', display: 'block' }}>ผู้ลงนามอนุมัติ:</span>
+              <strong style={{ color: '#fff' }}>{claim.approvalDocument.approverName || 'พล.ท. ชัยพฤกษ์ ด้วงประภัสสร'}</strong>
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block' }}>{claim.approvalDocument.approverTitle || 'เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.)'}</span>
+            </div>
+            <div>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', display: 'block' }}>ไฟล์เอกสารตัวเรื่องที่แนบ:</span>
+              <strong style={{ color: '#6ee7b7' }}>{claim.approvalDocument.fileName || 'คำสั่งอนุมัติ.pdf'}</strong>
+              <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block' }}>ขนาด {claim.approvalDocument.fileSize || '1.4 MB'}</span>
+            </div>
+          </div>
+
+          {claim.approvalDocument.notes && (
+            <div style={{ marginTop: '12px', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', fontSize: '12.5px', color: '#cbd5e1' }}>
+              <strong style={{ color: 'var(--emerald-success)' }}>ข้อความสั่งการส่งถึง บ.ประกันภัย:</strong> &quot;{claim.approvalDocument.notes}&quot;
+            </div>
+          )}
+
+          {/* บ.ประกันภัย Acknowledgment Bar */}
+          {isInsuranceRep && (
+            <div style={{
+              marginTop: '12px',
+              padding: '10px 14px',
+              borderRadius: '6px',
+              background: 'rgba(6, 182, 212, 0.12)',
+              border: '1px solid rgba(6, 182, 212, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12.5px',
+              color: '#67e8f9'
+            }}>
+              <ShieldCheck size={18} />
+              <span>
+                <strong>บริษัทประกันภัย ตรวจสอบรับทราบ:</strong> ได้รับเอกสารตัวเรื่องอนุมัติสั่งจ่ายเงินจาก จก.กพ.ทบ. เรียบร้อยแล้ว ท่านสามารถตรวจสอบความถูกต้องและกดบันทึกการโอนเงินสินไหมได้
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Section: เอกสารหลักฐานประกอบ 10 รายการ พร้อมปุ่มพรีวิวและปุ่มตรวจเอกสารสำหรับ กสพ.กพ.ทบ. และ บ.ประกันภัย */}
       <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px' }}>
@@ -1019,15 +1374,74 @@ export default function ClaimDetailPage({ params }) {
         )}
       </div>
 
-      {/* Role-Based Workflow Execution Action Panel */}
+      {/* Role-Based Workflow Execution Action Panel (พร้อมระบบ Hold ตามขั้นตอน) */}
       <div className="glass-panel" style={{ padding: '24px', marginBottom: '24px', borderTop: '3px solid var(--gold-primary)' }}>
-        <h2 style={{ fontSize: '18px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ShieldCheck size={20} color="var(--gold-primary)" />
-          <span>การสั่งการและดำเนินกระบวนการ Workflow ตามสิทธิ์ ({currentUser?.role})</span>
-        </h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+          <h2 style={{ fontSize: '18px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldCheck size={20} color="var(--gold-primary)" />
+            <span>การสั่งการและดำเนินกระบวนการ Workflow ตามสิทธิ์ ({currentUser?.role})</span>
+          </h2>
 
-        <div style={{ marginBottom: '16px' }}>
-          <label className="form-label">หมายเหตุ / ความเห็นการสั่งการ (จะถูกส่งแจ้งเตือนในระบบและ Telegram):</label>
+          <span className="badge badge-amber" style={{ fontSize: '12px' }}>
+            ผู้ใช้งาน: {currentUser?.name} ({currentUser?.badge || currentUser?.role})
+          </span>
+        </div>
+
+        {/* Workflow Current Stage & Hold Policy Indicator Bar */}
+        <div style={{
+          marginBottom: '18px',
+          padding: '12px 16px',
+          borderRadius: '8px',
+          background: 'rgba(0, 0, 0, 0.35)',
+          border: '1px solid var(--border-glass)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              background: 'var(--gold-primary)',
+              boxShadow: '0 0 10px var(--gold-primary)'
+            }}></div>
+            <div>
+              <div style={{ fontSize: '13px', color: '#e2e8f0' }}>
+                <strong>ขั้นตอนปัจจุบัน:</strong>{' '}
+                <span style={{ color: 'var(--gold-primary)', fontWeight: 700 }}>
+                  {currentStepInfo.name}
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                {currentStepInfo.desc}
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '11.5px',
+            color: '#fcd34d',
+            background: 'rgba(245, 158, 11, 0.1)',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: '1px solid rgba(245, 158, 11, 0.25)'
+          }}>
+            <Lock size={13} color="#f59e0b" />
+            <span>ขั้นตอนอื่นถูก <strong>Hold ไว้</strong> จนกว่ากระบวนการปัจจุบันจะเรียบร้อย</span>
+          </div>
+        </div>
+
+        {/* Input หมายเหตุการสั่งการ */}
+        <div style={{ marginBottom: '18px' }}>
+          <label className="form-label" style={{ fontWeight: 600 }}>
+            หมายเหตุ / ความเห็นการสั่งการ (จะถูกส่งแจ้งเตือนในระบบและ Telegram):
+          </label>
           <input 
             type="text"
             className="form-input"
@@ -1037,114 +1451,334 @@ export default function ClaimDetailPage({ params }) {
           />
         </div>
 
-        {/* Action Buttons ตามสิทธิ์ของผู้ใช้ */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+        {/* Action Buttons ตามสิทธิ์และสถานะ Workflow (ปุ่มที่ไม่ถึงขั้นตอนจะถูก Hold ไว้) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           
           {/* 1. สิทธิเจ้าหน้าที่หน่วย (UNIT_OFFICER) */}
-          {currentUser?.role === 'UNIT_OFFICER' && claim.status === 'REJECTED_BY_KSP' && (
-            <button 
-              onClick={() => handleWorkflowAction('SUBMITTED', 'หน่วยได้ดำเนินการแก้ไขเอกสารตามข้อคิดเห็นและส่งตรวจใหม่เรียบร้อย')}
-              className="btn btn-primary"
-              disabled={actionLoading}
-            >
-              <Send size={16} /> ส่งเรื่องที่แก้ไขแล้วให้ กสพ. ตรวจสอบใหม่
-            </button>
+          {(currentUser?.role === 'UNIT_OFFICER' || currentUser?.role === 'ADMIN') && (
+            <div style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', fontWeight: 600 }}>
+                1. สายงานหน่วยต้นสังกัด (UNIT_OFFICER):
+              </div>
+              
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {claim.status === 'REJECTED_BY_KSP' ? (
+                  <button 
+                    onClick={() => handleWorkflowAction('SUBMITTED', 'หน่วยได้ดำเนินการแก้ไขเอกสารตามข้อคิดเห็นและส่งตรวจใหม่เรียบร้อย')}
+                    className="btn btn-primary"
+                    disabled={actionLoading}
+                    style={{ fontWeight: 700 }}
+                  >
+                    <Send size={16} /> ส่งเรื่องที่แก้ไขแล้วให้ กสพ. ตรวจสอบใหม่
+                  </button>
+                ) : (
+                  <button 
+                    className="btn btn-secondary"
+                    disabled={true}
+                    title="ปุ่มนี้จะปลด Hold เมื่อ กสพ. ตีกลับเอกสารให้หน่วยแก้ไข"
+                    style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                  >
+                    <Send size={16} /> ส่งเรื่องที่แก้ไขแล้วให้ กสพ. ตรวจสอบใหม่
+                    <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                      🔒 Hold: คำร้องไม่ได้อยู่ในสถานะถูกตีกลับ
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
           )}
 
           {/* 2. สิทธิ กพ.ทบ. (กสพ.ฯ) (KSP_OFFICER) */}
           {(currentUser?.role === 'KSP_OFFICER' || currentUser?.role === 'ADMIN') && (
-            <>
-              {claim.status === 'SUBMITTED' && (
-                <button 
-                  onClick={() => handleWorkflowAction('UNDER_REVIEW', 'กสพ. รับเรื่องเข้าสู่กระบวนการตรวจเอกสารหลักฐาน')}
-                  className="btn btn-secondary"
-                  disabled={actionLoading}
-                >
-                  <FileText size={16} /> กสพ. รับเรื่องตรวจเอกสาร
-                </button>
-              )}
+            <div style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', fontWeight: 600 }}>
+                2. สายงานตรวจเอกสาร กรมกำลังพลทหารบก (กสพ.กพ.ทบ.):
+              </div>
 
-              <button 
-                onClick={() => handleWorkflowAction('REJECTED_BY_KSP', 'กสพ. ตีกลับเอกสารให้หน่วยแก้ไขตามคอมเมนต์')}
-                className="btn btn-danger"
-                disabled={actionLoading}
-              >
-                <XCircle size={16} /> ตีกลับให้หน่วยแก้ไข (พร้อมคอมเมนต์)
-              </button>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* ปุ่มรับเรื่องตรวจเอกสาร */}
+                {claim.status === 'SUBMITTED' ? (
+                  <button 
+                    onClick={() => handleWorkflowAction('UNDER_REVIEW', 'กสพ. รับเรื่องเข้าสู่กระบวนการตรวจเอกสารหลักฐาน')}
+                    className="btn btn-secondary"
+                    disabled={actionLoading}
+                    style={{ borderColor: 'var(--gold-primary)', color: 'var(--gold-light)' }}
+                  >
+                    <FileText size={16} /> กสพ. รับเรื่องตรวจเอกสาร
+                  </button>
+                ) : claim.status === 'UNDER_REVIEW' ? (
+                  <span className="badge badge-emerald" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                    <CheckCircle2 size={14} /> ✓ กสพ. รับเรื่องตรวจเอกสารแล้ว
+                  </span>
+                ) : (
+                  <button 
+                    className="btn btn-secondary"
+                    disabled={true}
+                    title="ปุ่มถูก Hold ไว้: เรื่องพ้นขั้นตอนการรับเรื่องแล้ว"
+                    style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                  >
+                    <FileText size={16} /> กสพ. รับเรื่องตรวจเอกสาร
+                    <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                      🔒 Hold: พ้นขั้นตอนรับเรื่อง
+                    </span>
+                  </button>
+                )}
 
-              <button 
-                onClick={() => handleWorkflowAction('PENDING_APPROVAL', 'เอกสารถูกต้องครบถ้วน เสนอผู้บังคับบัญชา (จก.กพ.ทบ.) อนุมัติ')}
-                className="btn btn-primary"
-                disabled={actionLoading}
-              >
-                <CheckCircle2 size={16} /> ผ่านการตรวจ เสนอ จก.กพ.ทบ. อนุมัติ
-              </button>
-            </>
+                {/* ปุ่มตีกลับให้หน่วยแก้ไข */}
+                {claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW' ? (
+                  <button 
+                    onClick={() => handleWorkflowAction('REJECTED_BY_KSP', 'กสพ. ตีกลับเอกสารให้หน่วยแก้ไขตามคอมเมนต์')}
+                    className="btn btn-danger"
+                    disabled={actionLoading}
+                  >
+                    <XCircle size={16} /> ตีกลับให้หน่วยแก้ไข (พร้อมคอมเมนต์)
+                  </button>
+                ) : (
+                  <button 
+                    className="btn btn-secondary"
+                    disabled={true}
+                    title="ปุ่มถูก Hold ไว้: เรื่องไม่ได้อยู่ในขั้นตอนการตรวจเอกสารของ กสพ."
+                    style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                  >
+                    <XCircle size={16} /> ตีกลับให้หน่วยแก้ไข
+                    <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                      🔒 Hold: พ้นขั้นตอนตรวจ
+                    </span>
+                  </button>
+                )}
+
+                {/* ปุ่มผ่านการตรวจ เสนอ จก.กพ.ทบ. อนุมัติ */}
+                {claim.status === 'UNDER_REVIEW' || claim.status === 'SUBMITTED' ? (
+                  <button 
+                    onClick={() => handleWorkflowAction('PENDING_APPROVAL', 'เอกสารถูกต้องครบถ้วน เสนอผู้บังคับบัญชา (จก.กพ.ทบ.) อนุมัติ')}
+                    className="btn btn-primary"
+                    disabled={actionLoading}
+                    style={{ fontWeight: 700 }}
+                  >
+                    <CheckCircle2 size={16} /> ผ่านการตรวจ เสนอ จก.กพ.ทบ. อนุมัติ
+                  </button>
+                ) : claim.status === 'PENDING_APPROVAL' ? (
+                  <span className="badge badge-emerald" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                    <CheckCircle2 size={14} /> ✓ เสนอเรื่องขึ้น จก.กพ.ทบ. แล้ว (รออนุมัติ)
+                  </span>
+                ) : claim.status === 'APPROVED' || claim.status === 'INSURANCE_PROCESSING' || claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? (
+                  <span className="badge badge-emerald" style={{ padding: '6px 12px', fontSize: '12px' }}>
+                    <CheckCircle2 size={14} /> ✓ เสนอเรื่องและผ่านการอนุมัติแล้ว
+                  </span>
+                ) : (
+                  <button 
+                    className="btn btn-secondary"
+                    disabled={true}
+                    title="ปุ่มถูก Hold ไว้: รอให้หน่วยส่งเรื่องใหม่ก่อน"
+                    style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                  >
+                    <CheckCircle2 size={16} /> ผ่านการตรวจ เสนอ จก.กพ.ทบ. อนุมัติ
+                    <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                      🔒 Hold: รอหน่วยแก้ไข
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
           )}
 
-          {/* 3. สิทธิ จก.กพ.ทบ. (COMMANDER) */}
+          {/* 3. สิทธิผู้บังคับบัญชา (จก.กพ.ทบ.) (COMMANDER) */}
           {(currentUser?.role === 'COMMANDER' || currentUser?.role === 'ADMIN') && (
-            <>
-              <button 
-                onClick={() => handleWorkflowAction('APPROVED', 'เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.) อนุมัติการจ่ายเงินสินไหมทดแทน')}
-                className="btn btn-success"
-                disabled={actionLoading}
-              >
-                <CheckCircle2 size={16} /> อนุมัติการขอรับสิทธิเงินสินไหม (จก.กพ.ทบ.)
-              </button>
+            <div style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', fontWeight: 600 }}>
+                3. สายงานผู้บังคับบัญชา (เจ้ากรมกำลังพลทหารบก - จก.กพ.ทบ.):
+              </div>
 
-              <button 
-                onClick={() => handleWorkflowAction('REJECTED_BY_KSP', 'ผู้บังคับบัญชาส่งเรื่องกลับให้ทบทวนความถูกต้อง')}
-                className="btn btn-secondary"
-                disabled={actionLoading}
-              >
-                ส่งกลับทบทวน
-              </button>
-            </>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {claim.status === 'PENDING_APPROVAL' ? (
+                  <>
+                    {/* ปุ่มอนุมัติการขอรับสิทธิเงินสินไหม (จก.กพ.ทบ.) -> เปิด Modal แนบเอกสารตัวเรื่องสั่งจ่ายเงินส่ง บ.ประกันภัย */}
+                    <button 
+                      onClick={handleOpenApprovalModal}
+                      className="btn btn-success"
+                      disabled={actionLoading}
+                      style={{
+                        padding: '10px 22px',
+                        fontWeight: 700,
+                        background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                        boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)'
+                      }}
+                    >
+                      <CheckCircle2 size={18} /> อนุมัติการขอรับสิทธิเงินสินไหม (จก.กพ.ทบ.) พร้อมแนบตัวเรื่อง
+                    </button>
+
+                    <button 
+                      onClick={() => handleWorkflowAction('REJECTED_BY_KSP', 'ผู้บังคับบัญชาส่งเรื่องกลับให้ทบทวนความถูกต้อง')}
+                      className="btn btn-secondary"
+                      disabled={actionLoading}
+                    >
+                      ส่งกลับทบทวน
+                    </button>
+                  </>
+                ) : claim.status === 'APPROVED' || claim.status === 'INSURANCE_PROCESSING' || claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span className="badge badge-emerald" style={{ padding: '7px 14px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <CheckCircle2 size={15} /> ✓ จก.กพ.ทบ. อนุมัติการขอรับสิทธิเงินสินไหมแล้ว (ส่งตัวเรื่องให้ บ.ประกันภัย แล้ว)
+                    </span>
+                    <button 
+                      type="button"
+                      onClick={handleOpenApprovalDocPreview}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Eye size={14} /> เปิดดูเอกสารตัวเรื่องที่อนุมัติ
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button 
+                      className="btn btn-secondary"
+                      disabled={true}
+                      title="ปุ่มถูก Hold ไว้: ต้องรอให้ กสพ.กพ.ทบ. ตรวจสอบเอกสาร 10 รายการครบถ้วนและเสนอเรื่องขึ้นมาก่อน"
+                      style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                    >
+                      <CheckCircle2 size={16} /> อนุมัติการขอรับสิทธิเงินสินไหม (จก.กพ.ทบ.)
+                      <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                        🔒 Hold: รอ กสพ. เสนอเรื่อง
+                      </span>
+                    </button>
+
+                    <button 
+                      className="btn btn-secondary"
+                      disabled={true}
+                      title="ปุ่มถูก Hold ไว้: เรื่องไม่ได้อยู่ในขั้นตอนรออนุมัติ"
+                      style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                    >
+                      ส่งกลับทบทวน
+                      <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                        🔒 Hold
+                      </span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           )}
 
-          {/* 4. สิทธิ บริษัทประกันภัย (INSURANCE_REP) */}
+          {/* 4. สิทธิบริษัทประกันภัย (INSURANCE_REP) */}
           {(currentUser?.role === 'INSURANCE_REP' || currentUser?.role === 'ADMIN') && (
-            <>
-              {/* ปุ่มเปิดฟอร์มบันทึกการโอนเงิน (พร้อมเลือกวันที่และแนบสลิป) */}
-              <button 
-                onClick={() => setShowTransferModal(true)}
-                className="btn btn-success"
-                style={{ padding: '10px 20px', fontWeight: 700 }}
-                disabled={actionLoading}
-              >
-                <CreditCard size={18} />
-                <span>💳 บันทึกการโอนเงินสินไหม ({claim.compensationAmount?.toLocaleString('th-TH')} บ.)</span>
-              </button>
+            <div style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', fontWeight: 600 }}>
+                4. สายงานตัวแทนบริษัทประกันภัย (INSURANCE_REP):
+              </div>
 
-              {/* ปุ่มตรวจเอกสารทั้งหมดผ่าน */}
-              <button 
-                onClick={handleVerifyAllDocs}
-                className="btn btn-secondary"
-                disabled={actionLoading}
-              >
-                <CheckCheck size={16} /> ตรวจสอบเอกสารครบถ้วน
-              </button>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {claim.status === 'APPROVED' || claim.status === 'INSURANCE_PROCESSING' || claim.status === 'DOC_REQUESTED' ? (
+                  <>
+                    {/* ปุ่มเปิดฟอร์มบันทึกการโอนเงิน (พร้อมเลือกวันที่และแนบสลิป) */}
+                    <button 
+                      onClick={() => setShowTransferModal(true)}
+                      className="btn btn-success"
+                      style={{ padding: '10px 20px', fontWeight: 700 }}
+                      disabled={actionLoading}
+                    >
+                      <CreditCard size={18} />
+                      <span>💳 บันทึกการโอนเงินสินไหม ({claim.compensationAmount?.toLocaleString('th-TH')} บ.)</span>
+                    </button>
 
-              <button 
-                onClick={() => handleWorkflowAction('DOC_REQUESTED', 'บริษัทประกันภัยขอเอกสารประกอบเพิ่มเติม')}
-                className="btn btn-secondary"
-                disabled={actionLoading}
-              >
-                ขอเอกสารเพิ่มเติม
-              </button>
-            </>
+                    {/* ปุ่มตรวจเอกสารทั้งหมดผ่าน */}
+                    <button 
+                      onClick={handleVerifyAllDocs}
+                      className="btn btn-secondary"
+                      disabled={actionLoading}
+                    >
+                      <CheckCheck size={16} /> ตรวจสอบเอกสารครบถ้วน
+                    </button>
+
+                    <button 
+                      onClick={() => handleWorkflowAction('DOC_REQUESTED', 'บริษัทประกันภัยขอเอกสารประกอบเพิ่มเติม')}
+                      className="btn btn-secondary"
+                      disabled={actionLoading}
+                    >
+                      ขอเอกสารเพิ่มเติม
+                    </button>
+                  </>
+                ) : claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span className="badge badge-emerald" style={{ padding: '7px 14px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <CheckCircle2 size={15} /> ✓ บ.ประกันภัย โอนเงินสินไหมให้ทายาทเรียบร้อยแล้ว ({claim.compensationAmount?.toLocaleString('th-TH')} บ.)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowSlipFullModal(true)}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '12px' }}
+                    >
+                      <Eye size={14} /> ดูสลิปการโอน
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button 
+                      className="btn btn-secondary"
+                      disabled={true}
+                      title="ปุ่มถูก Hold ไว้: ต้องรอให้ จก.กพ.ทบ. ลงนามอนุมัติและแนบเอกสารตัวเรื่องสั่งจ่ายเงินส่งมาก่อน"
+                      style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                    >
+                      <CreditCard size={16} /> บันทึกการโอนเงินสินไหม ({claim.compensationAmount?.toLocaleString('th-TH') || '300,000'} บ.)
+                      <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                        🔒 Hold: รอ จก.กพ.ทบ. อนุมัติ
+                      </span>
+                    </button>
+
+                    <button 
+                      className="btn btn-secondary"
+                      disabled={true}
+                      title="ปุ่มถูก Hold ไว้: ยังไม่ถึงขั้นตอน บ.ประกันภัย ตรวจสอบ"
+                      style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                    >
+                      <CheckCheck size={16} /> ตรวจสอบเอกสารครบถ้วน
+                      <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                        🔒 Hold
+                      </span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           )}
 
           {/* 5. สิทธิ สก.ทบ. (SK_OFFICER) */}
           {(currentUser?.role === 'SK_OFFICER' || currentUser?.role === 'ADMIN') && (
-            <button 
-              onClick={() => handleWorkflowAction('SK_NOTIFIED', 'กรมสวัสดิการทหารบก (สก.ทบ.) รับทราบยอดจ่ายเงินช่วยเหลือเรียบร้อย ปิดเรื่อง')}
-              className="btn btn-primary"
-              disabled={actionLoading}
-            >
-              <CheckCircle2 size={16} /> สก.ทบ. รับทราบยอดจ่ายเงินช่วยเหลือ (ปิดเรื่องสมบูรณ์)
-            </button>
+            <div style={{ padding: '12px 16px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginBottom: '8px', fontWeight: 600 }}>
+                5. สายงานกรมสวัสดิการทหารบก (สก.ทบ.):
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {claim.status === 'PAID' ? (
+                  <button 
+                    onClick={() => handleWorkflowAction('SK_NOTIFIED', 'กรมสวัสดิการทหารบก (สก.ทบ.) รับทราบยอดจ่ายเงินช่วยเหลือเรียบร้อย ปิดเรื่อง')}
+                    className="btn btn-primary"
+                    disabled={actionLoading}
+                    style={{ fontWeight: 700 }}
+                  >
+                    <CheckCircle2 size={16} /> สก.ทบ. รับทราบยอดจ่ายเงินช่วยเหลือ (ปิดเรื่องสมบูรณ์)
+                  </button>
+                ) : claim.status === 'SK_NOTIFIED' ? (
+                  <span className="badge badge-emerald" style={{ padding: '7px 14px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CheckCircle2 size={15} /> ✓ สก.ทบ. รับทราบยอดจ่ายเงินช่วยเหลือและปิดเรื่องสมบูรณ์ 100% แล้ว
+                  </span>
+                ) : (
+                  <button 
+                    className="btn btn-secondary"
+                    disabled={true}
+                    title="ปุ่มถูก Hold ไว้: ต้องรอให้บริษัทประกันภัยโอนเงินสินไหมให้ทายาทและแนบหลักฐานก่อน"
+                    style={{ opacity: 0.45, cursor: 'not-allowed' }}
+                  >
+                    <CheckCircle2 size={16} /> สก.ทบ. รับทราบยอดจ่ายเงินช่วยเหลือ (ปิดเรื่องสมบูรณ์)
+                    <span style={{ fontSize: '10.5px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
+                      🔒 Hold: รอ บ.ประกันภัย จ่ายเงิน
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
           )}
 
         </div>
@@ -1359,6 +1993,318 @@ export default function ClaimDetailPage({ params }) {
       )}
 
       {/* ========================================================================= */}
+      {/* MODAL: อนุมัติการขอรับสิทธิเงินสินไหมและแนบตัวเรื่องส่ง บ.ประกันภัย (จก.กพ.ทบ.) */}
+      {/* ========================================================================= */}
+      {showApprovalModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(2, 8, 12, 0.88)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 110,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '720px',
+            maxHeight: '92vh',
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'rgba(4, 20, 23, 0.98)',
+            border: '2px solid var(--gold-primary)',
+            boxShadow: '0 25px 60px rgba(0,0,0,0.85)',
+            borderRadius: '16px',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(4, 20, 23, 0.9) 100%)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'var(--gold-primary)',
+                  color: '#041417',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <ShieldCheck size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '17px', color: '#fff', margin: 0, fontWeight: 700 }}>
+                    อนุมัติการขอรับสิทธิเงินสินไหมและแนบตัวเรื่อง (จก.กพ.ทบ.)
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--gold-primary)', marginTop: '2px' }}>
+                    ส่งให้ บริษัทประกันภัย ตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setShowApprovalModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleConfirmApproval} style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              
+              {/* Summary Card */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                padding: '16px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-glass)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '12px',
+                fontSize: '13px'
+              }}>
+                <div>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '11.5px', display: 'block' }}>เลขที่คำร้อง:</span>
+                  <strong style={{ color: 'var(--gold-primary)', fontSize: '14px' }}>{claim.trackingCode}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '11.5px', display: 'block' }}>ผู้สูญเสีย:</span>
+                  <strong style={{ color: '#fff' }}>{claim.casualtyRank} {claim.casualtyFirstName} {claim.casualtyLastName}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '11.5px', display: 'block' }}>หน่วยสังกัด:</span>
+                  <strong style={{ color: '#fff' }}>{claim.unitName}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '11.5px', display: 'block' }}>วงเงินอนุมัติจ่าย:</span>
+                  <strong style={{ color: 'var(--emerald-success)', fontSize: '15px' }}>
+                    {claim.compensationAmount?.toLocaleString('th-TH') || (claim.claimType === 'HIGH_RISK' ? '300,000' : '60,000')} บาท
+                  </strong>
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <span style={{ color: 'var(--text-dim)', fontSize: '11.5px', display: 'block' }}>ทายาทผู้มีสิทธิรับเงิน:</span>
+                  <span style={{ color: '#e0f2fe' }}>{claim.heirName || `ทายาทตามกฎหมายของ ${claim.casualtyRank} ${claim.casualtyFirstName} ${claim.casualtyLastName}`}</span>
+                </div>
+              </div>
+
+              {/* Approval Info Inputs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    เลขที่หนังสือ / คำสั่งอนุมัติ ทบ. <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="เช่น กห ๐๔๐๑/อนุมัติ-๑๔๒๙"
+                    value={approvalOrderNo}
+                    onChange={(e) => setApprovalOrderNo(e.target.value)}
+                    required
+                  />
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
+                    เลขที่หนังสือราชการที่ กรมกำลังพลทหารบก มีคำสั่งอนุมัติ
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    ลงวันที่อนุมัติ <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={approvalDate}
+                    onChange={(e) => setApprovalDate(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label className="form-label">ผู้ลงนามอนุมัติ:</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={approvalApproverName}
+                    onChange={(e) => setApprovalApproverName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">ตำแหน่งผู้ลงนาม:</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={approvalApproverTitle}
+                    onChange={(e) => setApprovalApproverTitle(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Attachment File Box */}
+              <div>
+                <label className="form-label" style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>
+                    แนบเอกสารตัวเรื่องที่อนุมัติส่งให้ บ.ประกันภัย <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>
+                    ไฟล์ .pdf, .jpg, .png, .doc, .docx (สูงสุด 10MB)
+                  </span>
+                </label>
+
+                <div style={{
+                  padding: '16px',
+                  borderRadius: '10px',
+                  border: '2px dashed var(--border-subtle)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                    <label style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '8px 16px',
+                      background: 'rgba(212, 175, 55, 0.15)',
+                      border: '1px solid var(--gold-primary)',
+                      borderRadius: '8px',
+                      color: 'var(--gold-light)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}>
+                      <Upload size={16} />
+                      <span>เลือกไฟล์เอกสารตัวเรื่อง / คำสั่งอนุมัติ</span>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                        onChange={handleApprovalFileUpload}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={handleUseSampleApprovalDoc}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '12px', borderColor: 'var(--cyan-accent)', color: 'var(--cyan-accent)' }}
+                    >
+                      <span>⚡ ใช้เอกสารคำสั่งอนุมัติทางการอัตโนมัติ</span>
+                    </button>
+                  </div>
+
+                  {approvalFileError && (
+                    <div style={{ color: 'var(--ruby-danger)', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <AlertCircle size={15} />
+                      <span>{approvalFileError}</span>
+                    </div>
+                  )}
+
+                  {approvalDocName && (
+                    <div style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FileCheck size={18} color="var(--emerald-success)" />
+                        <div>
+                          <strong style={{ color: '#fff', fontSize: '13px' }}>{approvalDocName}</strong>
+                          <span style={{ fontSize: '11px', color: 'var(--emerald-success)', marginLeft: '8px' }}>
+                            ({approvalDocSize}) • ตรวจสอบความปลอดภัยผ่าน
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className="badge badge-emerald" style={{ fontSize: '11px' }}>
+                        ✓ พร้อมส่งให้ บ.ประกันภัย
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes to Insurance */}
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>
+                  ข้อความสั่งการ / หมายเหตุส่งถึง บริษัทประกันภัย:
+                </label>
+                <textarea
+                  className="form-textarea"
+                  rows={3}
+                  value={approvalNotes}
+                  onChange={(e) => setApprovalNotes(e.target.value)}
+                  placeholder="ระบุข้อความสั่งการถึง บ.ประกันภัย..."
+                />
+              </div>
+
+              {/* Error Message */}
+              {errorMsg && (
+                <div style={{ color: 'var(--ruby-danger)', fontSize: '13px', background: 'rgba(239, 68, 68, 0.1)', padding: '10px', borderRadius: '6px' }}>
+                  {errorMsg}
+                </div>
+              )}
+
+              {/* Modal Footer Buttons */}
+              <div style={{
+                marginTop: '10px',
+                paddingTop: '16px',
+                borderTop: '1px solid var(--border-glass)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '12px'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setShowApprovalModal(false)}
+                  className="btn btn-secondary"
+                  disabled={actionLoading}
+                >
+                  ยกเลิก
+                </button>
+
+                <button
+                  type="submit"
+                  className="btn btn-success"
+                  style={{
+                    padding: '10px 24px',
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                    boxShadow: '0 4px 15px rgba(16, 185, 129, 0.35)'
+                  }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'กำลังบันทึก...' : '✓ ยืนยันการอนุมัติและส่งตัวเรื่องให้ บ.ประกันภัย'}
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL 2: บันทึกการโอนเงินสินไหมทดแทน (Insurance Payment / Transfer Modal) */}
       {/* ========================================================================= */}
       {showTransferModal && (
@@ -1446,6 +2392,39 @@ export default function ClaimDetailPage({ params }) {
                   </div>
                 </div>
               </div>
+
+              {/* ข้อมูลการอนุมัติของผู้บังคับบัญชาที่ บ.ประกันภัย ได้รับ */}
+              {claim.approvalDocument && (
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  fontSize: '12.5px'
+                }}>
+                  <div>
+                    <span style={{ color: 'var(--emerald-success)', fontWeight: 700 }}>
+                      ✓ ตรวจสอบรับทราบ: อ้างถึงคำสั่งอนุมัติ จก.กพ.ทบ. เลขที่ {claim.approvalDocument.docNumber}
+                    </span>
+                    <div style={{ color: '#cbd5e1', fontSize: '11.5px', marginTop: '2px' }}>
+                      ลงวันที่: {formatThaiDate(claim.approvalDocument.approvedDate)} • ผู้อนุมัติ: {claim.approvalDocument.approverName}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenApprovalDocPreview}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: '11.5px', padding: '4px 10px' }}
+                  >
+                    <Eye size={13} /> ดูตัวเรื่องอนุมัติ
+                  </button>
+                </div>
+              )}
 
               {/* Grid 2 Columns: วันที่โอน และ เวลาที่โอน */}
               <div className="grid-cols-2" style={{ gap: '14px' }}>

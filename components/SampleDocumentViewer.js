@@ -60,6 +60,7 @@ export default function SampleDocumentViewer({
   const isRegulation = docTitle.includes('ระเบียบ') || docTitle.includes('ประกันชีวิต') || docCategory === 'ระเบียบข้อบังคับ';
   const isChecklist = docTitle.includes('Checklist') || docTitle.includes('10 รายการ') || docCategory === 'คู่มือตรวจสอบ';
   const isInvestigation = docTitle.includes('สอบสวน') || docTitle.includes('สำนวน') || docCategory === 'ตัวอย่างเอกสาร';
+  const isApprovalOrder = docTitle.includes('อนุมัติ') || doc.index === 'อนุมัติ' || doc.isApprovalOrder || docCategory?.includes('อนุมัติ');
 
   // ข้อมูลกำลังพลประกอบ
   const rank = claim?.casualtyRank || 'ส.อ.';
@@ -651,8 +652,48 @@ export default function SampleDocumentViewer({
                 </div>
               )}
 
+              {/* 11. หนังสือคำสั่งอนุมัติการขอรับสิทธิเงินสินไหม (จก.กพ.ทบ.) ส่งให้ บ.ประกันภัย */}
+              {isApprovalOrder && (
+                <div style={{ border: '2px solid #059669', padding: '22px', borderRadius: '6px', background: '#f0fdf4', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '13.5px' }}>
+                    <div><strong>ที่</strong> {doc.docNumber || claim?.approvalDocument?.docNumber || 'กห ๐๔๐๑/อนุมัติ-๑๔๒๙'}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      กรมกำลังพลทหารบก<br />
+                      ถนนราชดำเนินนอก เขตพระนคร กทม. ๑๐๒๐๐
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'right', marginBottom: '14px', fontSize: '13.5px' }}>
+                    {formatThaiDate(doc.approvedDate || claim?.approvalDocument?.approvedDate || new Date())}
+                  </div>
+
+                  <div style={{ fontSize: '14px', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+                    <div><strong>เรื่อง</strong> &nbsp; การอนุมัติการขอรับสิทธิเงินค่าสินไหมทดแทนประกันชีวิตกำลังพลกองทัพบก</div>
+                    <div><strong>เรียน</strong> &nbsp; กรรมการผู้จัดการ บริษัท ทิพยประกันภัย จำกัด (มหาชน)</div>
+                    <div><strong>อ้างถึง</strong> &nbsp; รายงานขอรับสิทธิเงินสินไหมทดแทน เลขที่ {trackingCode}</div>
+                    <div><strong>สิ่งที่ส่งมาด้วย</strong> &nbsp; เอกสารตัวเรื่องและหลักฐานประกอบการขอรับสิทธิเงินสินไหมทดแทน จำนวน ๑๐ รายการ</div>
+                  </div>
+
+                  <div style={{ fontSize: '13.5px', textIndent: '36px', textAlign: 'justify', marginBottom: '12px', lineHeight: 1.7, color: '#0f172a' }}>
+                    ๑. ตามที่ กรมกำลังพลทหารบก (กสพ.กพ.ทบ.) ได้รับรายงานและตรวจสอบเอกสารหลักฐานการขอรับสิทธิเงินค่าสินไหมทดแทนประกันชีวิตกำลังพลของ <strong>{rank} {firstName} {lastName}</strong> เลขประจำตัวประชาชน <strong>{citizenId}</strong> สังกัด <strong>{unit}</strong> ซึ่ง <strong>{lossType}</strong> จากการปฏิบัติหน้าที่ ณ {fullAddress} นั้น
+                  </div>
+
+                  <div style={{ fontSize: '13.5px', textIndent: '36px', textAlign: 'justify', marginBottom: '12px', lineHeight: 1.7, color: '#0f172a' }}>
+                    ๒. ผู้บังคับบัญชา <strong>(เจ้ากรมกำลังพลทหารบก)</strong> ได้พิจารณาตรวจสอบความถูกต้องครบถ้วนตามระเบียบกองทัพบก ว่าด้วยการประกันชีวิตกำลังพล พ.ศ. ๒๕๖๒ แล้ว <strong>มีคำสั่งอนุมัติให้จ่ายเงินค่าสินไหมทดแทน</strong> ประจำปีงบประมาณ จำนวน <strong>{amount} บาท ({claimType})</strong> ให้แก่ทายาทผู้มีสิทธิตามกฎหมาย คือ <strong>{claim?.heirName || 'ทายาทโดยธรรม'}</strong>
+                  </div>
+
+                  <div style={{ fontSize: '13.5px', textIndent: '36px', textAlign: 'justify', marginBottom: '16px', lineHeight: 1.7, color: '#0f172a' }}>
+                    ๓. จึงส่งตัวเรื่องและคำสั่งอนุมัติฉบับนี้มายัง บริษัท ทิพยประกันภัย จำกัด (มหาชน) เพื่อโปรดตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา และดำเนินการโอนเงินสินไหมทดแทนเข้าบัญชีเงินฝากของทายาท พร้อมทั้งส่งหลักฐานการโอนเงิน (e-Slip) ให้กองทัพบกทราบต่อไป
+                  </div>
+
+                  <div style={{ padding: '12px 16px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '6px', fontSize: '12.5px', color: '#14532d' }}>
+                    <strong>✓ ข้อความสั่งการถึง บ.ประกันภัย:</strong> &quot;{doc.notes || claim?.approvalDocument?.notes || 'อนุมัติจ่ายเงินสินไหมทดแทนและส่งตัวเรื่องให้ บริษัทประกันภัย ตรวจสอบรับทราบการได้รับอนุมัติให้จ่ายเงินจากผู้บังคับบัญชา เพื่อดำเนินการจ่ายเงินให้แก่ทายาทต่อไป'}&quot;
+                  </div>
+                </div>
+              )}
+
               {/* กรณีคู่มือ/ระเบียบ หรือเอกสารทั่วไป */}
-              {!isKp4 && !isDeathCert && !isHouseReg && !isIdCard && !isMilitaryOrder && !isMarriageOrBirth && !isDisabledOrder && !isHeirConsent && !isBankBook && !isPhotoOrScene && (
+              {!isKp4 && !isDeathCert && !isHouseReg && !isIdCard && !isMilitaryOrder && !isMarriageOrBirth && !isDisabledOrder && !isHeirConsent && !isBankBook && !isPhotoOrScene && !isApprovalOrder && (
                 <div style={{ padding: '18px', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#f8fafc', marginBottom: '14px' }}>
                   <div style={{ fontWeight: 800, fontSize: '14.5px', marginBottom: '8px', color: '#0f172a' }}>
                     {docTitle}
@@ -664,7 +705,7 @@ export default function SampleDocumentViewer({
               )}
 
               {/* ========================================================================= */}
-              {/* ลายมือชื่อผู้บังคับหน่วย และ ตราประทับหมึกแดงสัญลักษณ์หน่วย */}
+              {/* ลายมือชื่อผู้บังคับบัญชา และ ตราประทับหมึกแดง */}
               {/* ========================================================================= */}
               <div style={{ marginTop: '28px', display: 'flex', justifyContent: 'flex-end', textAlign: 'center' }}>
                 <div style={{ width: '260px', position: 'relative' }}>
@@ -689,15 +730,35 @@ export default function SampleDocumentViewer({
                     pointerEvents: 'none',
                     opacity: 0.85
                   }}>
-                    <div>★ พล.ร.๙ ★</div>
-                    <div>กองทัพบก</div>
-                    <div>ทบ.รับรอง</div>
+                    {isApprovalOrder ? (
+                      <>
+                        <div>★ กพ.ทบ. ★</div>
+                        <div>อนุมัติแล้ว</div>
+                        <div>ทบ.จ่ายเงิน</div>
+                      </>
+                    ) : (
+                      <>
+                        <div>★ พล.ร.๙ ★</div>
+                        <div>กองทัพบก</div>
+                        <div>ทบ.รับรอง</div>
+                      </>
+                    )}
                   </div>
 
-                  <div style={{ fontSize: '13.5px', marginBottom: '4px' }}>ขอแสดงความนับถือ</div>
+                  <div style={{ fontSize: '13.5px', marginBottom: '4px' }}>
+                    {isApprovalOrder ? 'สั่ง ณ วันที่อนุมัติ' : 'ขอแสดงความนับถือ'}
+                  </div>
                   <div style={{ height: '36px', borderBottom: '1px dashed #64748b', marginBottom: '6px' }}></div>
-                  <div style={{ fontSize: '14px', fontWeight: 800 }}>พลตรี สุรเชษฐ์ นิมมานกุล</div>
-                  <div style={{ fontSize: '12px', color: '#475569' }}>ผู้บัญชาการกองพลทหารราบที่ ๙</div>
+                  <div style={{ fontSize: '14px', fontWeight: 800 }}>
+                    {isApprovalOrder 
+                      ? (doc.approverName || claim?.approvalDocument?.approverName || 'พลโท ชัยพฤกษ์ ด้วงประภัสสร')
+                      : 'พลตรี สุรเชษฐ์ นิมมานกุล'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#475569' }}>
+                    {isApprovalOrder 
+                      ? (doc.approverTitle || claim?.approvalDocument?.approverTitle || 'เจ้ากรมกำลังพลทหารบก (จก.กพ.ทบ.)')
+                      : 'ผู้บัญชาการกองพลทหารราบที่ ๙'}
+                  </div>
                 </div>
               </div>
 
@@ -708,8 +769,8 @@ export default function SampleDocumentViewer({
                 position: 'absolute',
                 bottom: '24px',
                 left: '42px',
-                border: '2px solid #1d4ed8',
-                color: '#1d4ed8',
+                border: isApprovalOrder ? '2px solid #059669' : '2px solid #1d4ed8',
+                color: isApprovalOrder ? '#059669' : '#1d4ed8',
                 padding: '6px 14px',
                 borderRadius: '4px',
                 fontSize: '11px',
@@ -718,10 +779,12 @@ export default function SampleDocumentViewer({
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 lineHeight: 1.35
               }}>
-                <div style={{ fontWeight: 800, fontSize: '12px' }}>✓ สำเนาถูกต้อง</div>
-                <div>(ลงชื่อ) <strong>ร.อ. สมหมาย กล้าหาญ</strong></div>
-                <div>นายทหารธุรการและกำลังพล พล.ร.๙</div>
-                <div>๑๕ ต.ค. ๒๕๖๙</div>
+                <div style={{ fontWeight: 800, fontSize: '12px' }}>
+                  {isApprovalOrder ? '✓ อนุมัติส่ง บ.ประกันภัย' : '✓ สำเนาถูกต้อง'}
+                </div>
+                <div>(ลงชื่อ) <strong>{isApprovalOrder ? (doc.approverName || claim?.approvalDocument?.approverName || 'พล.ท. ชัยพฤกษ์ ด้วงประภัสสร') : 'ร.อ. สมหมาย กล้าหาญ'}</strong></div>
+                <div>{isApprovalOrder ? 'เจ้ากรมกำลังพลทหารบก' : 'นายทหารธุรการและกำลังพล พล.ร.๙'}</div>
+                <div>{formatThaiDate(doc.approvedDate || claim?.approvalDocument?.approvedDate || new Date())}</div>
               </div>
 
               {/* บาร์โค้ดกำกับเอกสารสารบรรณ ทบ. ด้านล่าง */}
