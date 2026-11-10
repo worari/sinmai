@@ -68,16 +68,32 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${BOLD}${BLUE}[2/7] ตรวจสอบ Process Manager (PM2)${NC}"
 if command -v pm2 >/dev/null 2>&1; then
-    PM2_STATUS=$(pm2 jlist 2>/dev/null | grep -o '"name":"rta-sinmai"[^}]*"status":"[^"]*"' | sed -e 's/.*"status":"\([^"]*\)".*/\1/' || echo "unknown")
-    if [ "$PM2_STATUS" = "online" ]; then
-        echo -e "  สถานะแอป: ${GREEN}✓ ONLINE (กำลังทำงานตามปกติ)${NC}"
-    elif [ -n "$PM2_STATUS" ] && [ "$PM2_STATUS" != "unknown" ]; then
-        echo -e "  สถานะแอป: ${RED}⚠ $PM2_STATUS${NC}"
-    else
-        echo -e "  สถานะแอป: ${YELLOW}⚠ ไม่พบโปรเซส rta-sinmai ใน PM2${NC}"
+    PM2_STATUS=$(pm2 jlist 2>/dev/null | grep -o '"name":"rta-sinmai"[^}]*"status":"[^"]*"' | sed -e 's/.*"status":"\([^"]*\)".*/\1/' || echo "")
+    
+    # หากไม่พบใน user ปัจจุบัน ให้ตรวจดูใน sudo
+    SUDO_PM2_STATUS=""
+    if [ -z "$PM2_STATUS" ]; then
+        SUDO_PM2_STATUS=$(sudo pm2 jlist 2>/dev/null | grep -o '"name":"rta-sinmai"[^}]*"status":"[^"]*"' | sed -e 's/.*"status":"\([^"]*\)".*/\1/' || echo "")
     fi
-    echo -e "  สรุปตารางสถานะ PM2:"
-    pm2 status rta-sinmai 2>/dev/null || pm2 status
+
+    if [ "$PM2_STATUS" = "online" ]; then
+        echo -e "  สถานะแอป: ${GREEN}✓ ONLINE (กำลังทำงานตามปกติ - ผู้ใช้: $(whoami))${NC}"
+        echo -e "  สรุปตารางสถานะ PM2:"
+        pm2 status rta-sinmai 2>/dev/null || pm2 status
+    elif [ "$SUDO_PM2_STATUS" = "online" ]; then
+        echo -e "  สถานะแอป: ${GREEN}✓ ONLINE (กำลังทำงานในสิทธิ์ root)${NC}"
+        echo -e "  สรุปตารางสถานะ PM2 (Root):"
+        sudo pm2 status rta-sinmai 2>/dev/null || sudo pm2 status
+    elif [ -n "$PM2_STATUS" ]; then
+        echo -e "  สถานะแอป: ${RED}⚠ $PM2_STATUS${NC}"
+        pm2 status
+    elif [ -n "$SUDO_PM2_STATUS" ]; then
+        echo -e "  สถานะแอป: ${RED}⚠ $SUDO_PM2_STATUS (Root)${NC}"
+        sudo pm2 status
+    else
+        echo -e "  สถานะแอป: ${YELLOW}⚠ ไม่พบโปรเซส rta-sinmai ใน PM2 (สามารถสั่งรันด้วย: bash deploy/fix-pm2.sh)${NC}"
+        pm2 status
+    fi
 else
     echo -e "  ${RED}✗ ไม่พบคำสั่ง pm2 ในระบบ${NC}"
 fi
