@@ -16,9 +16,11 @@ export async function GET(request) {
     return NextResponse.json(
       {
         success: true,
-        canAccess: status.canUseSystem || status.isExempt || status.role === 'ADMIN',
+        canAccess: status.canUseSystem || status.isExempt || status.role === 'ADMIN' || status.isExamPeriodActive === false,
         passed: status.passed,
-        isExempt: Boolean(status.isExempt || status.role === 'ADMIN'),
+        isExempt: Boolean(status.isExempt || status.role === 'ADMIN' || status.isExamPeriodActive === false),
+        isExamPeriodActive: status.isExamPeriodActive,
+        examMandatory: status.examMandatory,
         role: status.role,
         score: status.score,
         passingScore: status.passingScore,

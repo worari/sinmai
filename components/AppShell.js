@@ -128,9 +128,15 @@ export default function AppShell({ children }) {
 
   // เส้นทางที่อนุญาตให้เข้าถึงได้แม้ยังไม่ผ่านแบบทดสอบความรู้ (รวมหน้าคลังความรู้และคู่มือเพื่อศึกษาเตรียมสอบ)
   const knowledgeAllowedRoutes = ['/', '/login', '/register', '/reset-password', '/track', '/knowledge', '/knowledge/exam', '/knowledge/admin', '/manuals'];
-  // ผู้ดูแลระบบ (ADMIN) ยกเว้นไม่ต้องทำแบบทดสอบความรู้ และผู้ใช้ที่สอบผ่านแล้วสามารถเข้าใช้งานระบบได้ทันที
-  const hasPassedKnowledge = Boolean(knowledgeStatus?.canAccess || knowledgeStatus?.passed || currentUser?.knowledgePassed);
-  const knowledgeBlocked = isLoaded && isLoggedIn && !isAdmin && knowledgeStatus && !hasPassedKnowledge && !knowledgeAllowedRoutes.includes(pathname);
+  // ผู้ดูแลระบบ (ADMIN) ยกเว้นไม่ต้องทำแบบทดสอบความรู้, เมื่อปิดห้วงการทดสอบทุกคนใช้งานได้ตามปกติ, และเมื่อเปิดห้วงผู้ใช้ที่สอบผ่านแล้วเข้าใช้งานได้ทันที
+  const isExamPeriodActive = knowledgeStatus?.isExamPeriodActive === true;
+  const hasPassedKnowledge = Boolean(
+    !isExamPeriodActive ||
+    knowledgeStatus?.canAccess || 
+    knowledgeStatus?.passed || 
+    currentUser?.knowledgePassed
+  );
+  const knowledgeBlocked = isLoaded && isLoggedIn && !isAdmin && isExamPeriodActive && !hasPassedKnowledge && !knowledgeAllowedRoutes.includes(pathname);
 
   // กรณีผู้ใช้ยังไม่ได้ Login และพยายามเข้าหน้าภายในที่ต้องใช้สิทธิเจ้าหน้าที่
   const shouldBlockAccess = isLoaded && !isLoggedIn && !isPublicRoute;

@@ -7,6 +7,8 @@ import Link from 'next/link';
 import {
   BookOpen,
   ShieldAlert,
+  ShieldCheck,
+  Power,
   PlusCircle,
   Edit3,
   Trash2,
@@ -27,6 +29,7 @@ import {
   ArrowRight,
   Award
 } from 'lucide-react';
+import { triggerStatusPopup } from '@/components/StatusModal';
 
 const ADMIN_ROLES = ['ADMIN', 'KSP_OFFICER', 'UNIT_OFFICER'];
 
@@ -39,10 +42,17 @@ export default function KnowledgeAdminPage() {
   const [questions, setQuestions] = useState([]);
   const [bankQuestions, setBankQuestions] = useState([]);
   const [attempts, setAttempts] = useState([]);
+  const [examSettings, setExamSettings] = useState({
+    isExamPeriodActive: false,
+    updatedAt: '',
+    updatedBy: ''
+  });
   const [loading, setLoading] = useState(true);
   const [questionLoading, setQuestionLoading] = useState(false);
   const [bankLoading, setBankLoading] = useState(false);
   const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [toggleLoading, setToggleLoading] = useState(false);
 
   // Error & Status states
   const [examError, setExamError] = useState('');
@@ -156,6 +166,7 @@ export default function KnowledgeAdminPage() {
     loadExams();
     loadBankQuestions();
     loadAttempts();
+    loadExamSettings();
   }, []);
 
   // When selected exam changes, load questions for that exam
@@ -242,6 +253,69 @@ export default function KnowledgeAdminPage() {
       console.error('Load attempts failed', e);
     } finally {
       setAttemptsLoading(false);
+    }
+  };
+
+  const loadExamSettings = async () => {
+    setSettingsLoading(true);
+    try {
+      const res = await fetch('/api/knowledge/settings');
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setExamSettings(data.settings);
+      }
+    } catch (e) {
+      console.error('Load exam settings error', e);
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const handleToggleExamPeriod = async () => {
+    const nextState = !examSettings.isExamPeriodActive;
+    setToggleLoading(true);
+    try {
+      const res = await fetch('/api/knowledge/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isExamPeriodActive: nextState,
+          userId: user?.id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะห้วงการทดสอบ');
+      }
+
+      setExamSettings(data.settings);
+      notifySuccess(data.message);
+
+      // Trigger status popup modal
+      triggerStatusPopup({
+        type: nextState ? 'warning' : 'success',
+        title: nextState ? 'เปิดห้วงการทดสอบความรู้' : 'ปิดห้วงการทดสอบความรู้',
+        message: nextState
+          ? 'ระบบเปิดห้วงการทดสอบความรู้: กำหนดให้ผู้ใช้งานทุกคน (ยกเว้น Admin) ต้องผ่านแบบทดสอบก่อนจึงจะเข้าใช้งานระบบได้'
+          : 'ระบบปิดห้วงการทดสอบความรู้: อนุญาตให้ผู้ใช้งานทุกคนเข้าใช้งานระบบ เสนอเรื่อง ตรวจสอบ และติดตามงานได้ตามปกติทันทีโดยไม่ต้องผ่านแบบทดสอบ',
+        action: nextState ? 'เปิดห้วงบังคับทำแบบทดสอบ' : 'ปิดห้วงการทดสอบ (เข้าใช้งานได้ปกติ)',
+        by: user?.name ? `${user.name} (${user.role})` : 'ผู้ดูแลระบบ',
+        ref: nextState ? 'EXAM-PERIOD-ACTIVE' : 'EXAM-PERIOD-DISABLED'
+      });
+
+      // Broadcast knowledge change event to local app
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rta_knowledge_change', {
+          detail: {
+            isExamPeriodActive: nextState,
+            canAccess: !nextState
+          }
+        }));
+      }
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setToggleLoading(false);
     }
   };
 
@@ -839,7 +913,18 @@ export default function KnowledgeAdminPage() {
             gap: '8px'
           }}
         >
-          <UserCheck size={16} /> ประวัติและผลคะแนนสอบ ({attempts.length})
+          <UserCheck size={16} /> 
+          <span>ประวัติและผลคะแนนสอบ ({attempts.length})</span>
+          <span style={{
+            fontSize: '11px',
+            padding: '1px 7px',
+            borderRadius: '10px',
+            background: examSettings.isExamPeriodActive ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+            color: examSettings.isExamPeriodActive ? '#fca5a5' : '#86efac',
+            fontWeight: 700
+          }}>
+            {examSettings.isExamPeriodActive ? '● ห้วงบังคับสอบ' : '○ ไม่บังคับสอบ'}
+          </span>
         </button>
 
         <button
@@ -1641,6 +1726,94 @@ export default function KnowledgeAdminPage() {
       {/* ========================================================================= */}
       {activeTab === 'attempts' && (
         <div className="glass-panel" style={{ padding: '22px', borderRadius: '12px' }}>
+          
+          {/* ========================================================================= */}
+          {/* แผงควบคุมเปิด/ปิดห้วงการทดสอบความรู้ (Exam Period On/Off Control)          */}
+          {/* ========================================================================= */}
+          <div style={{
+            marginBottom: '22px',
+            padding: '20px',
+            borderRadius: '12px',
+            background: examSettings.isExamPeriodActive
+              ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(15, 23, 42, 0.75) 100%)'
+              : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.75) 100%)',
+            border: examSettings.isExamPeriodActive
+              ? '1.5px solid rgba(239, 68, 68, 0.35)'
+              : '1.5px solid rgba(16, 185, 129, 0.35)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+              <div style={{ flex: 1, minWidth: '300px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck size={20} color={examSettings.isExamPeriodActive ? 'var(--ruby-danger)' : 'var(--emerald-success)'} />
+                    <span>การควบคุมห้วงเวลาการทดสอบความรู้</span>
+                  </span>
+                  <span className={`badge ${examSettings.isExamPeriodActive ? 'badge-red' : 'badge-emerald'}`} style={{ fontSize: '12px', padding: '4px 10px', fontWeight: 700 }}>
+                    {examSettings.isExamPeriodActive ? '🔴 เปิดห้วงบังคับต้องผ่านแบบทดสอบ' : '🟢 ปิดห้วงการทดสอบ (ใช้งานได้ตามปกติ)'}
+                  </span>
+                </div>
+
+                <p style={{ fontSize: '13.5px', color: '#e2e8f0', margin: 0, lineHeight: 1.6 }}>
+                  {examSettings.isExamPeriodActive ? (
+                    <span>
+                      ⚠️ <strong>สถานะปัจจุบัน:</strong> อยู่ในห้วงการทดสอบความรู้ — <span style={{ color: '#fca5a5', fontWeight: 600 }}>ผู้ใช้งานทุกคนต้องผ่านแบบทดสอบความรู้ก่อน จึงจะสามารถเข้าใช้งานระบบได้</span> (หากยังไม่ผ่านจะไม่สามารถเข้าหน้างานหลักได้)
+                    </span>
+                  ) : (
+                    <span>
+                      ✓ <strong>สถานะปัจจุบัน:</strong> ปิดห้วงการทดสอบความรู้ — <span style={{ color: '#86efac', fontWeight: 600 }}>ผู้ใช้งานทุกคนสามารถเข้าใช้งานระบบ เสนอเรื่อง ตรวจสอบ และติดตามงานได้ตามปกติทันที</span> โดยไม่ต้องผ่านแบบทดสอบ
+                    </span>
+                  )}
+                </p>
+
+                {examSettings.updatedAt && (
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '8px' }}>
+                    อัปเดตสถานะล่าสุด: {fmtDateTime(examSettings.updatedAt)} {examSettings.updatedBy ? `โดย ${examSettings.updatedBy}` : ''}
+                  </div>
+                )}
+              </div>
+
+              {/* ปุ่มสวิตช์เปิด/ปิดห้วงการทดสอบ */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleToggleExamPeriod}
+                  disabled={toggleLoading}
+                  className="btn"
+                  style={{
+                    padding: '11px 24px',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    gap: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    cursor: toggleLoading ? 'not-allowed' : 'pointer',
+                    background: examSettings.isExamPeriodActive
+                      ? 'rgba(239, 68, 68, 0.2)'
+                      : 'var(--emerald-success)',
+                    border: examSettings.isExamPeriodActive
+                      ? '1px solid var(--ruby-danger)'
+                      : '1px solid var(--emerald-success)',
+                    color: examSettings.isExamPeriodActive ? '#fca5a5' : '#070d1e',
+                    boxShadow: examSettings.isExamPeriodActive
+                      ? '0 0 15px rgba(239, 68, 68, 0.2)'
+                      : '0 0 15px rgba(16, 185, 129, 0.3)'
+                  }}
+                  title={examSettings.isExamPeriodActive ? 'กดเพื่อปิดห้วงการทดสอบ ให้ผู้ใช้ทุกคนใช้งานได้ตามปกติ' : 'กดเพื่อเปิดห้วงการทดสอบ บังคับให้ผู้ใช้ต้องสอบผ่านก่อน'}
+                >
+                  <Power size={17} />
+                  <span>
+                    {toggleLoading
+                      ? 'กำลังบันทึก...'
+                      : examSettings.isExamPeriodActive
+                      ? 'ปิดห้วงการทดสอบ (อนุญาตใช้งานได้ปกติ)'
+                      : 'เปิดห้วงบังคับต้องผ่านแบบทดสอบ'}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
               <div style={{ fontSize: '16px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
