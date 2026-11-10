@@ -185,3 +185,25 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request, { params }) {
+  try {
+    const { id } = params;
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+
+    const user = db.findUserById(userId);
+    if (!user) {
+      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งานหรือเซสชันหมดอายุ' }, { status: 401 });
+    }
+
+    const result = db.deleteClaim(id, user);
+    return NextResponse.json({
+      success: true,
+      message: `ลบคำร้อง ${result.deletedClaim.trackingCode} เรียบร้อยแล้ว`,
+      ...result
+    });
+  } catch (error) {
+    return NextResponse.json({ success: false, message: error.message }, { status: 400 });
+  }
+}
