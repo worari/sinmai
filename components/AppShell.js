@@ -79,32 +79,58 @@ export default function AppShell({ children }) {
         return;
       }
       try {
-        const res = await fetch(`/api/knowledge/can-access?userId=${encodeURIComponent(currentUser.id)}`);
+        const res = await fetch(
+          `/api/knowledge/can-access?userId=${encodeURIComponent(currentUser.id)}&_t=${Date.now()}`,
+          { cache: 'no-store' }
+        );
         const data = await res.json();
-        setKnowledgeStatus(data.success ? data : null);
+        if (data.success) {
+          setKnowledgeStatus(data);
+        }
       } catch (e) {
-        setKnowledgeStatus(null);
+        // คงค่าเดิมไว้หากเครือข่ายขัดข้องชั่วคราว
       } finally {
         setKnowledgeLoading(false);
       }
     };
+
     fetchKnowledge();
-  }, [currentUser]);
+
+    const handleKnowledgeChange = (e) => {
+      if (e?.detail?.canAccess) {
+        setKnowledgeStatus((prev) => ({
+          ...(prev || {}),
+          success: true,
+          canAccess: true,
+          passed: true,
+          score: e.detail.score ?? prev?.score
+        }));
+      }
+      fetchKnowledge();
+    };
+
+    window.addEventListener('rta_knowledge_change', handleKnowledgeChange);
+    return () => {
+      window.removeEventListener('rta_knowledge_change', handleKnowledgeChange);
+    };
+  }, [currentUser, pathname]);
 
   // หน้าสาธารณะที่ไม่ต้อง Login ก็สามารถเข้าดูได้
   const isPublicRoute = 
     pathname === '/' || 
     pathname === '/login' || 
     pathname === '/register' || 
+    pathname === '/reset-password' ||
     pathname === '/track';
 
   const isLoggedIn = Boolean(currentUser);
   const isAdmin = currentUser?.role === 'ADMIN';
 
-  // เส้นทางที่อนุญาตให้เข้าถึงได้แม้ยังไม่ผ่านแบบทดสอบความรู้
-  const knowledgeAllowedRoutes = ['/', '/login', '/register', '/track', '/knowledge', '/knowledge/exam', '/knowledge/admin'];
-  // ผู้ดูแลระบบ (ADMIN) ยกเว้นไม่ต้องทำแบบทดสอบความรู้ มีสิทธิ์ใช้งานระบบได้ทุกฟังก์ชัน
-  const knowledgeBlocked = isLoaded && isLoggedIn && !isAdmin && knowledgeStatus && !knowledgeStatus.canAccess && !knowledgeAllowedRoutes.includes(pathname);
+  // เส้นทางที่อนุญาตให้เข้าถึงได้แม้ยังไม่ผ่านแบบทดสอบความรู้ (รวมหน้าคลังความรู้และคู่มือเพื่อศึกษาเตรียมสอบ)
+  const knowledgeAllowedRoutes = ['/', '/login', '/register', '/reset-password', '/track', '/knowledge', '/knowledge/exam', '/knowledge/admin', '/manuals'];
+  // ผู้ดูแลระบบ (ADMIN) ยกเว้นไม่ต้องทำแบบทดสอบความรู้ และผู้ใช้ที่สอบผ่านแล้วสามารถเข้าใช้งานระบบได้ทันที
+  const hasPassedKnowledge = Boolean(knowledgeStatus?.canAccess || knowledgeStatus?.passed || currentUser?.knowledgePassed);
+  const knowledgeBlocked = isLoaded && isLoggedIn && !isAdmin && knowledgeStatus && !hasPassedKnowledge && !knowledgeAllowedRoutes.includes(pathname);
 
   // กรณีผู้ใช้ยังไม่ได้ Login และพยายามเข้าหน้าภายในที่ต้องใช้สิทธิเจ้าหน้าที่
   const shouldBlockAccess = isLoaded && !isLoggedIn && !isPublicRoute;

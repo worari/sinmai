@@ -2,9 +2,10 @@
 // หน้าเข้าทำแบบทดสอบความรู้ (Exam Taker) - รองรับการสุ่มข้อสอบ สุ่มตัวเลือก และตรวจผลสอบพร้อมเฉลย
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { triggerStatusPopup } from '@/components/StatusModal';
 import { 
   Clock, 
   AlertCircle, 
@@ -20,7 +21,9 @@ import {
   X,
   FileQuestion,
   ListOrdered,
-  Shuffle
+  Shuffle,
+  BarChart3,
+  PlusCircle
 } from 'lucide-react';
 
 const THAI_OPTION_LABELS = ['ก.', 'ข.', 'ค.', 'ง.', 'จ.'];
@@ -41,6 +44,8 @@ export default function ExamPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  const timerRef = useRef(null);
+  const startedAtRef = useRef(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('rta_user');
@@ -57,6 +62,10 @@ export default function ExamPage() {
     setExamId(targetExamId);
 
     initExam(targetExamId, currentUser);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
   const initExam = async (targetExamId, currentUser = user) => {
@@ -65,6 +74,7 @@ export default function ExamPage() {
     setResult(null);
     setAnswers({});
     setCurrentIndex(0);
+    startedAtRef.current = new Date().toISOString();
 
     try {
       const uid = currentUser?.id;
@@ -73,22 +83,29 @@ export default function ExamPage() {
       }
 
       // ดึงรายการแบบทดสอบทั้งหมด
-      const examsRes = await fetch('/api/knowledge/exams');
+      const examsRes = await fetch('/api/knowledge/exams', { cache: 'no-store' });
       const examsData = await examsRes.json();
+      let resolvedExam = null;
+      let resolvedExamId = targetExamId;
       if (examsData.success && Array.isArray(examsData.exams)) {
         setAvailableExams(examsData.exams);
-        const currentExam = examsData.exams.find((e) => e.id === targetExamId) || examsData.exams[0];
-        setExam(currentExam);
+        resolvedExam = examsData.exams.find((e) => e.id === targetExamId) || examsData.exams.find((e) => e.isActive !== false) || examsData.exams[0];
+        if (resolvedExam) {
+          setExam(resolvedExam);
+          resolvedExamId = resolvedExam.id;
+          setExamId(resolvedExam.id);
+        }
       }
 
       // ตรวจสอบสถานะการเปิดสอบ
-      const canAccessRes = await fetch(`/api/knowledge/can-access?userId=${encodeURIComponent(uid)}`);
+      const canAccessRes = await fetch(`/api/knowledge/can-access?userId=${encodeURIComponent(uid)}&_t=${Date.now()}`, { cache: 'no-store' });
       const canAccessData = await canAccessRes.json();
       setWindowStatus(canAccessData.success ? canAccessData.windowOpen : null);
 
       // ดึงข้อสอบแบบสุ่ม พร้อมสลับตัวเลือกคำตอบ และซ่อนเฉลย
       const qRes = await fetch(
-        `/api/knowledge/questions?examId=${encodeURIComponent(targetExamId)}&hideAnswers=true`
+        `/api/knowledge/questions?examId=${encodeURIComponent(resolvedExamId)}&hideAnswers=true&_t=${Date.now()}`,
+        { cache: 'no-store' }
       );
       const qData = await qRes.json();
       if (!qRes.ok || !qData.success) {
@@ -101,8 +118,8 @@ export default function ExamPage() {
 
       setQuestions(qData.questions);
 
-      // เริ่มต้นตัวจับเวลานับถอยหลัง
-      const timeLimitMinutes = exam?.timeLimitMinutes || 30;
+      // เริ่มต้นตัวจับเวลานับถอยหลังตามการตั้งค่าของชุดข้อสอบจริง
+      const timeLimitMinutes = resolvedExam?.timeLimitMinutes || 30;
       const totalSeconds = timeLimitMinutes * 60;
       startTimer(totalSeconds);
 
@@ -113,14 +130,13 @@ export default function ExamPage() {
     }
   };
 
-  let timerId = null;
   const startTimer = (seconds) => {
-    if (timerId) clearInterval(timerId);
+    if (timerRef.current) clearInterval(timerRef.current);
     setTimeLeft(seconds);
-    timerId = setInterval(() => {
+    timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
-          clearInterval(timerId);
+          clearInterval(timerRef.current);
           handleAutoSubmit();
           return 0;
         }
@@ -142,7 +158,7 @@ export default function ExamPage() {
 
   const onSubmit = async () => {
     if (submitting) return;
-    if (timerId) clearInterval(timerId);
+    if (timerRef.current) clearInterval(timerRef.current);
 
     const uid = user?.id;
     if (!uid) return;
@@ -156,13 +172,19 @@ export default function ExamPage() {
         selectedOptionId: answers[q.id] || null
       }));
 
+      const timeSpentSeconds = startedAtRef.current
+        ? Math.max(1, Math.round((Date.now() - new Date(startedAtRef.current).getTime()) / 1000))
+        : 0;
+
       const res = await fetch('/api/knowledge/attempts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: uid,
           examId: exam?.id || examId,
-          answers: answeredList
+          answers: answeredList,
+          startedAt: startedAtRef.current || new Date().toISOString(),
+          timeSpentSeconds
         })
       });
 
@@ -172,6 +194,33 @@ export default function ExamPage() {
       }
 
       setResult(data.attempt);
+
+      // เมื่อสอบผ่านเกณฑ์ ให้ปลดล็อกสิทธิ์ใช้งานระบบบนหน้าจอและใน localStorage ทันที
+      if (data.attempt?.passed || data.canAccess) {
+        try {
+          const savedRaw = localStorage.getItem('rta_user');
+          if (savedRaw) {
+            const parsed = JSON.parse(savedRaw);
+            parsed.knowledgePassed = true;
+            parsed.knowledgeScore = data.attempt.score;
+            localStorage.setItem('rta_user', JSON.stringify(parsed));
+            setUser(parsed);
+          }
+        } catch (e) {}
+
+        window.dispatchEvent(new CustomEvent('rta_knowledge_change', {
+          detail: { canAccess: true, passed: true, score: data.attempt.score }
+        }));
+        window.dispatchEvent(new Event('rta_auth_change'));
+
+        triggerStatusPopup({
+          type: 'success',
+          title: 'สอบผ่านเกณฑ์! ปลดล็อกระบบเรียบร้อย',
+          message: `ท่านทำคะแนนได้ ${data.attempt.score}% ผ่านเกณฑ์ที่กำหนดแล้ว สามารถเข้าใช้งานระบบเสนอขอรับสินไหมได้ทันทีโดยไม่ต้องรีเฟรชหน้าเว็บ`,
+          action: 'ผ่านการทดสอบความรู้',
+          by: user?.name || 'ผู้เข้าทดสอบ'
+        });
+      }
     } catch (err) {
       setError(err.message || 'ส่งผลสอบไม่สำเร็จ');
     } finally {
@@ -258,13 +307,15 @@ export default function ExamPage() {
           </div>
 
           <h2 style={{ fontSize: '22px', fontWeight: 700, margin: '6px 0', color: scoreColor }}>
-            {isPassed ? 'ผ่านเกณฑ์การทดสอบ (ดีเยี่ยม)' : 'ยังไม่ผ่านเกณฑ์การทดสอบ'}
+            {isPassed 
+              ? (result.score >= 80 ? 'ผ่านเกณฑ์การทดสอบ (ดีเยี่ยม)' : 'ผ่านเกณฑ์การทดสอบแล้ว') 
+              : 'ยังไม่ผ่านเกณฑ์การทดสอบ'}
           </h2>
 
-          <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '520px', margin: '8px auto 20px', lineHeight: 1.6 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '560px', margin: '8px auto 20px', lineHeight: 1.6 }}>
             {isPassed 
-              ? 'ยินดีด้วย! ท่านทำแบบทดสอบผ่านเกณฑ์เรียบร้อยแล้ว ได้รับสิทธิ์ใช้งานระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทนได้เต็มรูปแบบ'
-              : `เกณฑ์คะแนนผ่านคือ ${exam?.passingScore || 80}% ท่านได้ ${result.score}% กรุณาศึกษาคู่มือและวิดีโอเพิ่มเติม แล้วทดสอบใหม่อีกครั้ง`}
+              ? `ยินดีด้วย! ท่านทำคะแนนได้ ${result.score}% (ผ่านเกณฑ์ ${result.passingScore || exam?.passingScore || 80}%) ระบบได้ปลดล็อกสิทธิ์เรียบร้อยแล้ว สามารถเข้าใช้งานทุกเมนูได้ทันที`
+              : `เกณฑ์คะแนนผ่านคือ ${result.passingScore || exam?.passingScore || 80}% ท่านได้ ${result.score}% กรุณาศึกษาคู่มือและวิดีโอเพิ่มเติม แล้วทดสอบใหม่อีกครั้ง`}
           </p>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', fontSize: '13.5px', borderTop: '1px solid var(--border-glass)', paddingTop: '16px', maxWidth: '460px', margin: '0 auto' }}>
@@ -278,12 +329,26 @@ export default function ExamPage() {
             </div>
             <div>
               <span style={{ color: 'var(--text-dim)' }}>เวลาที่ใช้: </span>
-              <strong>{Math.floor((result.timeSpentSeconds || 0) / 60)} นาที</strong>
+              <strong>{Math.max(1, Math.round((result.timeSpentSeconds || 0) / 60))} นาที</strong>
             </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '24px', flexWrap: 'wrap' }}>
-            <Link href="/knowledge" className="btn btn-primary" style={{ padding: '10px 24px' }}>
+            {isPassed && (
+              <Link href="/dashboard" className="btn btn-success" style={{ padding: '11px 26px', fontWeight: 700, boxShadow: '0 4px 16px rgba(16, 185, 129, 0.35)' }}>
+                <BarChart3 size={17} />
+                <span>เข้าสู่หน้าหลักใช้งานระบบทันที</span>
+              </Link>
+            )}
+
+            {isPassed && (user?.role === 'UNIT_OFFICER' || user?.role === 'ADMIN') && (
+              <Link href="/submit" className="btn btn-primary" style={{ padding: '11px 22px', fontWeight: 600 }}>
+                <PlusCircle size={16} />
+                <span>ยื่นเสนอขอรับสินไหม</span>
+              </Link>
+            )}
+
+            <Link href="/knowledge" className={isPassed ? 'btn btn-secondary' : 'btn btn-primary'} style={{ padding: '10px 22px' }}>
               <ShieldCheck size={16} />
               <span>กลับหน้าหลักคลังความรู้</span>
             </Link>
@@ -295,7 +360,7 @@ export default function ExamPage() {
               style={{ padding: '10px 20px' }}
             >
               <RotateCw size={15} />
-              <span>สอบใหม่ (สุ่มชุดข้อสอบใหม่)</span>
+              <span>{isPassed ? 'ทำแบบทดสอบอีกครั้ง' : 'สอบใหม่ (สุ่มชุดข้อสอบใหม่)'}</span>
             </button>
           </div>
 

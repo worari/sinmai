@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { BookOpen, CheckCircle2, Clock, AlertCircle, ShieldCheck, Play, FileText, Video, Lock } from 'lucide-react';
+import { BookOpen, CheckCircle2, Clock, AlertCircle, ShieldCheck, Play, FileText, Video, Lock, BarChart3, PlusCircle } from 'lucide-react';
 
 export default function KnowledgePage() {
   const [user, setUser] = useState(null);
@@ -14,34 +14,38 @@ export default function KnowledgePage() {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('rta_user');
-    if (saved) {
-      try { setUser(JSON.parse(saved)); } catch (e) { setUser(null); }
-    }
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = async (uid) => {
     try {
-      const uid = user ? user.id : null;
+      const t = Date.now();
       const promises = [];
-      if (uid) promises.push(fetch(`/api/knowledge/status?userId=${encodeURIComponent(uid)}`));
-      promises.push(fetch('/api/content/manuals'));
-      promises.push(fetch('/api/content/videos'));
-      promises.push(fetch('/api/knowledge/exams'));
-      const results = await Promise.all(promises.map((p) => p.catch((e) => ({ success: false }))));
+      if (uid) promises.push(fetch(`/api/knowledge/status?userId=${encodeURIComponent(uid)}&_t=${t}`, { cache: 'no-store' }));
+      promises.push(fetch('/api/content/manuals', { cache: 'no-store' }));
+      promises.push(fetch('/api/content/videos', { cache: 'no-store' }));
+      promises.push(fetch('/api/knowledge/exams', { cache: 'no-store' }));
+      const results = await Promise.all(promises.map((p) => p.catch(() => null)));
       let idx = 0;
       if (uid) {
-        const s = await results[idx++].json();
-        if (s.success) setStatus(s);
+        const sRes = results[idx++];
+        if (sRes) {
+          const s = await sRes.json();
+          if (s.success) setStatus(s);
+        }
       }
-      const m = await results[idx++].json();
-      if (m.success) setManuals(m.manuals || []);
-      const v = await results[idx++].json();
-      if (v.success) setVideos(v.videos || []);
-      const ex = await results[idx++].json();
-      if (ex.success) setExams(ex.exams || []);
+      const mRes = results[idx++];
+      if (mRes) {
+        const m = await mRes.json();
+        if (m.success) setManuals(m.manuals || []);
+      }
+      const vRes = results[idx++];
+      if (vRes) {
+        const v = await vRes.json();
+        if (v.success) setVideos(v.videos || []);
+      }
+      const exRes = results[idx++];
+      if (exRes) {
+        const ex = await exRes.json();
+        if (ex.success) setExams(ex.exams || []);
+      }
     } catch (e) {
       console.error('load knowledge data error', e);
     } finally {
@@ -49,11 +53,44 @@ export default function KnowledgePage() {
     }
   };
 
+  useEffect(() => {
+    let parsedUser = null;
+    const saved = localStorage.getItem('rta_user');
+    if (saved) {
+      try {
+        parsedUser = JSON.parse(saved);
+        setUser(parsedUser);
+      } catch (e) {
+        setUser(null);
+      }
+    }
+    loadData(parsedUser?.id || null);
+
+    const handleKnowledgeRefresh = () => {
+      const latestRaw = localStorage.getItem('rta_user');
+      let uid = parsedUser?.id || null;
+      if (latestRaw) {
+        try {
+          const u = JSON.parse(latestRaw);
+          uid = u?.id || uid;
+          setUser(u);
+        } catch (e) {}
+      }
+      loadData(uid);
+    };
+
+    window.addEventListener('rta_knowledge_change', handleKnowledgeRefresh);
+    return () => {
+      window.removeEventListener('rta_knowledge_change', handleKnowledgeRefresh);
+    };
+  }, []);
+
   const isAdmin = user?.role === 'ADMIN';
-  const passed = isAdmin || status?.passed === true;
+  const passed = isAdmin || status?.passed === true || status?.canUseSystem === true || user?.knowledgePassed === true;
   const canTake = status?.windowOpen?.open === true;
   const attemptCount = status?.attemptCount || 0;
   const latestScore = isAdmin ? 100 : status?.score;
+  const requiredPassingScore = status?.passingScore || exams.find((e) => e.isActive !== false)?.passingScore || 80;
 
   if (loading) {
     return (
@@ -99,40 +136,55 @@ export default function KnowledgePage() {
       </div>
 
       <div className="glass-panel" style={{ padding: '22px', borderRadius: '12px', marginBottom: '24px', borderLeft: `6px solid ${passed ? 'var(--emerald-success)' : 'var(--ruby-danger)'}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '14px' }}>
-          {passed ? (
-            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--emerald-success)' }}>
-              <CheckCircle2 size={20} />
-            </div>
-          ) : (
-            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ruby-danger)' }}>
-              <AlertCircle size={20} />
-            </div>
-          )}
-          <div>
-            <div style={{ fontSize: '16px', fontWeight: 700 }}>
-              {isAdmin ? 'สิทธิ์ผู้ดูแลระบบ (Admin) ได้รับยกเว้นไม่ต้องสอบ' : (passed ? 'ผ่านการทดสอบความรู้แล้ว' : 'ยังไม่ผ่านการทดสอบความรู้')}
-            </div>
-            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-              {isAdmin ? 'ผู้ดูแลระบบสูงสุดได้รับสิทธิ์เข้าใช้งานระบบทุกฟังก์ชันโดยอัตโนมัติ' : (status?.message || '-')}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {passed ? (
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--emerald-success)' }}>
+                <CheckCircle2 size={20} />
+              </div>
+            ) : (
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ruby-danger)' }}>
+                <AlertCircle size={20} />
+              </div>
+            )}
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: 700 }}>
+                {isAdmin ? 'สิทธิ์ผู้ดูแลระบบ (Admin) ได้รับยกเว้นไม่ต้องสอบ' : (passed ? 'ผ่านการทดสอบความรู้แล้ว — ระบบปลดล็อกพร้อมใช้งาน' : 'ยังไม่ผ่านการทดสอบความรู้')}
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                {isAdmin ? 'ผู้ดูแลระบบสูงสุดได้รับสิทธิ์เข้าใช้งานระบบทุกฟังก์ชันโดยอัตโนมัติ' : (status?.message || '-')}
+              </div>
             </div>
           </div>
+
+          {passed && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <Link href="/dashboard" className="btn btn-success btn-sm" style={{ padding: '8px 16px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <BarChart3 size={16} /> เข้าสู่หน้า Dashboard ใช้งานทันที
+              </Link>
+              {(user?.role === 'UNIT_OFFICER' || user?.role === 'ADMIN') && (
+                <Link href="/submit" className="btn btn-primary btn-sm" style={{ padding: '8px 14px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <PlusCircle size={15} /> ยื่นเสนอขอรับสินไหม
+                </Link>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: '12px', marginTop: '10px', paddingTop: '14px', borderTop: '1px solid var(--border-glass)' }}>
-          <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+          <div style={{ background: passed ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
             <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>สถานะใช้งานระบบ</div>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--emerald-success)' }}>
-              {isAdmin ? 'ใช้งานได้ทุกฟังก์ชัน' : (passed ? 'ใช้งานได้' : 'ใช้งานไม่ได้')}
+            <div style={{ fontSize: '15px', fontWeight: 700, color: passed ? 'var(--emerald-success)' : 'var(--ruby-danger)' }}>
+              {isAdmin ? 'ใช้งานได้ทุกฟังก์ชัน' : (passed ? 'ใช้งานได้ทันที' : 'ยังไม่ผ่านเกณฑ์')}
             </div>
           </div>
           <div style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.2)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
             <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>เกณฑ์ประเมิน</div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--cyan-accent)' }}>
-              {isAdmin ? 'ยกเว้นการสอบ' : (latestScore !== null ? latestScore + ' คะแนน' : 'ยังไม่สอบ')}
+              {isAdmin ? 'ยกเว้นการสอบ' : (latestScore !== null ? `${latestScore} คะแนน (เกณฑ์ ${requiredPassingScore}%)` : `ยังไม่สอบ (เกณฑ์ ${requiredPassingScore}%)`)}
             </div>
           </div>
           <div style={{ background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>ระดับสิทธิ์</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px' }}>จำนวนครั้งที่ทดสอบ</div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--gold-primary)' }}>
               {isAdmin ? 'ผู้ดูแลระบบ (Admin)' : `${attemptCount} ครั้ง`}
             </div>
@@ -145,7 +197,7 @@ export default function KnowledgePage() {
           <Play size={22} style={{ color: 'var(--gold-primary)' }} />
           <div>
             <div style={{ fontSize: '16px', fontWeight: 700 }}>ชุดแบบทดสอบความรู้</div>
-            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>ทำแบบทดสอบเพื่อวัดความรู้และปลดล็อกการใช้งานระบบ (เกณฑ์ผ่าน 80% • มีระบบสุ่มข้อสอบและตัวเลือก)</div>
+            <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>ทำแบบทดสอบเพื่อวัดความรู้และปลดล็อกการใช้งานระบบ (เกณฑ์ผ่าน {requiredPassingScore}% • มีระบบสุ่มข้อสอบและตัวเลือก)</div>
           </div>
         </div>
 
@@ -208,13 +260,13 @@ export default function KnowledgePage() {
       </div>
 
       {!passed && (
-        <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+        <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', marginTop: '20px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
           <div style={{ display: 'flex', alignItems: 'start', gap: '12px' }}>
             <AlertCircle size={20} style={{ color: 'var(--ruby-danger)', marginTop: '2px' }} />
             <div>
               <div style={{ fontWeight: 700, color: 'var(--ruby-danger)', marginBottom: '6px' }}>ข้อสำคัญ: หากยังไม่ผ่านแบบทดสอบความรู้</div>
               <div style={{ color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.6 }}>
-                ท่านจะยังไม่สามารถใช้งานฟังก์ชันหลักของระบบ (ยื่นเสนอเรื่อง, ดูคำร้อง, Dashboard ฯลฯ) ได้ กรุณาศึกษาคลังความรู้แล้วเข้าทำแบบทดสอบให้ผ่านเกณฑ์ (คะแนนไม่น้อยกว่า 80 คะแนน) ก่อนจึงจะใช้งานระบบได้เต็มรูปแบบ
+                ท่านจะยังไม่สามารถใช้งานฟังก์ชันหลักของระบบ (ยื่นเสนอเรื่อง, ดูคำร้อง, Dashboard ฯลฯ) ได้ กรุณาศึกษาคลังความรู้แล้วเข้าทำแบบทดสอบให้ผ่านเกณฑ์ที่กำหนด (คะแนนไม่น้อยกว่า {requiredPassingScore}%) ระบบจะปลดล็อกให้ใช้งานได้ทันทีครับ
               </div>
             </div>
           </div>

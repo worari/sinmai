@@ -3,6 +3,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -17,7 +19,10 @@ export async function GET(request) {
       attempts = db.getExamAttempts(userId);
     }
 
-    return NextResponse.json({ success: true, attempts });
+    return NextResponse.json(
+      { success: true, attempts },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -30,9 +35,15 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุ userId, examId และคำตอบ (answers)' }, { status: 400 });
     }
     const attempt = db.createExamAttempt(body);
+    let statusInfo = null;
+    try {
+      statusInfo = db.getUserKnowledgeStatus(body.userId);
+    } catch (e) {}
+
     return NextResponse.json({
       success: true,
-      message: attempt.passed ? 'ทำข้อสอบผ่านเกณฑ์แล้ว' : 'ทำข้อสอบเสร็จ แต่ยังไม่ผ่านเกณฑ์',
+      canAccess: Boolean(attempt.passed || statusInfo?.canUseSystem || statusInfo?.isExempt),
+      message: attempt.passed ? 'ทำข้อสอบผ่านเกณฑ์แล้ว สามารถเข้าใช้งานระบบได้ทันที' : 'ทำข้อสอบเสร็จ แต่ยังไม่ผ่านเกณฑ์',
       attempt
     }, { status: 201 });
   } catch (error) {

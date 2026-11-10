@@ -3,6 +3,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -11,16 +13,26 @@ export async function GET(request) {
       return NextResponse.json({ success: false, canAccess: false, message: 'กรุณาระบุรหัสผู้ใช้งาน (userId)' }, { status: 400 });
     }
     const status = db.getUserKnowledgeStatus(userId);
-    return NextResponse.json({
-      success: true,
-      canAccess: status.canUseSystem || status.isExempt || status.role === 'ADMIN',
-      passed: status.passed,
-      isExempt: Boolean(status.isExempt || status.role === 'ADMIN'),
-      role: status.role,
-      score: status.score,
-      message: status.message,
-      windowOpen: status.windowOpen
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        canAccess: status.canUseSystem || status.isExempt || status.role === 'ADMIN',
+        passed: status.passed,
+        isExempt: Boolean(status.isExempt || status.role === 'ADMIN'),
+        role: status.role,
+        score: status.score,
+        passingScore: status.passingScore,
+        message: status.message,
+        windowOpen: status.windowOpen
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
+    );
   } catch (error) {
     return NextResponse.json({ success: false, canAccess: false, message: error.message }, { status: 500 });
   }

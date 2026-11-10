@@ -3,6 +3,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 // ฟิส셔-เยตส์ สุ่มสลับตำแหน่งในอาร์เรย์ (ใช้กับทั้งข้อสอบและตัวเลือก)
 function shuffleArray(array) {
   const shuffled = [...array];
