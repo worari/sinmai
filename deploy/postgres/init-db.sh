@@ -4,11 +4,33 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# ค่าเริ่มต้น (Default Fallbacks)
 DB_NAME="rta_sinmai"
 DB_USER="rta_admin"
 DB_PASS="RtaSinmai@2026!"
 DB_HOST="localhost"
 DB_PORT="5432"
+
+# อ่านค่าคอนฟิกจากไฟล์ .env หากมีอยู่
+if [ -f "$APP_DIR/.env" ]; then
+    echo "📋 โหลดค่าการเชื่อมต่อฐานข้อมูลจาก $APP_DIR/.env ..."
+    while IFS='=' read -r key val || [ -n "$key" ]; do
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${key// }" ]] && continue
+        key=$(echo "$key" | tr -d '[:space:]')
+        val=$(echo "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'\'']//' -e 's/["'\'']$//')
+        case "$key" in
+            DB_NAME) DB_NAME="$val" ;;
+            DB_USER) DB_USER="$val" ;;
+            DB_PASSWORD|DB_PASS) DB_PASS="$val" ;;
+            DB_HOST) DB_HOST="$val" ;;
+            DB_PORT) DB_PORT="$val" ;;
+        esac
+    done < "$APP_DIR/.env"
+fi
 
 echo "=========================================="
 echo "🎖️ เริ่มต้นตั้งค่าฐานข้อมูล PostgreSQL สำหรับระบบสินไหม ทบ."

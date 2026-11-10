@@ -10,6 +10,12 @@ out/
 # Runtime data store (contains users/passwords & live state — regenerated from lib/db.js seeds)
 data-store.json
 
+# Environment variables (Sensitive secrets)
+.env
+.env*.local
+.env.production
+.env.development
+
 # OS
 .DS_Store
 Thumbs.db

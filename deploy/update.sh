@@ -29,11 +29,35 @@ npm install --legacy-peer-deps
 
 # 3. อัปเดตโครงสร้างและข้อมูลเริ่มต้นฐานข้อมูล
 echo -e "\n${YELLOW}3. ซิงค์โครงสร้างและข้อมูลฐานข้อมูล PostgreSQL...${NC}"
+
+# โหลดการตั้งค่าฐานข้อมูลจาก .env หากมีอยู่
+DB_NAME="rta_sinmai"
+DB_USER="rta_admin"
+DB_PASS="RtaSinmai@2026!"
+DB_HOST="localhost"
+DB_PORT="5432"
+
+if [ -f "$APP_DIR/.env" ]; then
+    while IFS='=' read -r key val || [ -n "$key" ]; do
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${key// }" ]] && continue
+        key=$(echo "$key" | tr -d '[:space:]')
+        val=$(echo "$val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^["'\'']//' -e 's/["'\'']$//')
+        case "$key" in
+            DB_NAME) DB_NAME="$val" ;;
+            DB_USER) DB_USER="$val" ;;
+            DB_PASSWORD|DB_PASS) DB_PASS="$val" ;;
+            DB_HOST) DB_HOST="$val" ;;
+            DB_PORT) DB_PORT="$val" ;;
+        esac
+    done < "$APP_DIR/.env"
+fi
+
 if [ -f "$APP_DIR/deploy/postgres/schema.sql" ]; then
-    PGPASSWORD="RtaSinmai@2026!" psql -h localhost -U rta_admin -d rta_sinmai -f "$APP_DIR/deploy/postgres/schema.sql" 2>/dev/null || true
+    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$APP_DIR/deploy/postgres/schema.sql" 2>/dev/null || true
 fi
 if [ -f "$APP_DIR/deploy/postgres/seed-data.sql" ]; then
-    PGPASSWORD="RtaSinmai@2026!" psql -h localhost -U rta_admin -d rta_sinmai -f "$APP_DIR/deploy/postgres/seed-data.sql" 2>/dev/null || true
+    PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$APP_DIR/deploy/postgres/seed-data.sql" 2>/dev/null || true
 fi
 
 # 4. Build Next.js

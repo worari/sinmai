@@ -53,6 +53,12 @@ if ! command -v pm2 >/dev/null 2>&1; then
 fi
 echo -e "${GREEN}✓ PM2 เวอร์ชั่น: $(pm2 -v)${NC}"
 
+# ตรวจสอบและสร้างไฟล์ .env หากยังไม่มี
+if [ ! -f "$APP_DIR/.env" ] && [ -f "$APP_DIR/.env.example" ]; then
+    echo "📋 ตรวจพบคอนฟิกเริ่มต้น ทำการสร้าง .env จาก .env.example ..."
+    cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+fi
+
 # 5. ติดตั้งและตั้งค่า PostgreSQL
 echo -e "\n${YELLOW}4/7. ติดตั้งและตั้งค่าฐานข้อมูล PostgreSQL...${NC}"
 apt-get install -y postgresql postgresql-contrib

@@ -1,6 +1,14 @@
 // server.js
 // Custom Server รวม Next.js และ Socket.io Server สำหรับ Real-time Dashboard & Notification
 
+// โหลดตัวแปรจากไฟล์ .env อัตโนมัติ (ผ่าน Next.js built-in env loader)
+try {
+  const { loadEnvConfig } = require('@next/env');
+  loadEnvConfig(process.cwd());
+} catch (e) {
+  // หากไม่มี @next/env ให้ข้ามไป
+}
+
 const { createServer } = require('http');
 const { parse } = require('url');
 const os = require('os');
