@@ -39,9 +39,23 @@ ufw allow 80/tcp comment 'HTTP' 2>/dev/null || true
 
 case "$SSL_CHOICE" in
     1)
-        echo -e "\n${YELLOW}1. กำลังติดตั้ง Certbot และปลั๊กอิน Nginx...${NC}"
+        echo -e "\n${YELLOW}1. กำลังตรวจสอบและติดตั้ง Certbot...${NC}"
+        # เพิ่ม repository universe (สำหรับ Ubuntu)
+        command -v add-apt-repository >/dev/null 2>&1 && add-apt-repository universe -y || true
         apt-get update -y
-        apt-get install -y certbot python3-certbot-nginx
+        apt-get install -y certbot python3-certbot-nginx || true
+
+        # หาก apt ติดตั้งไม่สำเร็จหรือหาแพ็กเกจไม่เจอ ให้ติดตั้งผ่าน snap
+        if ! command -v certbot >/dev/null 2>&1; then
+            echo -e "${YELLOW}กำลังติดตั้ง Certbot ผ่าน Snap...${NC}"
+            apt-get install -y snapd
+            systemctl enable --now snapd.socket 2>/dev/null || true
+            snap install core && snap refresh core
+            snap install --classic certbot
+            ln -sf /snap/bin/certbot /usr/bin/certbot
+        fi
+
+        echo -e "${GREEN}✓ Certbot เวอร์ชั่น: $(certbot --version 2>/dev/null || echo 'พร้อมใช้งาน')${NC}"
 
         echo -e "\n${YELLOW}2. ตรวจสอบการคอนฟิก Nginx พื้นฐาน...${NC}"
         cp "$SCRIPT_DIR/sinmai.conf" /etc/nginx/sites-available/sinmai
