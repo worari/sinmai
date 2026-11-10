@@ -68,12 +68,12 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${BOLD}${BLUE}[2/7] ตรวจสอบ Process Manager (PM2)${NC}"
 if command -v pm2 >/dev/null 2>&1; then
-    PM2_STATUS=$(pm2 jlist 2>/dev/null | grep -o '"name":"rta-sinmai"[^}]*"status":"[^"]*"' | sed -e 's/.*"status":"\([^"]*\)".*/\1/' || echo "")
+    PM2_STATUS=$(pm2 jlist 2>/dev/null | node -e "const fs=require('fs'); try { const d=JSON.parse(fs.readFileSync(0,'utf-8')); const a=d.find(x=>x.name==='rta-sinmai'); console.log(a&&a.pm2_env?a.pm2_env.status:''); } catch(e){}" 2>/dev/null || echo "")
     
     # หากไม่พบใน user ปัจจุบัน ให้ตรวจดูใน sudo
     SUDO_PM2_STATUS=""
     if [ -z "$PM2_STATUS" ]; then
-        SUDO_PM2_STATUS=$(sudo pm2 jlist 2>/dev/null | grep -o '"name":"rta-sinmai"[^}]*"status":"[^"]*"' | sed -e 's/.*"status":"\([^"]*\)".*/\1/' || echo "")
+        SUDO_PM2_STATUS=$(sudo pm2 jlist 2>/dev/null | node -e "const fs=require('fs'); try { const d=JSON.parse(fs.readFileSync(0,'utf-8')); const a=d.find(x=>x.name==='rta-sinmai'); console.log(a&&a.pm2_env?a.pm2_env.status:''); } catch(e){}" 2>/dev/null || echo "")
     fi
 
     if [ "$PM2_STATUS" = "online" ]; then
