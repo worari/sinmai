@@ -199,7 +199,7 @@ export default function RegisterPage() {
 
           <div className="grid-cols-3">
             <div className="form-group">
-              <label className="form-label required">ยศ</label>
+              <label className="form-label required">ยศ / คำนำหน้านาม</label>
               <select 
                 className="form-select"
                 value={formData.rank}

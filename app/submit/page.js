@@ -42,6 +42,7 @@ import {
   validateAttachmentFile,
   MAX_FILE_SIZE_MB,
   getPersonnelTypeFromRank,
+  getGenderFromRank,
   INCIDENT_TYPES,
   DRIVER_STATUSES,
   ALCOHOL_TEST_RESULTS
@@ -273,10 +274,12 @@ export default function SubmitClaimPage() {
   const handleRankChange = (val) => {
     setRankInput(val);
     const autoType = getPersonnelTypeFromRank(val);
+    const autoGender = getGenderFromRank(val);
     setFormData((prev) => ({ 
       ...prev, 
       casualtyRank: val,
-      personnelType: autoType
+      personnelType: autoType,
+      ...(autoGender ? { casualtyGender: autoGender } : {})
     }));
     if (val.trim()) {
       const matched = MILITARY_RANKS.filter((r) => r.toLowerCase().includes(val.toLowerCase()));
@@ -291,10 +294,12 @@ export default function SubmitClaimPage() {
   const selectRank = (rank) => {
     setRankInput(rank);
     const autoType = getPersonnelTypeFromRank(rank);
+    const autoGender = getGenderFromRank(rank);
     setFormData((prev) => ({ 
       ...prev, 
       casualtyRank: rank,
-      personnelType: autoType
+      personnelType: autoType,
+      ...(autoGender ? { casualtyGender: autoGender } : {})
     }));
     setShowRankDropdown(false);
   };
@@ -819,11 +824,11 @@ export default function SubmitClaimPage() {
             
             {/* Auto-complete ยศ */}
             <div className="form-group" style={{ position: 'relative' }}>
-              <label className="form-label required">ยศ (Auto-complete)</label>
+              <label className="form-label required">ยศ / คำนำหน้านาม (Auto-complete)</label>
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="พิมพ์ค้นหายศ เช่น พ.อ., ส.อ., พลฯ"
+                placeholder="พิมพ์ค้นหายศ เช่น ร.ต., ส.ต.หญิง, นาย, นาง, น.ส."
                 value={rankInput}
                 onChange={(e) => handleRankChange(e.target.value)}
                 onFocus={() => {
