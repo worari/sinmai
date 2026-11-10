@@ -62,6 +62,40 @@ export async function POST(request) {
       }
     }
 
+    // ตรวจสอบเงื่อนไขตามประเภทการสูญเสีย (ผู้เสียชีวิต vs พิการทุพพลภาพ)
+    const specificCause = (
+      claimData.lossSpecificCause || 
+      (claimData.lossType === 'DECEASED' ? claimData.deathCertificateCause : claimData.disabledOrganDetail) || 
+      claimData.deathCertificateCause || 
+      claimData.disabledOrganDetail || 
+      ''
+    ).trim();
+
+    if (claimData.lossType === 'DECEASED') {
+      // กรณีผู้เสียชีวิต: บังคับแนบใบมรณบัตร (เอกสารข้อ 2)
+      const doc2 = docs.find((d) => d.index === 2);
+      if (!doc2 || !doc2.uploaded) {
+        return NextResponse.json({
+          success: false,
+          message: 'กรณีผู้เสียชีวิต บังคับต้องแนบเอกสารข้อที่ 2 (ใบมรณบัตร)'
+        }, { status: 400 });
+      }
+      if (!specificCause) {
+        return NextResponse.json({
+          success: false,
+          message: 'กรณีผู้เสียชีวิต กรุณาระบุสาเหตุการเสียชีวิต (ตามใบมรณบัตร)'
+        }, { status: 400 });
+      }
+    } else if (claimData.lossType === 'DISABLED') {
+      // กรณีพิการทุพพลภาพ: เอกสารข้อ 2 (ใบมรณบัตร) ไม่ต้องแนบ แต่ต้องระบุสาเหตุการสูญเสียหรืออวัยวะที่สูญเสีย
+      if (!specificCause) {
+        return NextResponse.json({
+          success: false,
+          message: 'กรณีพิการทุพพลภาพ กรุณาระบุสาเหตุการสูญเสีย / อวัยวะที่สูญเสีย'
+        }, { status: 400 });
+      }
+    }
+
     // ตรวจสอบเงื่อนไขเอกสารข้อที่ 10 (รูปถ่ายขนาด 4x6 นิ้ว)
     // กรณีหน้าที่สำคัญ (300,000 บาท) บังคับแนบรูปถ่าย แต่กรณีรับเงิน 60,000 บาท ไม่ต้องแนบ
     if (claimData.claimType === 'HIGH_RISK') {
@@ -76,6 +110,9 @@ export async function POST(request) {
 
     const newClaim = db.createClaim({
       ...claimData,
+      lossSpecificCause: specificCause,
+      deathCertificateCause: claimData.lossType === 'DECEASED' ? specificCause : (claimData.deathCertificateCause || ''),
+      disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
       compensationAmount
     }, user);
 

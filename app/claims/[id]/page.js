@@ -586,11 +586,27 @@ export default function ClaimDetailPage({ params }) {
             </div>
           </div>
 
-          {claim.deathCertificateCause && (
-            <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
-              <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>สาเหตุการเสียชีวิต (ตามใบมรณบัตร):</span>
-              <p style={{ marginTop: '2px', fontSize: '14px', color: '#fca5a5', fontWeight: 500 }}>{claim.deathCertificateCause}</p>
-            </div>
+          {/* ข้อมูลสาเหตุการสูญเสียเฉพาะกรณี (เสียชีวิต: ตามใบมรณบัตร / พิการ: อวัยวะที่สูญเสีย) */}
+          {claim.lossType === 'DECEASED' ? (
+            (claim.lossSpecificCause || claim.deathCertificateCause) && (
+              <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
+                <span style={{ color: 'var(--text-dim)', fontSize: '12px', display: 'block' }}>สาเหตุการเสียชีวิต (ตามใบมรณบัตร):</span>
+                <p style={{ marginTop: '2px', fontSize: '14px', color: '#fca5a5', fontWeight: 500 }}>
+                  {claim.lossSpecificCause || claim.deathCertificateCause}
+                </p>
+              </div>
+            )
+          ) : (
+            (claim.lossSpecificCause || claim.disabledOrganDetail || claim.deathCertificateCause) && (
+              <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
+                <span style={{ color: 'var(--gold-primary)', fontSize: '12px', display: 'block', fontWeight: 600 }}>
+                  ♿ สาเหตุการสูญเสีย / อวัยวะที่สูญเสีย (กรณีพิการทุพพลภาพ):
+                </span>
+                <p style={{ marginTop: '2px', fontSize: '14px', color: '#fde047', fontWeight: 500 }}>
+                  {claim.lossSpecificCause || claim.disabledOrganDetail || claim.deathCertificateCause}
+                </p>
+              </div>
+            )
           )}
 
           <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-glass)' }}>
@@ -870,6 +886,14 @@ export default function ClaimDetailPage({ params }) {
                 {doc.uploaded ? (
                   <span className={`badge ${doc.status === 'VERIFIED' ? 'badge-emerald' : doc.status === 'REJECTED' ? 'badge-red' : 'badge-amber'}`}>
                     {doc.status === 'VERIFIED' ? '✓ ตรวจสอบผ่าน' : doc.status === 'REJECTED' ? '✗ ให้แก้ไข' : 'รอตรวจ'}
+                  </span>
+                ) : doc.index === 2 && claim.lossType === 'DISABLED' ? (
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
+                    ✓ ยกเว้นไม่ต้องแนบ (กรณีพิการทุพพลภาพ)
+                  </span>
+                ) : doc.index === 7 && claim.lossType === 'DECEASED' ? (
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
+                    ✓ ยกเว้นไม่ต้องแนบ (กรณีผู้เสียชีวิต)
                   </span>
                 ) : doc.index === 10 && claim.claimType === 'NORMAL' ? (
                   <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>

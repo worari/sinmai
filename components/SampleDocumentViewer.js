@@ -399,7 +399,7 @@ export default function SampleDocumentViewer({
                   </div>
 
                   <div style={{ fontSize: '13.5px', textIndent: '36px', textAlign: 'justify', marginBottom: '12px', lineHeight: 1.65 }}>
-                    ๒. {unit} ขอรายงานว่า เมื่อวันที่ ๑๐ ตุลาคม ๒๕๖๙ เวลา ๐๙:๔๕ น. ขณะกำลังพลดังกล่าวทำการลาดตระเวนรักษาความปลอดภัยเส้นทาง ได้ถูกกลุ่มผู้ก่อความไม่สงบลอบวางระเบิดแสวงเครื่อง เป็นเหตุให้ {rank} {firstName} {lastName} <strong>{lossType}</strong> จากการปฏิบัติหน้าที่ ณ {fullAddress} โดยมีสาเหตุการเสียชีวิตตามใบมรณบัตรระบุว่า "{claim?.deathCertificateCause || 'บาดแผลจากสะเก็ดระเบิดรุนแรงหลายแห่ง เสียเลือดมากในช่องอก'}"
+                    ๒. {unit} ขอรายงานว่า เมื่อวันที่ ๑๐ ตุลาคม ๒๕๖๙ เวลา ๐๙:๔๕ น. ขณะกำลังพลดังกล่าวทำการลาดตระเวนรักษาความปลอดภัยเส้นทาง ได้ถูกกลุ่มผู้ก่อความไม่สงบลอบวางระเบิดแสวงเครื่อง เป็นเหตุให้ {rank} {firstName} {lastName} <strong>{lossType}</strong> จากการปฏิบัติหน้าที่ ณ {fullAddress} โดยมี{claim?.lossType === 'DISABLED' ? 'รายละเอียดการสูญเสียอวัยวะระบุว่า' : 'สาเหตุการเสียชีวิตตามใบมรณบัตรระบุว่า'} &quot;{claim?.lossSpecificCause || (claim?.lossType === 'DISABLED' ? claim?.disabledOrganDetail : claim?.deathCertificateCause) || claim?.deathCertificateCause || (claim?.lossType === 'DISABLED' ? 'สูญเสียขาทั้งสองข้างระดับเหนือเข่า' : 'บาดแผลจากสะเก็ดระเบิดรุนแรงหลายแห่ง เสียเลือดมากในช่องอก')}&quot;
                   </div>
 
                   <div style={{ fontSize: '13.5px', textIndent: '36px', textAlign: 'justify', marginBottom: '16px', lineHeight: 1.65 }}>
@@ -411,6 +411,20 @@ export default function SampleDocumentViewer({
               {/* 2. สำเนาใบมรณบัตร */}
               {isDeathCert && (
                 <div style={{ border: '2px solid #0369a1', padding: '24px', borderRadius: '4px', background: '#f8fafc', marginBottom: '14px' }}>
+                  {claim?.lossType === 'DISABLED' && (
+                    <div style={{
+                      padding: '10px 14px',
+                      marginBottom: '14px',
+                      borderRadius: '6px',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      color: '#065f46',
+                      fontSize: '12.5px',
+                      fontWeight: 600
+                    }}>
+                      ✓ หมายเหตุ: คำร้องนี้เป็นกรณี &quot;พิการทุพพลภาพ&quot; ได้รับการยกเว้นไม่ต้องแนบใบมรณบัตรตามระเบียบ ทบ. (ไม่ต้องยื่นข้อนี้)
+                    </div>
+                  )}
                   <div style={{ textAlign: 'center', borderBottom: '1.5px solid #0284c7', paddingBottom: '10px', marginBottom: '14px' }}>
                     <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>ใบมรณบัตร (แบบ ท.ร.๔ ตอนหน้า)</div>
                     <div style={{ fontSize: '12px', color: '#0369a1' }}>สำนักทะเบียนท้องถิ่น • กรมการปกครอง กระทรวงมหาดไทย</div>

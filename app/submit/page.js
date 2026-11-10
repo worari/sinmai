@@ -72,6 +72,8 @@ export default function SubmitClaimPage() {
     casualtyGender: 'ชาย',
     causeOfLoss: '',
     deathCertificateCause: '', // สาเหตุการเสียชีวิต (ตามใบมรณบัตร)
+    disabledOrganDetail: '', // อวัยวะที่สูญเสีย (กรณีพิการทุพพลภาพ)
+    lossSpecificCause: '', // ข้อมูลสาเหตุการสูญเสียเฉพาะกรณี (มรณบัตร / อวัยวะที่สูญเสีย)
     locationOfLoss: {
       lat: 14.0228,
       lng: 99.5328,
@@ -417,12 +419,19 @@ export default function SubmitClaimPage() {
     }
 
     if (!formData.causeOfLoss) {
-      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย');
+      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย (พฤติการณ์เหตุการณ์ตาม กพ.4)');
       return;
     }
 
-    if (formData.lossType === 'DECEASED' && !formData.deathCertificateCause) {
+    const specificCause = (formData.lossSpecificCause || (formData.lossType === 'DECEASED' ? formData.deathCertificateCause : formData.disabledOrganDetail) || formData.deathCertificateCause || '').trim();
+
+    if (formData.lossType === 'DECEASED' && !specificCause) {
       setErrorMsg('กรุณาระบุสาเหตุการเสียชีวิต (ตามใบมรณบัตร)');
+      return;
+    }
+
+    if (formData.lossType === 'DISABLED' && !specificCause) {
+      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย / อวัยวะที่สูญเสีย (กรณีพิการทุพพลภาพ)');
       return;
     }
 
@@ -430,7 +439,7 @@ export default function SubmitClaimPage() {
     const missingDocs = [];
     if (!attachedDocs.find((d) => d.index === 1)?.uploaded) missingDocs.push('1. รายงาน กพ.4');
     if (formData.lossType === 'DECEASED' && !attachedDocs.find((d) => d.index === 2)?.uploaded) {
-      missingDocs.push('2. ใบมรณบัตร (กรณีเสียชีวิต)');
+      missingDocs.push('2. ใบมรณบัตร (กรณีผู้เสียชีวิต)');
     }
     if (formData.lossType === 'DISABLED' && !attachedDocs.find((d) => d.index === 7)?.uploaded) {
       missingDocs.push('7. คำสั่งปลดพ้นหรือปลดออกจากราชการ (กรณีทุพพลภาพ)');
@@ -463,6 +472,9 @@ export default function SubmitClaimPage() {
         userId: currentUser?.id || 'usr-unit-1',
         claimData: {
           ...formData,
+          lossSpecificCause: specificCause,
+          deathCertificateCause: formData.lossType === 'DECEASED' ? specificCause : (formData.deathCertificateCause || ''),
+          disabledOrganDetail: formData.lossType === 'DISABLED' ? specificCause : '',
           documents: attachedDocs
         }
       };
@@ -902,7 +914,15 @@ export default function SubmitClaimPage() {
               <select 
                 className="form-select"
                 value={formData.lossType}
-                onChange={(e) => setFormData({ ...formData, lossType: e.target.value })}
+                onChange={(e) => {
+                  const newType = e.target.value;
+                  setFormData((prev) => ({ 
+                    ...prev, 
+                    lossType: newType,
+                    deathCertificateCause: newType === 'DECEASED' ? (prev.lossSpecificCause || prev.deathCertificateCause) : '',
+                    disabledOrganDetail: newType === 'DISABLED' ? (prev.lossSpecificCause || prev.disabledOrganDetail) : ''
+                  }));
+                }}
                 required
               >
                 <option value="DECEASED">ผู้เสียชีวิต</option>
@@ -967,20 +987,50 @@ export default function SubmitClaimPage() {
 
           </div>
 
-          {/* สาเหตุการเสียชีวิต (ตามใบมรณบัตร) & สาเหตุพฤติการณ์ (รายงาน กพ.4) */}
+          {/* ข้อมูลสาเหตุการสูญเสียเฉพาะกรณี (เสียชีวิต: ตามใบมรณบัตร / พิการ: อวัยวะที่สูญเสีย) */}
           <div style={{ marginTop: '16px' }}>
             <div className="form-group">
-              <label className="form-label required">สาเหตุการเสียชีวิต (ตามใบมรณบัตร)</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label required" style={{ marginBottom: 0 }}>
+                  {formData.lossType === 'DECEASED' ? (
+                    <span>สาเหตุการเสียชีวิต (ตามใบมรณบัตร)</span>
+                  ) : (
+                    <span>สาเหตุการสูญเสีย / อวัยวะที่สูญเสีย (กรณีพิการทุพพลภาพ)</span>
+                  )}
+                </label>
+                <span className="badge" style={{
+                  fontSize: '11px',
+                  background: formData.lossType === 'DECEASED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                  color: formData.lossType === 'DECEASED' ? '#fca5a5' : 'var(--gold-primary)',
+                  border: formData.lossType === 'DECEASED' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(234, 179, 8, 0.3)'
+                }}>
+                  {formData.lossType === 'DECEASED' ? '🏥 บันทึกตามใบมรณบัตร' : '♿ บันทึกอวัยวะที่สูญเสีย / ความพิการ'}
+                </span>
+              </div>
               <input 
                 type="text" 
                 className="form-input" 
-                placeholder="เช่น บาดแผลจากสะเก็ดระเบิดหลายแห่ง, เลือดออกในช่องท้องรุนแรง, ภาวะหัวใจหยุดเต้น..."
-                value={formData.deathCertificateCause}
-                onChange={(e) => setFormData({ ...formData, deathCertificateCause: e.target.value })}
-                required={formData.lossType === 'DECEASED'}
+                placeholder={
+                  formData.lossType === 'DECEASED'
+                    ? 'เช่น บาดแผลจากสะเก็ดระเบิดหลายแห่ง, เลือดออกในช่องท้องรุนแรง, ภาวะหัวใจหยุดเต้น...'
+                    : 'เช่น สูญเสียขาทั้งสองข้างระดับเหนือเข่า, สูญเสียแขนซ้ายและสายตาข้างขวา, ทุพพลภาพอัมพาตท่อนล่าง...'
+                }
+                value={formData.lossSpecificCause || (formData.lossType === 'DECEASED' ? formData.deathCertificateCause : formData.disabledOrganDetail) || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormData((prev) => ({ 
+                    ...prev, 
+                    lossSpecificCause: val,
+                    deathCertificateCause: prev.lossType === 'DECEASED' ? val : prev.deathCertificateCause,
+                    disabledOrganDetail: prev.lossType === 'DISABLED' ? val : prev.disabledOrganDetail
+                  }));
+                }}
+                required
               />
               <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
-                คัดลอกข้อความระบุสาเหตุการตายตามที่ปรากฏในเอกสารใบมรณบัตร
+                {formData.lossType === 'DECEASED'
+                  ? 'คัดลอกข้อความระบุสาเหตุการตายตามที่ปรากฏในเอกสารใบมรณบัตร (แบบ ท.ร.๔)'
+                  : 'ระบุรายละเอียดอวัยวะที่สูญเสีย หรือลักษณะความพิการทุพพลภาพตามใบรับรองแพทย์หรือผลการประเมิน'}
               </span>
             </div>
 
@@ -1067,9 +1117,12 @@ export default function SubmitClaimPage() {
                 <span>4. เอกสารหลักฐานประกอบแนบไฟล์ 10 รายการ</span>
               </h2>
               <p style={{ fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>
+                {formData.lossType === 'DISABLED' 
+                  ? 'กรณีพิการทุพพลภาพ: เอกสารข้อ 2 (ใบมรณบัตร) ได้รับการยกเว้นไม่ต้องแนบ (ต้องแนบข้อ 7 คำสั่งปลดฯ)' 
+                  : 'กรณีผู้เสียชีวิต: บังคับแนบเอกสารข้อ 2 (ใบมรณบัตร)'}
                 {formData.claimType === 'HIGH_RISK' 
-                  ? 'กรณีหน้าที่สำคัญ (300,000 บาท): ต้องแนบเอกสารข้อ 10 (รูปถ่ายขนาด 4x6 นิ้ว) ให้ครบถ้วน'
-                  : 'กรณีรับเงิน 60,000 บาท: เอกสารข้อ 10 (รูปถ่ายขนาด 4x6 นิ้ว) ได้รับการยกเว้น ไม่ต้องแนบ'}
+                  ? ' • กรณีหน้าที่สำคัญ (300,000 บาท) บังคับแนบข้อ 10 (รูปถ่าย 4x6 นิ้ว)' 
+                  : ' • กรณีรับเงิน 60,000 บาท ยกเว้นข้อ 10 (ไม่ต้องแนบ)'}
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -1086,19 +1139,37 @@ export default function SubmitClaimPage() {
             {attachedDocs.map((doc) => {
               const isHighRisk = formData.claimType === 'HIGH_RISK';
               const isDoc10 = doc.index === 10;
+              const isDoc2 = doc.index === 2;
+              const isDoc7 = doc.index === 7;
+              const isDeceased = formData.lossType === 'DECEASED';
+              const isDisabled = formData.lossType === 'DISABLED';
+
               const isMandatory = 
                 doc.index === 1 || 
-                (doc.index === 2 && formData.lossType === 'DECEASED') ||
-                (doc.index === 7 && formData.lossType === 'DISABLED') ||
+                (isDoc2 && isDeceased) ||
+                (isDoc7 && isDisabled) ||
                 (isDoc10 && isHighRisk) ||
                 doc.index === 3 || doc.index === 4 || doc.index === 5 || doc.index === 6 || doc.index === 8;
+
+              const isExempt = 
+                (isDoc10 && !isHighRisk) || 
+                (isDoc2 && isDisabled) || 
+                (isDoc7 && isDeceased);
 
               // กำหนดหมายเหตุแสดงผลเฉพาะกรณี
               let displayNote = doc.note;
               if (isDoc10) {
                 displayNote = isHighRisk 
                   ? 'บังคับแนบเฉพาะกรณีปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท)' 
-                  : 'กรณีรับเงิน 60,000 บาท ไม่ต้องแนบเอกสารนี้';
+                  : 'กรณีรับเงิน 60,000 บาท ไม่ต้องแนบเอกสารนี้ (ยกเว้น)';
+              } else if (isDoc2) {
+                displayNote = isDeceased
+                  ? 'บังคับแนบเฉพาะกรณีผู้เสียชีวิต'
+                  : 'กรณีพิการทุพพลภาพ ไม่ต้องแนบใบมรณบัตร (ได้รับการยกเว้น)';
+              } else if (isDoc7) {
+                displayNote = isDisabled
+                  ? 'บังคับแนบเฉพาะกรณีทุพพลภาพ'
+                  : 'กรณีผู้เสียชีวิต ไม่ต้องแนบเอกสารนี้ (ยกเว้น)';
               }
 
               return (
@@ -1109,16 +1180,16 @@ export default function SubmitClaimPage() {
                     borderRadius: '8px',
                     background: doc.uploaded 
                       ? 'rgba(16, 185, 129, 0.08)' 
-                      : (isDoc10 && !isHighRisk ? 'rgba(255, 255, 255, 0.015)' : 'rgba(255, 255, 255, 0.03)'),
+                      : (isExempt ? 'rgba(255, 255, 255, 0.015)' : 'rgba(255, 255, 255, 0.03)'),
                     border: doc.uploaded 
                       ? '1px solid rgba(16, 185, 129, 0.3)' 
-                      : (isDoc10 && !isHighRisk ? '1px dashed rgba(255, 255, 255, 0.08)' : '1px solid var(--border-glass)'),
+                      : (isExempt ? '1px dashed rgba(255, 255, 255, 0.08)' : '1px solid var(--border-glass)'),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     flexWrap: 'wrap',
                     gap: '12px',
-                    opacity: (isDoc10 && !isHighRisk && !doc.uploaded) ? 0.7 : 1
+                    opacity: (isExempt && !doc.uploaded) ? 0.75 : 1
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1128,7 +1199,7 @@ export default function SubmitClaimPage() {
                       borderRadius: '50%',
                       background: doc.uploaded 
                         ? 'var(--emerald-success)' 
-                        : (isDoc10 && !isHighRisk ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.1)'),
+                        : (isExempt ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.1)'),
                       color: doc.uploaded ? '#070d1e' : 'var(--text-dim)',
                       display: 'flex',
                       alignItems: 'center',
@@ -1143,6 +1214,26 @@ export default function SubmitClaimPage() {
                       <div style={{ fontWeight: 600, fontSize: '14px', color: doc.uploaded ? '#fff' : '#cbd5e1', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
                         <span>{doc.name}</span>
                         {isMandatory && <span style={{ color: 'var(--ruby-danger)' }}>*</span>}
+                        {isDoc2 && isDeceased && (
+                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                            ★ บังคับแนบ (กรณีผู้เสียชีวิต)
+                          </span>
+                        )}
+                        {isDoc2 && isDisabled && (
+                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                            ✓ ยกเว้นไม่ต้องแนบ (กรณีพิการทุพพลภาพ)
+                          </span>
+                        )}
+                        {isDoc7 && isDisabled && (
+                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: 'var(--gold-primary)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
+                            ★ บังคับแนบ (กรณีทุพพลภาพ)
+                          </span>
+                        )}
+                        {isDoc7 && isDeceased && (
+                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                            ✓ ยกเว้นไม่ต้องแนบ (กรณีผู้เสียชีวิต)
+                          </span>
+                        )}
                         {isDoc10 && isHighRisk && (
                           <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: 'var(--gold-primary)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
                             ★ บังคับแนบ (รับเงิน 300,000 บาท)
@@ -1154,7 +1245,7 @@ export default function SubmitClaimPage() {
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '12px', color: isDoc10 && isHighRisk ? 'var(--gold-primary)' : 'var(--text-dim)' }}>
+                      <div style={{ fontSize: '12px', color: (isDoc10 && isHighRisk) || (isDoc2 && isDeceased) || (isDoc7 && isDisabled) ? 'var(--gold-primary)' : 'var(--text-dim)' }}>
                         {displayNote ? `(หมายเหตุ: ${displayNote})` : 'เอกสารประกอบตามระเบียบ ทบ.'}
                       </div>
                     </div>
@@ -1263,13 +1354,13 @@ export default function SubmitClaimPage() {
                             padding: '6px 14px', 
                             fontSize: '12px', 
                             gap: '6px', 
-                            borderColor: (isDoc10 && !isHighRisk) ? 'var(--border-glass)' : 'var(--gold-primary)', 
-                            color: (isDoc10 && !isHighRisk) ? 'var(--text-dim)' : 'var(--gold-light)' 
+                            borderColor: isExempt ? 'var(--border-glass)' : 'var(--gold-primary)', 
+                            color: isExempt ? 'var(--text-dim)' : 'var(--gold-light)' 
                           }}
                           title="กดแนบไฟล์เอกสารนี้ (ขนาดไม่เกิน 10MB)"
                         >
                           <Upload size={14} />
-                          <span>{isDoc10 && !isHighRisk ? 'แนบไฟล์ (ไม่บังคับ)' : 'แนบไฟล์'}</span>
+                          <span>{isExempt ? 'แนบไฟล์ (ไม่บังคับ)' : 'แนบไฟล์'}</span>
                           <input 
                             type="file" 
                             accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
