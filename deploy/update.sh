@@ -18,18 +18,22 @@ echo -e "${CYAN}==============================================${NC}"
 echo -e "${YELLOW}🎖️  กำลังอัปเดตระบบสินไหม ทบ. จาก GitHub...${NC}"
 echo -e "${CYAN}==============================================${NC}"
 
-# 1. ดึงโค้ดล่าสุดจาก GitHub
-echo -e "\n${YELLOW}1. ดึงโค้ดเวอร์ชันล่าสุด...${NC}"
-git pull origin main
+# 1. ดึงโค้ดล่าสุดจาก GitHub แทนที่ข้อมูลเดิม
+echo -e "\n${YELLOW}1. ดึงโค้ดเวอร์ชันล่าสุดจาก GitHub (แทนที่ข้อมูลเดิม)...${NC}"
+git fetch origin main
+git reset --hard origin/main
 
 # 2. ติดตั้ง Dependencies ใหม่ (หากมีการเปลี่ยนแปลง)
 echo -e "\n${YELLOW}2. ติดตั้ง Node Packages...${NC}"
 npm install --legacy-peer-deps
 
-# 3. อัปเดตโครงสร้างฐานข้อมูล (ถ้ามี)
+# 3. อัปเดตโครงสร้างและข้อมูลเริ่มต้นฐานข้อมูล
+echo -e "\n${YELLOW}3. ซิงค์โครงสร้างและข้อมูลฐานข้อมูล PostgreSQL...${NC}"
 if [ -f "$APP_DIR/deploy/postgres/schema.sql" ]; then
-    echo -e "\n${YELLOW}3. ซิงค์โครงสร้างฐานข้อมูล...${NC}"
     PGPASSWORD="RtaSinmai@2026!" psql -h localhost -U rta_admin -d rta_sinmai -f "$APP_DIR/deploy/postgres/schema.sql" 2>/dev/null || true
+fi
+if [ -f "$APP_DIR/deploy/postgres/seed-data.sql" ]; then
+    PGPASSWORD="RtaSinmai@2026!" psql -h localhost -U rta_admin -d rta_sinmai -f "$APP_DIR/deploy/postgres/seed-data.sql" 2>/dev/null || true
 fi
 
 # 4. Build Next.js
