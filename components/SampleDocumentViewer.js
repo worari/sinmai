@@ -23,7 +23,7 @@ import {
   Clock,
   Sparkles
 } from 'lucide-react';
-import { formatThaiDate } from '@/lib/thai-utils';
+import { formatThaiDate, validateAttachmentFile } from '@/lib/thai-utils';
 
 export default function SampleDocumentViewer({ 
   doc, 
@@ -74,10 +74,18 @@ export default function SampleDocumentViewer({
   const fullAddress = claim?.locationOfLoss?.fullAddress || 'ต.บาเจาะ อ.บันนังสตา จ.ยะลา';
   const trackingCode = claim?.trackingCode || 'ทบ-กพ-๖๙/๐๑๒';
 
-  // จัดการอัปโหลดไฟล์ใหม่เข้าพรีวิวทันที
+  // จัดการอัปโหลดไฟล์ใหม่เข้าพรีวิวทันที (พร้อมระบบตรวจความปลอดภัยและขนาดไม่เกิน 10MB)
   const handleLocalFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const validation = validateAttachmentFile(file);
+    if (!validation.valid) {
+      alert(validation.error);
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       setLocalFileData(event.target?.result);

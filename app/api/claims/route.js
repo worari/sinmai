@@ -1,7 +1,7 @@
 // app/api/claims/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { validateCitizenId } from '@/lib/thai-utils';
+import { validateCitizenId, validateAttachmentFile } from '@/lib/thai-utils';
 
 export async function GET(request) {
   try {
@@ -47,6 +47,32 @@ export async function POST(request) {
     // กำหนดยอดเงินตามประเภทสินไหม
     // ยามปกติ 60,000 หรือ หน้าที่สำคัญ/เสี่ยงภัย 300,000
     const compensationAmount = claimData.claimType === 'HIGH_RISK' ? 300000 : 60000;
+
+    // ตรวจสอบความถูกต้องและปลอดภัยของไฟล์แนบทั้งหมด
+    const docs = Array.isArray(claimData.documents) ? claimData.documents : [];
+    for (const doc of docs) {
+      if (doc.uploaded && doc.fileName) {
+        const val = validateAttachmentFile({ name: doc.fileName, size: doc.fileSize });
+        if (!val.valid) {
+          return NextResponse.json({
+            success: false,
+            message: `ข้อผิดพลาดในเอกสารข้อที่ ${doc.index}: ${val.error}`
+          }, { status: 400 });
+        }
+      }
+    }
+
+    // ตรวจสอบเงื่อนไขเอกสารข้อที่ 10 (รูปถ่ายขนาด 4x6 นิ้ว)
+    // กรณีหน้าที่สำคัญ (300,000 บาท) บังคับแนบรูปถ่าย แต่กรณีรับเงิน 60,000 บาท ไม่ต้องแนบ
+    if (claimData.claimType === 'HIGH_RISK') {
+      const doc10 = docs.find((d) => d.index === 10);
+      if (!doc10 || !doc10.uploaded) {
+        return NextResponse.json({
+          success: false,
+          message: 'กรณีปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท) บังคับต้องแนบเอกสารข้อที่ 10 (รูปถ่ายขนาด 4x6 นิ้ว)'
+        }, { status: 400 });
+      }
+    }
 
     const newClaim = db.createClaim({
       ...claimData,

@@ -38,7 +38,9 @@ import {
   getLevel2Units,
   getLevel3Units,
   findUnitById,
-  getUnitBreadcrumb
+  getUnitBreadcrumb,
+  validateAttachmentFile,
+  MAX_FILE_SIZE_MB
 } from '@/lib/thai-utils';
 import { INITIAL_MILITARY_UNITS } from '@/lib/military-units';
 import LocationPicker from '@/components/LocationPicker';
@@ -282,6 +284,21 @@ export default function SubmitClaimPage() {
     const file = e.target.files[0];
     if (!file) return;
 
+    // ตรวจสอบความปลอดภัยและขนาดไฟล์ (ป้องกันไฟล์สั่งรัน .exe และจำกัดไม่เกิน 10MB)
+    const validation = validateAttachmentFile(file);
+    if (!validation.valid) {
+      triggerStatusPopup({
+        type: 'danger',
+        title: 'ไม่อนุญาตให้อัปโหลดไฟล์นี้',
+        message: validation.error
+      });
+      setErrorMsg(validation.error);
+      e.target.value = '';
+      return;
+    }
+
+    setErrorMsg('');
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const fileData = event.target?.result;
@@ -315,7 +332,7 @@ export default function SubmitClaimPage() {
       triggerStatusPopup({
         type: 'success',
         title: 'แนบเอกสารสำเร็จ',
-        message: `แนบไฟล์ "${file.name}" สำหรับเอกสารข้อที่ ${docIndex} เรียบร้อยแล้ว สามารถกดพรีวิวเพื่อตรวจสอบได้`
+        message: `แนบไฟล์ "${file.name}" (${(file.size / (1024 * 1024)).toFixed(2)} MB) สำหรับเอกสารข้อที่ ${docIndex} เรียบร้อยแล้ว ตรวจสอบผ่านตามเกณฑ์ความปลอดภัย`
       });
     };
     reader.readAsDataURL(file);
@@ -418,13 +435,25 @@ export default function SubmitClaimPage() {
     if (formData.lossType === 'DISABLED' && !attachedDocs.find((d) => d.index === 7)?.uploaded) {
       missingDocs.push('7. คำสั่งปลดพ้นหรือปลดออกจากราชการ (กรณีทุพพลภาพ)');
     }
+    // กรณีปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท) ต้องแนบรูปถ่าย 4x6 นิ้ว แต่ถ้ารับเงิน 60,000 บาท ไม่ต้องแนบ
     if (formData.claimType === 'HIGH_RISK' && !attachedDocs.find((d) => d.index === 10)?.uploaded) {
-      missingDocs.push('10. รูปถ่ายขนาด 4x6 นิ้ว (กรณีรับเงินตั้งแต่ 1 แสนบาทขึ้นไป)');
+      missingDocs.push('10. รูปถ่ายขนาด 4x6 นิ้ว (จำเป็นสำหรับกรณีปฏิบัติหน้าที่สำคัญ รับเงิน 300,000 บาท)');
     }
 
     if (missingDocs.length > 0) {
       setErrorMsg(`กรุณาแนบเอกสารสำคัญให้ครบถ้วน: ${missingDocs.join(', ')}`);
       return;
+    }
+
+    // ตรวจสอบความปลอดภัยและขนาดไฟล์ของเอกสารที่แนบทั้งหมด (ป้องกันไฟล์สั่งรัน .exe และจำกัดขนาดไม่เกิน 10MB)
+    for (const doc of attachedDocs) {
+      if (doc.uploaded && doc.fileName) {
+        const val = validateAttachmentFile({ name: doc.fileName, size: doc.fileSize });
+        if (!val.valid) {
+          setErrorMsg(`เอกสารข้อที่ ${doc.index} (${doc.name}): ${val.error}`);
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
@@ -578,11 +607,15 @@ export default function SubmitClaimPage() {
                 onChange={(e) => setFormData({ ...formData, claimType: e.target.value })}
                 required
               >
-                <option value="NORMAL">ยามปกติ (รับเงิน 60,000 บาท)</option>
-                <option value="HIGH_RISK">หน้าที่สำคัญ หรือ ปฏิบัติหน้าที่เสี่ยงภัย (รับเงิน 300,000 บาท)</option>
+                <option value="HIGH_RISK">หน้าที่สำคัญ หรือ ปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท)</option>
+                <option value="NORMAL">ยามปกติ หรือ ปฏิบัติราชการทั่วไป (รับเงิน 60,000 บาท)</option>
               </select>
-              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
-                ตามระเบียบ กห./ทบ. ว่าด้วยการประกันชีวิตกำลังพล
+              <span style={{ fontSize: '12px', color: formData.claimType === 'HIGH_RISK' ? 'var(--gold-primary)' : 'var(--emerald-success)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {formData.claimType === 'HIGH_RISK' ? (
+                  <><span>⭐</span> <span>รับเงินสินไหม 300,000 บาท (ต้องแนบเอกสารข้อ 10: รูปถ่ายขนาด 4x6 นิ้ว)</span></>
+                ) : (
+                  <><span>✓</span> <span>รับเงินสินไหม 60,000 บาท (ไม่ต้องแนบเอกสารข้อ 10: รูปถ่ายขนาด 4x6 นิ้ว)</span></>
+                )}
               </span>
             </div>
           </div>
@@ -1027,24 +1060,46 @@ export default function SubmitClaimPage() {
 
         {/* Section 4: รายการเอกสารหลักฐานแนบ 10 รายการ */}
         <div className="glass-panel" style={{ padding: '24px', marginBottom: '28px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-            <h2 style={{ fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--gold-light)' }}>
-              <Paperclip size={18} />
-              <span>4. เอกสารหลักฐานประกอบแนบไฟล์ 10 รายการ</span>
-            </h2>
-            <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-              รองรับไฟล์ PDF, JPG, PNG (ขนาดไม่เกิน 10MB)
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h2 style={{ fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--gold-light)' }}>
+                <Paperclip size={18} />
+                <span>4. เอกสารหลักฐานประกอบแนบไฟล์ 10 รายการ</span>
+              </h2>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>
+                {formData.claimType === 'HIGH_RISK' 
+                  ? 'กรณีหน้าที่สำคัญ (300,000 บาท): ต้องแนบเอกสารข้อ 10 (รูปถ่ายขนาด 4x6 นิ้ว) ให้ครบถ้วน'
+                  : 'กรณีรับเงิน 60,000 บาท: เอกสารข้อ 10 (รูปถ่ายขนาด 4x6 นิ้ว) ได้รับการยกเว้น ไม่ต้องแนบ'}
+              </p>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '12px', color: 'var(--gold-primary)', fontWeight: 600 }}>
+                🛡️ ไฟล์ขนาดไม่เกิน 10MB ต่อไฟล์ (PDF, JPG, PNG, DOC, DOCX)
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--ruby-danger)', marginTop: '2px' }}>
+                🔒 ระบบมีระบบป้องกันความปลอดภัย ปฏิเสธไฟล์สั่งรัน (.exe, .bat, .cmd, .sh ฯลฯ) อัตโนมัติ
+              </div>
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {attachedDocs.map((doc) => {
+              const isHighRisk = formData.claimType === 'HIGH_RISK';
+              const isDoc10 = doc.index === 10;
               const isMandatory = 
                 doc.index === 1 || 
                 (doc.index === 2 && formData.lossType === 'DECEASED') ||
                 (doc.index === 7 && formData.lossType === 'DISABLED') ||
-                (doc.index === 10 && formData.claimType === 'HIGH_RISK') ||
+                (isDoc10 && isHighRisk) ||
                 doc.index === 3 || doc.index === 4 || doc.index === 5 || doc.index === 6 || doc.index === 8;
+
+              // กำหนดหมายเหตุแสดงผลเฉพาะกรณี
+              let displayNote = doc.note;
+              if (isDoc10) {
+                displayNote = isHighRisk 
+                  ? 'บังคับแนบเฉพาะกรณีปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท)' 
+                  : 'กรณีรับเงิน 60,000 บาท ไม่ต้องแนบเอกสารนี้';
+              }
 
               return (
                 <div 
@@ -1052,13 +1107,18 @@ export default function SubmitClaimPage() {
                   style={{
                     padding: '12px 16px',
                     borderRadius: '8px',
-                    background: doc.uploaded ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.03)',
-                    border: doc.uploaded ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--border-glass)',
+                    background: doc.uploaded 
+                      ? 'rgba(16, 185, 129, 0.08)' 
+                      : (isDoc10 && !isHighRisk ? 'rgba(255, 255, 255, 0.015)' : 'rgba(255, 255, 255, 0.03)'),
+                    border: doc.uploaded 
+                      ? '1px solid rgba(16, 185, 129, 0.3)' 
+                      : (isDoc10 && !isHighRisk ? '1px dashed rgba(255, 255, 255, 0.08)' : '1px solid var(--border-glass)'),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     flexWrap: 'wrap',
-                    gap: '12px'
+                    gap: '12px',
+                    opacity: (isDoc10 && !isHighRisk && !doc.uploaded) ? 0.7 : 1
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1066,7 +1126,9 @@ export default function SubmitClaimPage() {
                       width: '28px',
                       height: '28px',
                       borderRadius: '50%',
-                      background: doc.uploaded ? 'var(--emerald-success)' : 'rgba(255, 255, 255, 0.1)',
+                      background: doc.uploaded 
+                        ? 'var(--emerald-success)' 
+                        : (isDoc10 && !isHighRisk ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.1)'),
                       color: doc.uploaded ? '#070d1e' : 'var(--text-dim)',
                       display: 'flex',
                       alignItems: 'center',
@@ -1078,12 +1140,22 @@ export default function SubmitClaimPage() {
                     </div>
 
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '14px', color: doc.uploaded ? '#fff' : '#cbd5e1' }}>
-                        {doc.name}
-                        {isMandatory && <span style={{ color: 'var(--ruby-danger)', marginLeft: '4px' }}>*</span>}
+                      <div style={{ fontWeight: 600, fontSize: '14px', color: doc.uploaded ? '#fff' : '#cbd5e1', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                        <span>{doc.name}</span>
+                        {isMandatory && <span style={{ color: 'var(--ruby-danger)' }}>*</span>}
+                        {isDoc10 && isHighRisk && (
+                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: 'var(--gold-primary)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
+                            ★ บังคับแนบ (รับเงิน 300,000 บาท)
+                          </span>
+                        )}
+                        {isDoc10 && !isHighRisk && (
+                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
+                            ✓ ยกเว้นไม่ต้องแนบ (รับเงิน 60,000 บาท)
+                          </span>
+                        )}
                       </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                        {doc.note ? `(หมายเหตุ: ${doc.note})` : 'เอกสารประกอบตามระเบียบ ทบ.'}
+                      <div style={{ fontSize: '12px', color: isDoc10 && isHighRisk ? 'var(--gold-primary)' : 'var(--text-dim)' }}>
+                        {displayNote ? `(หมายเหตุ: ${displayNote})` : 'เอกสารประกอบตามระเบียบ ทบ.'}
                       </div>
                     </div>
                   </div>
@@ -1108,7 +1180,7 @@ export default function SubmitClaimPage() {
                           </span>
                           {doc.fileSize > 0 && (
                             <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                              ({(doc.fileSize / 1024).toFixed(0)} KB)
+                              ({(doc.fileSize / (1024 * 1024)).toFixed(2)} MB)
                             </span>
                           )}
                         </div>
@@ -1136,13 +1208,13 @@ export default function SubmitClaimPage() {
                         <label 
                           className="btn btn-secondary btn-sm" 
                           style={{ cursor: 'pointer', padding: '6px 10px', fontSize: '12px', gap: '5px' }}
-                          title="เลือกไฟล์ใหม่เพื่อแทนที่เอกสารนี้"
+                          title="เลือกไฟล์ใหม่เพื่อแทนที่เอกสารนี้ (ขนาดไม่เกิน 10MB)"
                         >
                           <Upload size={13} />
                           <span>เปลี่ยนไฟล์</span>
                           <input 
                             type="file" 
-                            accept=".pdf,.png,.jpg,.jpeg"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
                             style={{ display: 'none' }} 
                             onChange={(e) => {
                               handleFileUpload(doc.index, e);
@@ -1186,14 +1258,21 @@ export default function SubmitClaimPage() {
 
                         <label 
                           className="btn btn-secondary btn-sm" 
-                          style={{ cursor: 'pointer', padding: '6px 14px', fontSize: '12px', gap: '6px', borderColor: 'var(--gold-primary)', color: 'var(--gold-light)' }}
-                          title="กดแนบไฟล์เอกสารนี้"
+                          style={{ 
+                            cursor: 'pointer', 
+                            padding: '6px 14px', 
+                            fontSize: '12px', 
+                            gap: '6px', 
+                            borderColor: (isDoc10 && !isHighRisk) ? 'var(--border-glass)' : 'var(--gold-primary)', 
+                            color: (isDoc10 && !isHighRisk) ? 'var(--text-dim)' : 'var(--gold-light)' 
+                          }}
+                          title="กดแนบไฟล์เอกสารนี้ (ขนาดไม่เกิน 10MB)"
                         >
                           <Upload size={14} />
-                          <span>แนบไฟล์</span>
+                          <span>{isDoc10 && !isHighRisk ? 'แนบไฟล์ (ไม่บังคับ)' : 'แนบไฟล์'}</span>
                           <input 
                             type="file" 
-                            accept=".pdf,.png,.jpg,.jpeg"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
                             style={{ display: 'none' }} 
                             onChange={(e) => {
                               handleFileUpload(doc.index, e);

@@ -32,7 +32,7 @@ import {
   Building2,
   RefreshCw
 } from 'lucide-react';
-import { formatThaiDate, calculateSlaStatus } from '@/lib/thai-utils';
+import { formatThaiDate, calculateSlaStatus, validateAttachmentFile } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
@@ -298,10 +298,16 @@ export default function ClaimDetailPage({ params }) {
     }
   };
 
-  // จัดการอัปโหลดไฟล์สลิปหลักฐานการโอนเงิน
+  // จัดการอัปโหลดไฟล์สลิปหลักฐานการโอนเงิน (พร้อมตรวจความปลอดภัยและขนาดไม่เกิน 10MB)
   const handleSlipFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
+      const val = validateAttachmentFile(file);
+      if (!val.valid) {
+        alert(val.error);
+        e.target.value = '';
+        return;
+      }
       setTransferSlipName(file.name);
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
@@ -864,6 +870,10 @@ export default function ClaimDetailPage({ params }) {
                 {doc.uploaded ? (
                   <span className={`badge ${doc.status === 'VERIFIED' ? 'badge-emerald' : doc.status === 'REJECTED' ? 'badge-red' : 'badge-amber'}`}>
                     {doc.status === 'VERIFIED' ? '✓ ตรวจสอบผ่าน' : doc.status === 'REJECTED' ? '✗ ให้แก้ไข' : 'รอตรวจ'}
+                  </span>
+                ) : doc.index === 10 && claim.claimType === 'NORMAL' ? (
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
+                    ✓ ยกเว้นไม่ต้องแนบ (กรณี 60,000 บ.)
                   </span>
                 ) : (
                   <span className="badge badge-dark">ยังไม่แนบ</span>
