@@ -36,7 +36,16 @@ function getLocalIp() {
   return null;
 }
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  const { getSessionPayloadFromCookieHeader } = await import('./lib/security.js');
+  const { db } = await import('./lib/db.js');
+  try {
+    await db.ensureReady({ forceRefresh: false });
+    console.log('✅ PostgreSQL Database initialized & synchronized');
+  } catch (pgErr) {
+    console.error('⚠️ Initial PostgreSQL connection warning:', pgErr.message);
+  }
+
   const server = createServer(async (req, res) => {
     try {
       const parsedUrl = parse(req.url, true);
@@ -51,19 +60,74 @@ app.prepare().then(() => {
   // ผูก Socket.io
   const io = new Server(server, {
     cors: {
-      origin: '*',
+      origin: false,
       methods: ['GET', 'POST']
     }
   });
 
   global.io = io;
+  globalThis.io = io;
+
+  const leaveDynamicRooms = (socket) => {
+    for (const room of socket.rooms) {
+      if (
+        room !== socket.id &&
+        (room === 'authenticated' ||
+          room.startsWith('user_') ||
+          room.startsWith('role_') ||
+          room.startsWith('unit_'))
+      ) {
+        socket.leave(room);
+      }
+    }
+  };
 
   io.on('connection', (socket) => {
-    console.log('⚡ Socket client connected:', socket.id);
+    const cookieHeader = socket.handshake?.headers?.cookie || '';
+    const verifiedSession = getSessionPayloadFromCookieHeader(cookieHeader);
 
-    socket.on('join_unit', (unitId) => {
-      socket.join(`unit_${unitId}`);
-      console.log(`User ${socket.id} joined unit_${unitId}`);
+    const joinVerifiedRooms = (session) => {
+      leaveDynamicRooms(socket);
+      if (session?.uid) {
+        socket.join('authenticated');
+        socket.join(`user_${session.uid}`);
+        if (session.role) socket.join(`role_${session.role}`);
+        if (session.unitId) socket.join(`unit_${session.unitId}`);
+        socket.data.authUser = {
+          userId: session.uid,
+          role: session.role,
+          unitId: session.unitId || ''
+        };
+      } else {
+        socket.data.authUser = null;
+      }
+    };
+
+    joinVerifiedRooms(verifiedSession);
+    console.log('⚡ Socket client connected:', socket.id, verifiedSession ? `[${verifiedSession.role}]` : '[Guest]');
+
+    // ไม่เชื่อถือ role/userId จาก client ตรงๆ ใช้เฉพาะข้อมูลจาก Signed HttpOnly Cookie เท่านั้น
+    socket.on('register_client', () => {
+      const currentSession = getSessionPayloadFromCookieHeader(socket.handshake?.headers?.cookie || '');
+      joinVerifiedRooms(currentSession);
+      socket.emit('socket_ready', {
+        connected: true,
+        authenticated: Boolean(currentSession?.uid),
+        socketId: socket.id,
+        onlineClients: io.engine.clientsCount
+      });
+    });
+
+    socket.on('unregister_client', () => {
+      leaveDynamicRooms(socket);
+      socket.data.authUser = null;
+    });
+
+    socket.emit('socket_ready', {
+      connected: true,
+      authenticated: Boolean(verifiedSession?.uid),
+      socketId: socket.id,
+      onlineClients: io.engine.clientsCount
     });
 
     socket.on('disconnect', () => {

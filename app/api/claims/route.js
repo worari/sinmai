@@ -2,21 +2,23 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { validateCitizenId, validateAttachmentFile } from '@/lib/thai-utils';
+import { requireAuth } from '@/lib/api-auth';
 
 export async function GET(request) {
   try {
+    const auth = await requireAuth(request, db);
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const { searchParams } = new URL(request.url);
     const checkCitizenId = searchParams.get('checkCitizenId');
     if (checkCitizenId) {
       const checkResult = db.checkDuplicateCasualty(checkCitizenId);
-      return NextResponse.json({ success: true, ...checkResult });
+      return NextResponse.json({ success: true, ...checkResult }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const userId = searchParams.get('userId');
-    const user = userId ? db.findUserById(userId) : null;
-
     const claims = db.getClaims(user);
-    return NextResponse.json({ success: true, claims });
+    return NextResponse.json({ success: true, claims }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -24,17 +26,12 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['UNIT_OFFICER', 'ADMIN'] });
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const body = await request.json();
-    const { userId, claimData, isDraft } = body;
-
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งาน' }, { status: 401 });
-    }
-
-    if (user.role !== 'UNIT_OFFICER' && user.role !== 'ADMIN') {
-      return NextResponse.json({ success: false, message: 'เฉพาะเจ้าหน้าที่หน่วยเสนอเรื่องเท่านั้นที่สามารถสร้างรายงานได้' }, { status: 403 });
-    }
+    const { claimData, isDraft } = body;
 
     // กำหนดยอดเงินตามประเภทสินไหม
     // ยามปกติ 60,000 หรือ หน้าที่สำคัญ/เสี่ยงภัย 300,000
@@ -77,6 +74,7 @@ export async function POST(request) {
         disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
         compensationAmount
       }, user, true);
+      await db.flush();
 
       return NextResponse.json({
         success: true,
@@ -166,6 +164,7 @@ export async function POST(request) {
       disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
       compensationAmount
     }, user, false);
+    await db.flush();
 
     return NextResponse.json({ 
       success: true, 

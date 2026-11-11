@@ -20,9 +20,11 @@ data-store.json
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs & Backups
 *.log
 npm-debug.log*
+logs/
+backups/
 
 # IDE
 .idea/

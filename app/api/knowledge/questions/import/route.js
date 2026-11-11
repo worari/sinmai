@@ -1,12 +1,14 @@
 // app/api/knowledge/questions/import/route.js
-// API นำเข้าคำถามแบบทดสอบจากไฟล์ Excel (.xlsx) - สำหรับผู้ดูแลระบบ
-// Content-Type: multipart/form-data (ฟิลด์: file, examId)
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { parseQuestionsFromExcel } from '@/lib/excel';
+import { requireAuth } from '@/lib/api-auth';
 
 export async function POST(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const formData = await request.formData();
     const file = formData.get('file');
     const examId = formData.get('examId') || null;
@@ -18,7 +20,6 @@ export async function POST(request) {
       );
     }
 
-    // ตรวจสอบนามสกุลไฟล์
     const fileName = file.name || '';
     if (!fileName.toLowerCase().endsWith('.xlsx')) {
       return NextResponse.json(
@@ -27,7 +28,6 @@ export async function POST(request) {
       );
     }
 
-    // อ่านไฟล์เป็น Buffer แล้วแปลงด้วย xlsx
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const parsed = parseQuestionsFromExcel(buffer);
@@ -36,25 +36,15 @@ export async function POST(request) {
       return NextResponse.json(parsed, { status: 400 });
     }
 
-    // กำหนดรหัสแบบทดสอบ (examId) ตามการเลือกของผู้ใช้:
-    // - ถ้าเลือก examId ในฟอร์ม => นำเข้าเข้าแบบทดสอบนั้น (ผ่าน createKnowledgeQuestion)
-    // - ถ้าไม่เลือก examId => นำเข้าเข้าธนาคารคำถามกลาง (ธนาคารกลาง) โดยไม่ผูกกับแบบทดสอบ
-    // ระบบจะเลือกเมธอดที่เหมาะสมตามค่า examId
     let created = [];
     if (examId) {
-      const questionsToImport = parsed.questions.map((q) => ({
-        ...q,
-        examId: examId
-      }));
+      const questionsToImport = parsed.questions.map((q) => ({ ...q, examId }));
       created = questionsToImport.map((q) => db.createKnowledgeQuestion(q));
     } else {
-      // นำเข้าเข้าธนาคารคำถามกลาง
-      const questionsToImport = parsed.questions.map((q) => ({
-        ...q,
-        examId: null
-      }));
+      const questionsToImport = parsed.questions.map((q) => ({ ...q, examId: null }));
       created = db.importQuestionsToBank(questionsToImport);
     }
+    await db.flush();
 
     return NextResponse.json(
       {

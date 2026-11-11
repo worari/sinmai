@@ -33,6 +33,10 @@ import { formatThaiDate, REQUIRED_DOCUMENTS, validateAttachmentFile, MILITARY_RA
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
+import PaginationBar from '@/components/PaginationBar';
+import { getSocketClient } from '@/lib/socket-client';
+
+const CLAIMS_PER_PAGE = 10;
 
 export default function ClaimsListPage() {
   const [claims, setClaims] = useState([]);
@@ -40,10 +44,11 @@ export default function ClaimsListPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Filters
+  // Filters & Pagination
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [slaFilter, setSlaFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // CRUD Modals State
   // 1. Manage Documents Modal
@@ -62,23 +67,45 @@ export default function ClaimsListPage() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    const handleAuth = () => {
+    const readUser = () => {
       const saved = localStorage.getItem('rta_user');
-      let user = null;
-      if (saved) {
-        try {
-          user = JSON.parse(saved);
-          setCurrentUser(user);
-        } catch (e) {}
-      } else {
-        setCurrentUser(null);
+      if (!saved) return null;
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
       }
+    };
+
+    const handleAuth = () => {
+      const user = readUser();
+      setCurrentUser(user);
       loadClaims(user);
     };
 
     handleAuth();
     window.addEventListener('rta_auth_change', handleAuth);
-    return () => window.removeEventListener('rta_auth_change', handleAuth);
+
+    const socket = getSocketClient();
+    const syncLive = () => {
+      const u = readUser();
+      if (u?.id) loadClaims(u);
+    };
+
+    if (socket) {
+      socket.on('claim_created', syncLive);
+      socket.on('claim_updated', syncLive);
+      socket.on('claim_deleted', syncLive);
+    }
+
+    return () => {
+      window.removeEventListener('rta_auth_change', handleAuth);
+      if (socket) {
+        socket.off('claim_created', syncLive);
+        socket.off('claim_updated', syncLive);
+        socket.off('claim_deleted', syncLive);
+      }
+    };
   }, []);
 
   const loadClaims = async (user) => {
@@ -136,6 +163,19 @@ export default function ClaimsListPage() {
 
     setFilteredClaims(result);
   }, [searchQuery, statusFilter, slaFilter, claims]);
+
+  // รีเซ็ตกลับหน้า 1 เมื่อมีการเปลี่ยนคำค้นหาหรือตัวกรอง
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, slaFilter]);
+
+  const totalClaimsCount = filteredClaims.length;
+  const totalPages = Math.max(1, Math.ceil(totalClaimsCount / CLAIMS_PER_PAGE));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const paginatedClaims = filteredClaims.slice(
+    (safeCurrentPage - 1) * CLAIMS_PER_PAGE,
+    safeCurrentPage * CLAIMS_PER_PAGE
+  );
 
   // Quick Counter Aggregation
   const totalCount = claims.length;
@@ -623,7 +663,7 @@ export default function ClaimsListPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredClaims.map((claim) => {
+                {paginatedClaims.map((claim) => {
                   const daysDiff = Math.floor((new Date() - new Date(claim.createdAt)) / (1000 * 60 * 60 * 24));
                   const remaining = 30 - daysDiff;
                   const isOverdue = remaining <= 0;
@@ -822,6 +862,16 @@ export default function ClaimsListPage() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {/* Pagination Controls (หน้าแรก / ก่อนหน้า / เลขหน้า / หน้าถัดไป / หน้าสุดท้าย • 10 แถวต่อหน้า) */}
+        {!loading && totalClaimsCount > 0 && (
+          <PaginationBar
+            currentPage={safeCurrentPage}
+            totalItems={totalClaimsCount}
+            itemsPerPage={CLAIMS_PER_PAGE}
+            onPageChange={setCurrentPage}
+          />
         )}
       </div>
 

@@ -2,20 +2,21 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { validateCitizenId, validateAttachmentFile } from '@/lib/thai-utils';
+import { requireAuth } from '@/lib/api-auth';
 
 export async function GET(request, { params }) {
   try {
-    const { id } = params;
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const user = userId ? db.findUserById(userId) : null;
+    const auth = await requireAuth(request, db);
+    if (auth.response) return auth.response;
+    const user = auth.user;
 
+    const { id } = params;
     const claim = db.getClaimById(id, user);
     if (!claim) {
       return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลคำร้อง' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, claim });
+    return NextResponse.json({ success: true, claim }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 403 });
   }
@@ -23,14 +24,13 @@ export async function GET(request, { params }) {
 
 export async function PUT(request, { params }) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['UNIT_OFFICER', 'ADMIN'] });
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const { id } = params;
     const body = await request.json();
-    const { userId, claimData, submitNow } = body;
-
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งาน' }, { status: 401 });
-    }
+    const { claimData, submitNow } = body;
 
     // ตรวจสอบความปลอดภัยของไฟล์แนบทั้งหมด
     const docs = Array.isArray(claimData.documents) ? claimData.documents : [];
@@ -113,6 +113,7 @@ export async function PUT(request, { params }) {
         disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
         compensationAmount
       }, user, true);
+      await db.flush();
 
       return NextResponse.json({
         success: true,
@@ -131,6 +132,7 @@ export async function PUT(request, { params }) {
         disabledOrganDetail: claimData.lossType === 'DISABLED' ? specificCause : '',
         compensationAmount
       }, user, false);
+      await db.flush();
 
       return NextResponse.json({
         success: true,
@@ -146,13 +148,12 @@ export async function PUT(request, { params }) {
 
 export async function PATCH(request, { params }) {
   try {
-    const { id } = params;
-    const { userId, newStatus, remark, extraData } = await request.json();
+    const auth = await requireAuth(request, db);
+    if (auth.response) return auth.response;
+    const user = auth.user;
 
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งาน' }, { status: 401 });
-    }
+    const { id } = params;
+    const { newStatus, remark, extraData } = await request.json();
 
     // Role-based workflow validation
     if (newStatus === 'UNDER_REVIEW' || newStatus === 'REJECTED_BY_KSP' || newStatus === 'PENDING_APPROVAL') {
@@ -180,6 +181,7 @@ export async function PATCH(request, { params }) {
     }
 
     const updatedClaim = db.updateClaimStatus(id, newStatus, user, remark, extraData);
+    await db.flush();
     return NextResponse.json({ success: true, claim: updatedClaim });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -188,16 +190,13 @@ export async function PATCH(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['UNIT_OFFICER', 'ADMIN'] });
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const { id } = params;
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งานหรือเซสชันหมดอายุ' }, { status: 401 });
-    }
-
     const result = db.deleteClaim(id, user);
+    await db.flush();
     return NextResponse.json({
       success: true,
       message: `ลบคำร้อง ${result.deletedClaim.trackingCode} เรียบร้อยแล้ว`,

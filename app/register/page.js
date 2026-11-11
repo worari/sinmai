@@ -22,7 +22,8 @@ export default function RegisterPage() {
     phone: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    pdpaAccepted: false
   });
 
   const [loading, setLoading] = useState(false);
@@ -55,8 +56,13 @@ export default function RegisterPage() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setErrorMsg('รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+    if (formData.password.length < 8 || !/[a-zA-Z]/.test(formData.password) || !/\d/.test(formData.password)) {
+      setErrorMsg('เพื่อความปลอดภัยไซเบอร์ รหัสผ่านต้องมีความยาวอย่างน้อย 8 ตัวอักษร และมีทั้งตัวอักษรภาษาอังกฤษและตัวเลข');
+      return;
+    }
+
+    if (!formData.pdpaAccepted) {
+      setErrorMsg('กรุณายอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) และการจัดเก็บประวัติการใช้งานก่อนลงทะเบียน');
       return;
     }
 
@@ -317,7 +323,7 @@ export default function RegisterPage() {
               <input 
                 type="password" 
                 className="form-input"
-                placeholder="อย่างน้อย 6 ตัวอักษร"
+                placeholder="อย่างน้อย 8 ตัวอักษร (ตัวอักษร + ตัวเลข)"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
@@ -335,6 +341,35 @@ export default function RegisterPage() {
                 required
               />
             </div>
+          </div>
+
+          <div style={{
+            padding: '12px 14px',
+            borderRadius: '8px',
+            background: 'rgba(20, 184, 166, 0.08)',
+            border: '1px solid rgba(20, 184, 166, 0.3)',
+            marginBottom: '16px'
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+              <input
+                type="checkbox"
+                checked={formData.pdpaAccepted}
+                onChange={(e) => setFormData({ ...formData, pdpaAccepted: e.target.checked })}
+                style={{ marginTop: '3px', width: '16px', height: '16px', accentColor: 'var(--cyan-accent)' }}
+                required
+              />
+              <span>
+                ข้าพเจ้าได้อ่านและยินยอมตาม{' '}
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent('rta_open_pdpa_settings', { detail: { tab: 'policy' } }))}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--gold-light)', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: '13px' }}
+                >
+                  นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)
+                </button>{' '}
+                และรับทราบการจัดเก็บประวัติการใช้งาน (Audit Log) ตามมาตรฐานความมั่นคงปลอดภัยไซเบอร์
+              </span>
+            </label>
           </div>
 
           <button 

@@ -1,9 +1,11 @@
 // app/api/units/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/api-auth';
 
 export async function GET(request) {
   try {
+    await db.ensureReady();
     const { searchParams } = new URL(request.url);
     const level = searchParams.get('level');
     const parentId = searchParams.get('parentId');
@@ -24,17 +26,14 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const body = await request.json();
-    const userId = body.userId || body.adminId;
-    if (userId) {
-      const user = db.findUserById(userId);
-      if (user && user.role !== 'ADMIN') {
-        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถจัดการโครงสร้างหน่วยได้' }, { status: 403 });
-      }
-    }
 
     if (body.action === 'RESET_DEFAULT') {
       const units = db.resetUnits();
+      await db.flush();
       return NextResponse.json({
         success: true,
         message: 'รีเซ็ตโครงสร้างหน่วยเป็นค่ามาตรฐานของกองทัพบกเรียบร้อยแล้ว',
@@ -43,6 +42,7 @@ export async function POST(request) {
     }
 
     const newUnit = db.addUnit(body);
+    await db.flush();
     return NextResponse.json({
       success: true,
       message: `เพิ่มโครงสร้างหน่วย "${newUnit.name}" สำเร็จ`,
@@ -55,20 +55,16 @@ export async function POST(request) {
 
 export async function PUT(request) {
   try {
-    const body = await request.json();
-    const userId = body.userId || body.adminId;
-    if (userId) {
-      const user = db.findUserById(userId);
-      if (user && user.role !== 'ADMIN') {
-        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถแก้ไขโครงสร้างหน่วยได้' }, { status: 403 });
-      }
-    }
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
 
+    const body = await request.json();
     if (!body.id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสหน่วยที่ต้องการแก้ไข' }, { status: 400 });
     }
 
     const updatedUnit = db.updateUnit(body.id, body);
+    await db.flush();
     return NextResponse.json({
       success: true,
       message: `อัปเดตข้อมูลโครงสร้างหน่วย "${updatedUnit.name}" เรียบร้อยแล้ว`,
@@ -81,21 +77,18 @@ export async function PUT(request) {
 
 export async function DELETE(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    const userId = searchParams.get('userId');
-    if (userId) {
-      const user = db.findUserById(userId);
-      if (user && user.role !== 'ADMIN') {
-        return NextResponse.json({ success: false, message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถลบโครงสร้างหน่วยได้' }, { status: 403 });
-      }
-    }
 
     if (!id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสหน่วยที่ต้องการลบ' }, { status: 400 });
     }
 
     const deleted = db.deleteUnit(id);
+    await db.flush();
     return NextResponse.json({
       success: true,
       message: `ลบหน่วย "${deleted.name}" ออกจากโครงสร้างเรียบร้อยแล้ว`

@@ -2,22 +2,19 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { validateAttachmentFile } from '@/lib/thai-utils';
+import { requireAuth } from '@/lib/api-auth';
 
 export async function PATCH(request, { params }) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['KSP_OFFICER', 'INSURANCE_REP', 'ADMIN'] });
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const { id } = params;
-    const { userId, docIndex, status, comment } = await request.json();
-
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบผู้ใช้งาน' }, { status: 401 });
-    }
-
-    if (user.role !== 'KSP_OFFICER' && user.role !== 'INSURANCE_REP' && user.role !== 'ADMIN') {
-      return NextResponse.json({ success: false, message: 'เฉพาะ กพ.ทบ.(กสพ.ฯ) และ บริษัทประกันภัย เท่านั้นที่มีสิทธิตรวจสอบเอกสาร' }, { status: 403 });
-    }
+    const { docIndex, status, comment } = await request.json();
 
     const updatedClaim = db.updateDocumentStatus(id, docIndex, status, comment, user);
+    await db.flush();
     return NextResponse.json({ success: true, claim: updatedClaim });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -27,16 +24,15 @@ export async function PATCH(request, { params }) {
 // อัปโหลดหรือแทนที่ไฟล์เอกสารแนบ (Upload / Replace Attachment File)
 export async function POST(request, { params }) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['UNIT_OFFICER', 'ADMIN'] });
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const { id } = params;
     const body = await request.json();
-    const { userId, docIndex, fileName, fileUrl, fileData, fileSize } = body;
+    const { docIndex, fileName, fileUrl, fileData, fileSize } = body;
 
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งาน' }, { status: 401 });
-    }
-
-    // ตรวจสอบความปลอดภัยของไฟล์แนบ (ป้องกัน .exe, .sh และจำกัดไม่เกิน 10MB)
+    // ตรวจสอบความปลอดภัยของไฟล์แนบ (ป้องกัน .exe, .sh, .html, .svg และจำกัดไม่เกิน 10MB)
     const val = validateAttachmentFile({ name: fileName, size: fileSize });
     if (!val.valid) {
       return NextResponse.json({ success: false, message: val.error }, { status: 400 });
@@ -48,6 +44,7 @@ export async function POST(request, { params }) {
       fileData,
       fileSize
     }, user);
+    await db.flush();
 
     return NextResponse.json({
       success: true,
@@ -62,21 +59,20 @@ export async function POST(request, { params }) {
 // ลบไฟล์เอกสารแนบ (Remove Attachment File)
 export async function DELETE(request, { params }) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['UNIT_OFFICER', 'ADMIN'] });
+    if (auth.response) return auth.response;
+    const user = auth.user;
+
     const { id } = params;
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
     const docIndex = Number(searchParams.get('docIndex'));
-
-    const user = db.findUserById(userId);
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลผู้ใช้งาน' }, { status: 401 });
-    }
 
     if (!docIndex) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุลำดับเอกสาร (docIndex)' }, { status: 400 });
     }
 
     const updatedClaim = db.removeClaimDocument(id, docIndex, user);
+    await db.flush();
     return NextResponse.json({
       success: true,
       message: `ลบไฟล์แนบเอกสารลำดับที่ ${docIndex} เรียบร้อยแล้ว`,

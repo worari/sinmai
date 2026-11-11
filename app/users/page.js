@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId, formatThaiDate } from '@/lib/thai-utils';
 import { USER_ROLES, USER_STATUS } from '@/lib/constants';
+import { getSocketClient } from '@/lib/socket-client';
 
 export default function UserManagementPage() {
   const [activeTab, setActiveTab] = useState('users'); // 'users' | 'pending' | 'logs'
@@ -105,7 +106,22 @@ export default function UserManagementPage() {
     loadLogs('', 'ALL', 1);
 
     window.addEventListener('rta_auth_change', checkAuth);
-    return () => window.removeEventListener('rta_auth_change', checkAuth);
+
+    const socket = getSocketClient();
+    const onUsersUpdated = () => {
+      loadUsers();
+      loadLogs('', 'ALL', 1);
+    };
+    if (socket) {
+      socket.on('users_updated', onUsersUpdated);
+    }
+
+    return () => {
+      window.removeEventListener('rta_auth_change', checkAuth);
+      if (socket) {
+        socket.off('users_updated', onUsersUpdated);
+      }
+    };
   }, []);
 
   const loadUsers = async () => {

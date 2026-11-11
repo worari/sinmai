@@ -40,6 +40,7 @@ import { formatThaiDate, calculateSlaStatus, validateAttachmentFile } from '@/li
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
+import { getSocketClient } from '@/lib/socket-client';
 
 export default function ClaimDetailPage({ params }) {
   const { id } = params;
@@ -247,6 +248,23 @@ export default function ClaimDetailPage({ params }) {
       } catch (e) {}
     }
     loadClaim(user);
+
+    const socket = getSocketClient();
+    const onClaimUpdated = ({ id: updatedId, claim: updatedClaim }) => {
+      if (updatedId === id && updatedClaim) {
+        setClaim(updatedClaim);
+      }
+    };
+
+    if (socket) {
+      socket.on('claim_updated', onClaimUpdated);
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('claim_updated', onClaimUpdated);
+      }
+    };
   }, [id]);
 
   const loadClaim = async (user) => {

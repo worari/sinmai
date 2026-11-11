@@ -1,18 +1,20 @@
 // app/api/knowledge/can-access/route.js
-// API ตรวจสอบว่าผู้ใช้งานมีสิทธิใช้งานระบบหรือไม่ (ต้องผ่านแบบทดสอบความรู้)
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
+    const auth = await requireAuth(request, db);
+    if (auth.response) return auth.response;
+
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    if (!userId) {
-      return NextResponse.json({ success: false, canAccess: false, message: 'กรุณาระบุรหัสผู้ใช้งาน (userId)' }, { status: 400 });
-    }
-    const status = db.getUserKnowledgeStatus(userId);
+    const requestedId = searchParams.get('userId');
+    const targetUserId = auth.user.role === 'ADMIN' && requestedId ? requestedId : auth.user.id;
+
+    const status = db.getUserKnowledgeStatus(targetUserId);
     return NextResponse.json(
       {
         success: true,

@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
 import StatusModal from '@/components/StatusModal';
+import NotificationToast from '@/components/NotificationToast';
+import PdpaConsentBanner from '@/components/PdpaConsentBanner';
 import Link from 'next/link';
 import { Shield, Lock, LogIn, ArrowLeft, UserCheck } from 'lucide-react';
 
@@ -25,12 +27,25 @@ export default function AppShell({ children }) {
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    // ตรวจสอบสถานะการ Login
-    const checkAuth = () => {
+    // ตรวจสอบสถานะการ Login และซิงค์กับ Signed HttpOnly Session Cookie
+    const checkAuth = async (verifyWithServer = false) => {
       const savedUser = localStorage.getItem('rta_user');
       if (savedUser) {
         try {
-          setCurrentUser(JSON.parse(savedUser));
+          const parsed = JSON.parse(savedUser);
+          setCurrentUser(parsed);
+          if (verifyWithServer) {
+            const res = await fetch('/api/auth/session', { cache: 'no-store' });
+            const sessData = await res.json();
+            if (!sessData.authenticated) {
+              localStorage.removeItem('rta_user');
+              setCurrentUser(null);
+              window.dispatchEvent(new Event('rta_auth_change'));
+            } else if (sessData.user) {
+              localStorage.setItem('rta_user', JSON.stringify(sessData.user));
+              setCurrentUser(sessData.user);
+            }
+          }
         } catch (e) {
           setCurrentUser(null);
         }
@@ -40,14 +55,14 @@ export default function AppShell({ children }) {
       setIsLoaded(true);
     };
 
-    checkAuth();
+    checkAuth(true);
 
     // ฟัง Event เมื่อมีการเปลี่ยน User หรือเปลี่ยน Theme
     const handleAuthChange = () => {
-      checkAuth();
+      checkAuth(false);
       const savedUser = localStorage.getItem('rta_user');
       if (!savedUser) {
-        const publicRoutes = ['/', '/login', '/register', '/track'];
+        const publicRoutes = ['/', '/login', '/register', '/reset-password', '/track'];
         if (!publicRoutes.includes(pathname)) {
           window.location.href = '/';
         }
@@ -250,9 +265,45 @@ export default function AppShell({ children }) {
             <p>
               ระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทนกำลังพล • รองรับการติดตาม Timeline SLA 30 วัน • ป้องกันสิทธิ์แบบ Role Base (RBAC)
             </p>
+            <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('rta_open_pdpa_settings', { detail: { tab: 'settings' } }))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--cyan-accent)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                🍪 ตั้งค่าคุกกี้ (Cookie Settings)
+              </button>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('rta_open_pdpa_settings', { detail: { tab: 'policy' } }))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--gold-light)',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                🛡️ นโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)
+              </button>
+            </div>
           </div>
         </footer>
       </div>
+
+      {/* PDPA & Cookie Consent Banner / Modal */}
+      <PdpaConsentBanner />
+
+      {/* Real-time Floating Socket.IO Notification Toasts */}
+      <NotificationToast currentUser={currentUser} />
 
       {/* Global Action Status Modal */}
       <StatusModal />

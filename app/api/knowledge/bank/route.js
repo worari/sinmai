@@ -2,10 +2,13 @@
 // API จัดการ BANK (ธนาคารคำถามกลาง) - คำถามที่ไม่ผูกกับแบบทดสอบใดๆ
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/api-auth';
 
-// ---------- ดึงคำถามในธนาคารทั้งหมด (พร้อมตัวกรอง) ----------
+// ---------- ดึงคำถามในธนาคารทั้งหมด (เฉพาะ ADMIN) ----------
 export async function GET(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
     const { searchParams } = new URL(request.url);
     const examId = searchParams.get('examId');
     const search = searchParams.get('search');
@@ -40,11 +43,15 @@ export async function GET(request) {
 // ---------- สร้างคำถามใหม่ในธนาคาร ----------
 export async function POST(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const body = await request.json();
     if (!body.questionText) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุคำถาม' }, { status: 400 });
     }
     const question = db.createQuestionBankQuestion(body);
+    await db.flush();
     return NextResponse.json({ success: true, message: 'เพิ่มคำถามในธนาคารสำเร็จ', question }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -54,11 +61,15 @@ export async function POST(request) {
 // ---------- อัปเดตคำถาม หรือ เชื่อมโยงคำถามเข้าแบบทดสอบ ----------
 export async function PUT(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const body = await request.json();
 
     // 1. กรณีระบุ id โดยตรงเพื่ออัปเดตคำถาม
     if (body.id && !body.questionId) {
       const updated = db.updateQuestionBankQuestion(body.id, body);
+      await db.flush();
       return NextResponse.json({ success: true, message: 'แก้ไขคำถามในธนาคารสำเร็จ', question: updated });
     }
 
@@ -82,9 +93,11 @@ export async function PUT(request) {
         return NextResponse.json({ success: false, message: 'คำถามนี้ได้ถูกเพิ่มเข้าแบบทดสอบนี้แล้ว' }, { status: 409 });
       }
       const updated = db.updateKnowledgeExam(examId, { questionIds: [...examQuestionIds, questionId] });
+      await db.flush();
       return NextResponse.json({ success: true, message: 'เพิ่มคำถามเข้าแบบทดสอบสำเร็จ', exam: updated });
     } else {
       const updated = db.updateKnowledgeExam(examId, { questionIds: (exam.questionIds || []).filter((id) => id !== questionId) });
+      await db.flush();
       return NextResponse.json({ success: true, message: 'ลบคำถามออกจากแบบทดสอบสำเร็จ', exam: updated });
     }
   } catch (error) {
@@ -95,12 +108,16 @@ export async function PUT(request) {
 // ---------- ลบคำถามออกจากธนาคาร (ผ่าน Query String ?id=...) ----------
 export async function DELETE(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) {
       return NextResponse.json({ success: false, message: 'กรุณาระบุรหัสคำถามที่ต้องการลบ (id)' }, { status: 400 });
     }
     db.deleteQuestionBankQuestion(id);
+    await db.flush();
     return NextResponse.json({ success: true, message: 'ลบคำถามออกจากธนาคารสำเร็จ' });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

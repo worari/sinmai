@@ -2,9 +2,15 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { extractClientInfo } from '@/lib/client-info';
+import { requireAuth } from '@/lib/api-auth';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const searchQuery = searchParams.get('q') || '';
     const action = searchParams.get('action') || 'ALL';
@@ -18,10 +24,7 @@ export async function GET(request) {
       page
     });
 
-    return NextResponse.json({
-      success: true,
-      ...result
-    });
+    return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -30,25 +33,19 @@ export async function GET(request) {
 // ลบล้างประวัติ Audit Logs ทั้งหมด (เฉพาะผู้ดูแลระบบ ADMIN)
 export async function DELETE(request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const adminId = searchParams.get('adminId');
-    const adminUser = adminId ? db.findUserById(adminId) : null;
-
-    if (adminUser && adminUser.role !== 'ADMIN') {
-      return NextResponse.json({
-        success: false,
-        message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถลบล้างประวัติการใช้งานได้'
-      }, { status: 403 });
-    }
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
+    const adminUser = auth.user;
 
     const clientInfo = extractClientInfo(request);
     db.clearActivityLogs({
-      id: adminUser?.id || 'admin',
-      name: adminUser?.name || 'ผู้ดูแลระบบ',
-      role: adminUser?.role || 'ADMIN',
+      id: adminUser.id,
+      name: `${adminUser.rank || ''} ${adminUser.firstName} ${adminUser.lastName}`.trim() || 'ผู้ดูแลระบบ',
+      role: adminUser.role,
       ip: clientInfo.ip,
       device: clientInfo.device
     });
+    await db.flush();
 
     return NextResponse.json({
       success: true,

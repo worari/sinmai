@@ -15,12 +15,22 @@ import {
   Palette, 
   Sparkles, 
   Check, 
+  CheckCheck,
+  Volume2,
+  VolumeX,
+  Send,
   LogIn, 
   UserPlus, 
   ShieldAlert, 
   FileText,
   Home
 } from 'lucide-react';
+import {
+  getSocketClient,
+  registerSocketUser,
+  canViewClientNotification,
+  isNotificationSoundEnabled
+} from '@/lib/socket-client';
 
 export default function Navbar({ currentUser: propUser, theme: propTheme, setTheme: propSetTheme, isLoggedIn: propIsLoggedIn }) {
   const pathname = usePathname();
@@ -29,6 +39,8 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
   const [currentUser, setCurrentUser] = useState(propUser || null);
   const [currentTheme, setCurrentTheme] = useState(propTheme || 'teal');
   const [notifications, setNotifications] = useState([]);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
@@ -58,22 +70,42 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
     }
   ];
 
-  useEffect(() => {
-    // ซิงค์ User จาก localStorage (ถ้ามี)
-    const syncUser = () => {
-      const savedUser = localStorage.getItem('rta_user');
-      if (savedUser) {
-        try {
-          setCurrentUser(JSON.parse(savedUser));
-        } catch (e) {
-          setCurrentUser(null);
-        }
-      } else {
-        setCurrentUser(null);
+  const getStoredUser = () => {
+    const savedUser = localStorage.getItem('rta_user');
+    if (!savedUser) return null;
+    try {
+      return JSON.parse(savedUser);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const fetchNotifications = async (userObj = null) => {
+    const targetUser = userObj !== undefined ? userObj : getStoredUser();
+    if (!targetUser?.id) {
+      setNotifications([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/telegram?userId=${encodeURIComponent(targetUser.id)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (data.history) {
+        setNotifications(data.history);
       }
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    const syncUser = () => {
+      const u = getStoredUser();
+      setCurrentUser(u);
+      registerSocketUser(u);
+      fetchNotifications(u);
+      return u;
     };
 
-    // ซิงค์ Theme จาก localStorage (ถ้าไม่มีให้ใช้ teal)
     const syncTheme = () => {
       const savedTheme = localStorage.getItem('rta_theme') || 'teal';
       setCurrentTheme(savedTheme);
@@ -82,6 +114,7 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
 
     syncUser();
     syncTheme();
+    setSoundEnabled(isNotificationSoundEnabled());
 
     const handleAuthChange = () => syncUser();
     const handleThemeChange = (e) => {
@@ -93,28 +126,99 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
     window.addEventListener('rta_theme_change', handleThemeChange);
     window.addEventListener('storage', handleAuthChange);
 
-    // ดึง Notifications ล่าสุด
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 12000);
+    // เชื่อมต่อ Real-time Socket.IO สำหรับกระดิ่งแจ้งเตือน (Singleton)
+    const socket = getSocketClient();
+    const onConnect = () => {
+      setSocketConnected(true);
+      registerSocketUser(getStoredUser());
+    };
+    const onDisconnect = () => setSocketConnected(false);
+    const onNewNotif = (notif) => {
+      const u = getStoredUser();
+      if (!canViewClientNotification(notif, u)) return;
+      setNotifications((prev) => [notif, ...prev.filter((item) => item.id !== notif.id)].slice(0, 100));
+    };
+    const onUpdatedNotif = (notif) => {
+      setNotifications((prev) => prev.map((item) => (item.id === notif.id ? notif : item)));
+    };
+    const onNotifRead = ({ userId, notificationId, markAll }) => {
+      const u = getStoredUser();
+      if (!u?.id || u.id !== userId) return;
+      setNotifications((prev) =>
+        prev.map((item) => {
+          if (!markAll && item.id !== notificationId) return item;
+          const readBy = Array.isArray(item.readBy) ? item.readBy : [];
+          return readBy.includes(userId) ? item : { ...item, readBy: [...readBy, userId] };
+        })
+      );
+    };
+    const onNotifCleared = () => setNotifications([]);
+
+    if (socket) {
+      setSocketConnected(Boolean(socket.connected));
+      socket.on('connect', onConnect);
+      socket.on('disconnect', onDisconnect);
+      socket.on('new_notification', onNewNotif);
+      socket.on('notification_updated', onUpdatedNotif);
+      socket.on('notifications_read', onNotifRead);
+      socket.on('notifications_cleared', onNotifCleared);
+    }
+
+    // Fallback sync ทุก 60 วินาทีเผื่อเครือข่ายสลับสถานะ
+    const interval = setInterval(() => fetchNotifications(), 60000);
 
     return () => {
       window.removeEventListener('rta_auth_change', handleAuthChange);
       window.removeEventListener('rta_theme_change', handleThemeChange);
       window.removeEventListener('storage', handleAuthChange);
+      if (socket) {
+        socket.off('connect', onConnect);
+        socket.off('disconnect', onDisconnect);
+        socket.off('new_notification', onNewNotif);
+        socket.off('notification_updated', onUpdatedNotif);
+        socket.off('notifications_read', onNotifRead);
+        socket.off('notifications_cleared', onNotifCleared);
+      }
       clearInterval(interval);
     };
   }, []);
 
-  const fetchNotifications = async () => {
+  const unreadCount = currentUser?.id
+    ? notifications.filter((n) => !Array.isArray(n.readBy) || !n.readBy.includes(currentUser.id)).length
+    : 0;
+
+  const handleMarkRead = async (notificationId = null, markAll = false) => {
+    if (!currentUser?.id) return;
+    setNotifications((prev) =>
+      prev.map((item) => {
+        if (!markAll && item.id !== notificationId) return item;
+        const readBy = Array.isArray(item.readBy) ? item.readBy : [];
+        return readBy.includes(currentUser.id) ? item : { ...item, readBy: [...readBy, currentUser.id] };
+      })
+    );
     try {
-      const res = await fetch('/api/telegram');
-      const data = await res.json();
-      if (data.history) {
-        setNotifications(data.history);
-      }
+      await fetch('/api/telegram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'MARK_READ', notificationId, userId: currentUser.id, markAll })
+      });
     } catch (e) {
       // ignore
     }
+  };
+
+  const handleNotificationClick = (notif) => {
+    handleMarkRead(notif.id, false);
+    if (notif.link) {
+      setShowNotifMenu(false);
+      router.push(notif.link);
+    }
+  };
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    localStorage.setItem('rta_notif_sound', next ? 'true' : 'false');
   };
 
   // เปลี่ยนธีม
@@ -127,8 +231,13 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
     window.dispatchEvent(new CustomEvent('rta_theme_change', { detail: themeId }));
   };
 
-  // ออกจากระบบ (Logout)
-  const handleLogout = () => {
+  // ออกจากระบบ (Logout) พร้อมล้าง HttpOnly Session Cookie และบันทึก Audit Log
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      // ignore
+    }
     localStorage.removeItem('rta_user');
     setCurrentUser(null);
     setShowRoleSwitcher(false);
@@ -353,10 +462,10 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                   }}
                   className="btn btn-secondary btn-sm"
                   style={{ position: 'relative', width: '38px', height: '38px', padding: 0, borderRadius: '50%' }}
-                  title="การแจ้งเตือน Real-time"
+                  title={socketConnected ? 'การแจ้งเตือน Real-time (Socket.IO เชื่อมต่อแล้ว)' : 'การแจ้งเตือน Real-time'}
                 >
                   <Bell size={18} />
-                  {notifications.length > 0 && (
+                  {unreadCount > 0 && (
                     <span style={{
                       position: 'absolute',
                       top: '-3px',
@@ -364,15 +473,16 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                       background: 'var(--ruby-danger)',
                       color: '#fff',
                       borderRadius: '50%',
-                      width: '18px',
+                      minWidth: '18px',
                       height: '18px',
+                      padding: '0 4px',
                       fontSize: '11px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontWeight: 700
                     }}>
-                      {notifications.length}
+                      {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
                 </button>
@@ -383,39 +493,143 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                     position: 'absolute',
                     top: '46px',
                     right: 0,
-                    width: '360px',
-                    maxHeight: '420px',
+                    width: '390px',
+                    maxWidth: 'calc(100vw - 24px)',
+                    maxHeight: '480px',
                     overflowY: 'auto',
                     padding: '16px',
                     zIndex: 100,
                     background: 'rgba(4, 20, 23, 0.98)',
-                    boxShadow: '0 12px 30px rgba(0,0,0,0.6)'
+                    boxShadow: '0 12px 30px rgba(0,0,0,0.65)'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '8px' }}>
-                      <span style={{ fontWeight: 600, color: '#fff' }}>🔔 การแจ้งเตือนล่าสุด (Socket & Bot)</span>
-                      <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>{notifications.length} รายการ</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '10px', borderBottom: '1px solid var(--border-glass)', paddingBottom: '10px' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '13.5px', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>🔔 ศูนย์แจ้งเตือน (Socket &amp; Bot)</span>
+                        </div>
+                        <div style={{ fontSize: '11px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', color: socketConnected ? '#6ee7b7' : 'var(--text-dim)' }}>
+                          <span style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            background: socketConnected ? '#10b981' : '#f59e0b',
+                            display: 'inline-block'
+                          }}></span>
+                          <span>{socketConnected ? 'Socket.IO เชื่อมต่อสด' : 'กำลังเชื่อมต่อ Socket...'}</span>
+                          <span>• ยังไม่อ่าน {unreadCount}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={toggleSound}
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '4px 7px', fontSize: '11px' }}
+                          title={soundEnabled ? 'ปิดเสียงแจ้งเตือน' : 'เปิดเสียงแจ้งเตือน'}
+                        >
+                          {soundEnabled ? <Volume2 size={13} color="var(--cyan-accent)" /> : <VolumeX size={13} color="var(--text-dim)" />}
+                        </button>
+                        {unreadCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkRead(null, true)}
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '4px 8px', fontSize: '11px', color: '#6ee7b7' }}
+                            title="ทำเครื่องหมายว่าอ่านแล้วทั้งหมด"
+                          >
+                            <CheckCheck size={13} />
+                            <span>อ่านทั้งหมด</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {notifications.length === 0 ? (
-                      <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '20px 0' }}>ยังไม่มีการแจ้งเตือน</div>
+                      <div style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '24px 0', fontSize: '13px' }}>
+                        ยังไม่มีการแจ้งเตือน
+                      </div>
                     ) : (
-                      notifications.map((n) => (
-                        <div key={n.id} style={{
-                          padding: '10px',
-                          background: 'rgba(255, 255, 255, 0.04)',
-                          borderRadius: '8px',
-                          marginBottom: '8px',
-                          borderLeft: n.type === 'DELAY_REPORT' ? '3px solid var(--ruby-danger)' : '3px solid var(--cyan-accent)'
-                        }}>
-                          <div style={{ fontWeight: 600, fontSize: '13px', color: '#fff' }}>{n.title}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0' }}>{n.message}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--cyan-accent)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Clock size={12} />
-                            <span>{new Date(n.timestamp).toLocaleTimeString('th-TH')}</span>
-                            {n.trackingCode && <span>• {n.trackingCode}</span>}
+                      notifications.slice(0, 30).map((n) => {
+                        const isUnread = currentUser?.id && (!Array.isArray(n.readBy) || !n.readBy.includes(currentUser.id));
+                        const borderColor =
+                          n.type === 'DELAY_REPORT' || n.type === 'DOC_REJECTED' || n.type === 'CLAIM_DELETED'
+                            ? 'var(--ruby-danger)'
+                            : n.type === 'SLA_ALERT'
+                              ? 'var(--amber-warning)'
+                              : n.type === 'APPROVED' || n.type === 'PAYMENT_PAID'
+                                ? 'var(--emerald-success)'
+                                : n.type === 'TELEGRAM_DIRECT' || n.type === 'TEST'
+                                  ? 'var(--gold-primary)'
+                                  : 'var(--cyan-accent)';
+
+                        return (
+                          <div
+                            key={n.id}
+                            onClick={() => handleNotificationClick(n)}
+                            style={{
+                              padding: '10px 12px',
+                              background: isUnread ? 'rgba(20, 184, 166, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                              borderRadius: '8px',
+                              marginBottom: '8px',
+                              borderLeft: `3px solid ${borderColor}`,
+                              cursor: n.link ? 'pointer' : 'default',
+                              transition: 'background 0.2s ease'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                              <div style={{ fontWeight: isUnread ? 700 : 600, fontSize: '13px', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {isUnread && (
+                                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--cyan-accent)', flexShrink: 0 }} />
+                                )}
+                                <span>{n.title}</span>
+                              </div>
+                            </div>
+
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0', whiteSpace: 'pre-line', lineHeight: 1.45 }}>
+                              {n.message}
+                            </div>
+
+                            <div style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--cyan-accent)' }}>
+                                <Clock size={11} />
+                                <span>{new Date(n.timestamp).toLocaleTimeString('th-TH')}</span>
+                                {n.trackingCode && <span>• {n.trackingCode}</span>}
+                              </div>
+                              <span style={{
+                                fontSize: '10px',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: n.status === 'SENT'
+                                  ? 'rgba(16, 185, 129, 0.16)'
+                                  : n.status === 'FAILED' || n.status === 'ERROR'
+                                    ? 'rgba(239, 68, 68, 0.18)'
+                                    : 'rgba(255, 255, 255, 0.07)',
+                                color: n.status === 'SENT'
+                                  ? '#6ee7b7'
+                                  : n.status === 'FAILED' || n.status === 'ERROR'
+                                    ? '#fca5a5'
+                                    : 'var(--text-dim)'
+                              }}>
+                                {n.status === 'SENT' ? 'Telegram ✓' : n.status === 'FAILED' || n.status === 'ERROR' ? 'Telegram ล้มเหลว' : 'In-App'}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
+                    )}
+
+                    {currentUser?.role === 'ADMIN' && (
+                      <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '8px', marginTop: '4px', textAlign: 'center' }}>
+                        <Link
+                          href="/settings"
+                          onClick={() => setShowNotifMenu(false)}
+                          style={{ fontSize: '12px', color: 'var(--gold-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                        >
+                          <Send size={12} />
+                          <span>จัดการ Telegram Bot &amp; ดูประวัติทั้งหมด →</span>
+                        </Link>
+                      </div>
                     )}
                   </div>
                 )}

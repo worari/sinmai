@@ -4,11 +4,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { KeyRound, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
+import { KeyRound, CheckCircle2, AlertCircle, ArrowLeft, ShieldCheck } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const [identifier, setIdentifier] = useState('');
+  const [citizenId, setCitizenId] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,8 +27,8 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setErrorMsg('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 6 ตัวอักษร');
+    if (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      setErrorMsg('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร และประกอบด้วยตัวอักษรภาษาอังกฤษและตัวเลข');
       return;
     }
 
@@ -36,7 +38,7 @@ export default function ResetPasswordPage() {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, newPassword })
+        body: JSON.stringify({ citizenId, email, phone, newPassword })
       });
 
       const data = await res.json();
@@ -46,8 +48,8 @@ export default function ResetPasswordPage() {
 
       setSuccessMsg(data.message);
       setTimeout(() => {
-        router.push('/');
-      }, 1500);
+        router.push('/login');
+      }, 1600);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -56,11 +58,9 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="container" style={{ paddingTop: '50px', maxWidth: '520px' }}>
-      
+    <div className="container" style={{ paddingTop: '50px', maxWidth: '540px' }}>
       <div className="glass-panel" style={{ padding: '32px' }}>
-        
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '22px' }}>
           <div style={{
             width: '52px',
             height: '52px',
@@ -74,10 +74,26 @@ export default function ResetPasswordPage() {
           }}>
             <KeyRound size={28} />
           </div>
-          <h1 style={{ fontSize: '20px' }}>รีเซ็ตรหัสผ่านผู้ใช้งาน</h1>
+          <h1 style={{ fontSize: '20px' }}>รีเซ็ตรหัสผ่านผู้ใช้งาน (Multi-Factor Verification)</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-            กรอกเลขประจำตัวประชาชน (13 หลัก) หรือ Email เพื่อตั้งรหัสผ่านใหม่
+            เพื่อป้องกันการสวมสิทธิ์ กรุณายืนยันข้อมูลทั้ง 3 รายการให้ตรงกับบัญชีที่ลงทะเบียนไว้
           </p>
+        </div>
+
+        <div style={{
+          padding: '10px 12px',
+          borderRadius: '8px',
+          background: 'rgba(20, 184, 166, 0.1)',
+          border: '1px solid rgba(20, 184, 166, 0.3)',
+          color: 'var(--text-muted)',
+          fontSize: '12px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+          marginBottom: '18px'
+        }}>
+          <ShieldCheck size={16} color="var(--cyan-accent)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <span>บัญชีระดับผู้ดูแลระบบ (Admin) และผู้บังคับบัญชาไม่อนุญาตให้รีเซ็ตผ่านหน้าสาธารณะ กรุณาติดต่อผู้ดูแลระบบส่วนกลาง</span>
         </div>
 
         {errorMsg && (
@@ -95,25 +111,48 @@ export default function ResetPasswordPage() {
         )}
 
         <form onSubmit={handleReset}>
-          
           <div className="form-group">
-            <label className="form-label required">เลข ปชช. 13 หลัก หรือ Email</label>
-            <input 
-              type="text" 
+            <label className="form-label required">1. เลขประจำตัวประชาชน (13 หลัก)</label>
+            <input
+              type="text"
               className="form-input"
-              placeholder="1100500123456 หรือ email@army.mil.th"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="1100500xxxxxx"
+              value={citizenId}
+              onChange={(e) => setCitizenId(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label required">2. อีเมลที่ลงทะเบียนไว้</label>
+            <input
+              type="email"
+              className="form-input"
+              placeholder="officer@army.mil.th"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label required">3. เบอร์โทรศัพท์ที่ลงทะเบียนไว้</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="08x-xxx-xxxx"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
               required
             />
           </div>
 
           <div className="form-group">
             <label className="form-label required">รหัสผ่านใหม่</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               className="form-input"
-              placeholder="อย่างน้อย 6 ตัวอักษร"
+              placeholder="อย่างน้อย 8 ตัวอักษร (ตัวอักษรภาษาอังกฤษ + ตัวเลข)"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
@@ -122,8 +161,8 @@ export default function ResetPasswordPage() {
 
           <div className="form-group">
             <label className="form-label required">ยืนยันรหัสผ่านใหม่</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               className="form-input"
               placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
               value={confirmPassword}
@@ -132,25 +171,22 @@ export default function ResetPasswordPage() {
             />
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="btn btn-primary"
             style={{ width: '100%', padding: '11px', marginTop: '10px' }}
             disabled={loading}
           >
-            {loading ? 'กำลังดำเนินการ...' : 'บันทึกรหัสผ่านใหม่'}
+            {loading ? 'กำลังดำเนินการ...' : 'ยืนยันตัวตนและบันทึกรหัสผ่านใหม่'}
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
-            <Link href="/" className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
-              <ArrowLeft size={14} /> กลับหน้าหลัก
+            <Link href="/login" className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
+              <ArrowLeft size={14} /> กลับหน้าเข้าสู่ระบบ
             </Link>
           </div>
-
         </form>
-
       </div>
-
     </div>
   );
 }

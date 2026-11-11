@@ -2,44 +2,74 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { validateCitizenId } from '@/lib/thai-utils';
+import { extractClientInfo } from '@/lib/client-info';
+import { enforceRateLimit } from '@/lib/api-auth';
+
+const ALLOWED_SELF_REGISTER_ROLES = new Set([
+  'UNIT_OFFICER',
+  'KSP_OFFICER',
+  'COMMANDER',
+  'INSURANCE_REP',
+  'SK_OFFICER'
+]);
 
 export async function POST(request) {
   try {
-    const data = await request.json();
-    const { citizenId, rank, firstName, lastName, position, unitId, unitName, phone, email, password, requestedRole } = data;
+    const rate = enforceRateLimit(request, 'auth-register', {
+      maxRequests: 8,
+      windowMs: 15 * 60 * 1000,
+      message: 'มีการส่งคำขอลงทะเบียนถี่เกินไป กรุณารอสักครู่แล้วลองใหม่อีกครั้ง'
+    });
+    if (rate.response) return rate.response;
 
-    // ตรวจสอบความครบถ้วนของข้อมูล
+    const clientInfo = rate.clientInfo || extractClientInfo(request);
+    const data = await request.json();
+    const { citizenId, rank, firstName, lastName, position, unitId, unitName, phone, email, password, requestedRole, pdpaAccepted } = data;
+
     if (!citizenId || !rank || !firstName || !lastName || !position || !unitId || !phone || !email || !password) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบทุกช่อง' }, { status: 400 });
     }
 
-    // ตรวจสอบความถูกต้องของเลขประจำตัวประชาชน 13 หลัก
-    if (!validateCitizenId(citizenId)) {
-      return NextResponse.json({ 
-        success: false, 
-        message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)' 
+    if (pdpaAccepted !== true) {
+      return NextResponse.json({
+        success: false,
+        message: 'กรุณายอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA) และการบันทึกประวัติการใช้งานก่อนลงทะเบียน'
       }, { status: 400 });
     }
 
-    // ตรวจสอบการสมัครซ้ำ
+    if (String(password).length < 8 || !/[a-zA-Z]/.test(String(password)) || !/\d/.test(String(password))) {
+      return NextResponse.json({
+        success: false,
+        message: 'เพื่อความปลอดภัยไซเบอร์ รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร และประกอบด้วยตัวอักษรภาษาอังกฤษและตัวเลข'
+      }, { status: 400 });
+    }
+
+    if (!validateCitizenId(citizenId)) {
+      return NextResponse.json({
+        success: false,
+        message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)'
+      }, { status: 400 });
+    }
+
+    await db.ensureReady();
     const cleanId = citizenId.replace(/\D/g, '');
-    const existingCitizen = db.findUserByCitizenId(cleanId);
-    if (existingCitizen) {
-      return NextResponse.json({ 
-        success: false, 
-        message: `เลขประจำตัวประชาชน ${citizenId} นี้เคยลงทะเบียนไว้ในระบบแล้ว ไม่สามารถสมัครซ้ำได้` 
+    if (db.findUserByCitizenId(cleanId)) {
+      return NextResponse.json({
+        success: false,
+        message: `เลขประจำตัวประชาชน ${citizenId} นี้เคยลงทะเบียนไว้ในระบบแล้ว ไม่สามารถสมัครซ้ำได้`
       }, { status: 409 });
     }
 
-    const existingEmail = db.findUserByEmail(email);
-    if (existingEmail) {
-      return NextResponse.json({ 
-        success: false, 
-        message: `อีเมล ${email} นี้เคยลงทะเบียนไว้แล้ว` 
+    if (db.findUserByEmail(email)) {
+      return NextResponse.json({
+        success: false,
+        message: `อีเมล ${email} นี้เคยลงทะเบียนไว้แล้ว`
       }, { status: 409 });
     }
 
-    // สร้าง User ใหม่ (สถานะเริ่มต้น: PENDING รอการอนุมัติจากแอดมิน)
+    // ป้องกัน Privilege Escalation: ห้ามขอสิทธิ์ ADMIN ผ่านหน้าลงทะเบียนสาธารณะเด็ดขาด
+    const safeRequestedRole = ALLOWED_SELF_REGISTER_ROLES.has(requestedRole) ? requestedRole : 'UNIT_OFFICER';
+
     const newUser = db.createUser({
       citizenId: cleanId,
       rank,
@@ -53,16 +83,24 @@ export async function POST(request) {
       password,
       status: 'PENDING',
       isActive: false,
-      requestedRole: requestedRole || 'UNIT_OFFICER',
-      role: requestedRole || 'UNIT_OFFICER'
+      requestedRole: safeRequestedRole,
+      role: safeRequestedRole,
+      pdpaConsent: {
+        accepted: true,
+        version: '1.0',
+        acceptedAt: new Date().toISOString()
+      },
+      ip: clientInfo.ip,
+      device: clientInfo.device
     });
+    await db.flush();
 
     const { password: _, ...safeUser } = newUser;
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       pendingApproval: true,
       message: 'ลงทะเบียนขอเข้าใช้งานระบบเรียบร้อยแล้ว บัญชีของท่านอยู่ระหว่างรอผู้ดูแลระบบ (Admin) ตรวจสอบและอนุมัติสิทธิ์การใช้งาน',
-      user: safeUser 
+      user: safeUser
     });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

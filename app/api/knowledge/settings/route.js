@@ -1,21 +1,18 @@
 // app/api/knowledge/settings/route.js
-// จัดการการตั้งค่าห้วงการทดสอบความรู้ (เปิด/ปิดห้วงบังคับสอบ)
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    await db.ensureReady();
     const settings = db.getExamSettings();
-    return NextResponse.json({
-      success: true,
-      settings
-    }, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
-      }
-    });
+    return NextResponse.json(
+      { success: true, settings },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' } }
+    );
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -23,28 +20,21 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { isExamPeriodActive, userId } = body;
+    const auth = await requireAuth(request, db, { roles: ['ADMIN'] });
+    if (auth.response) return auth.response;
 
-    let adminUser = null;
-    if (userId) {
-      adminUser = db.findUserById(userId);
-      if (adminUser && adminUser.role !== 'ADMIN') {
-        return NextResponse.json({
-          success: false,
-          message: 'เฉพาะผู้ดูแลระบบ (ADMIN) เท่านั้นที่สามารถเปลี่ยนการตั้งค่าห้วงการทดสอบได้'
-        }, { status: 403 });
-      }
-    }
+    const body = await request.json();
+    const { isExamPeriodActive } = body;
 
     if (typeof isExamPeriodActive !== 'boolean') {
-      return NextResponse.json({
-        success: false,
-        message: 'กรุณาระบุสถานะ isExamPeriodActive เป็น boolean (true หรือ false)'
-      }, { status: 400 });
+      return NextResponse.json(
+        { success: false, message: 'กรุณาระบุสถานะ isExamPeriodActive เป็น boolean (true หรือ false)' },
+        { status: 400 }
+      );
     }
 
-    const updated = db.updateExamSettings({ isExamPeriodActive }, adminUser);
+    const updated = db.updateExamSettings({ isExamPeriodActive }, auth.user);
+    await db.flush();
 
     return NextResponse.json({
       success: true,
@@ -57,4 +47,3 @@ export async function POST(request) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }
-
