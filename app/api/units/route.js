@@ -3,22 +3,31 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireAuth } from '@/lib/api-auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     await db.ensureReady();
     const { searchParams } = new URL(request.url);
     const level = searchParams.get('level');
     const parentId = searchParams.get('parentId');
+    const status = searchParams.get('status');
     const search = searchParams.get('search');
     const hierarchy = searchParams.get('hierarchy');
 
     if (hierarchy === 'true') {
       const data = db.getUnitHierarchy();
-      return NextResponse.json({ success: true, ...data });
+      return NextResponse.json(
+        { success: true, ...data },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
-    const units = db.getAllUnits({ level, parentId, search });
-    return NextResponse.json({ success: true, units, total: units.length });
+    const units = db.getAllUnits({ level, parentId, status, search });
+    return NextResponse.json(
+      { success: true, units, total: units.length },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }

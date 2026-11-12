@@ -52,6 +52,21 @@ export async function POST(request) {
     }
 
     await db.ensureReady();
+    const allUnits = db.getAllUnits();
+    const matchedUnit = allUnits.find((u) => u.id === unitId);
+    if (!matchedUnit) {
+      return NextResponse.json({
+        success: false,
+        message: 'ไม่พบหน่วยสังกัดที่เลือกในโครงสร้างหน่วย กรุณาพิมพ์ค้นหาและเลือกหน่วยจากรายการ'
+      }, { status: 400 });
+    }
+    if (matchedUnit.status === 'INACTIVE') {
+      return NextResponse.json({
+        success: false,
+        message: 'หน่วยสังกัดที่เลือกถูกระงับการใช้งานชั่วคราว กรุณาเลือกหน่วยอื่นหรือติดต่อผู้ดูแลระบบ'
+      }, { status: 400 });
+    }
+
     const cleanId = citizenId.replace(/\D/g, '');
     if (db.findUserByCitizenId(cleanId)) {
       return NextResponse.json({
@@ -76,8 +91,8 @@ export async function POST(request) {
       firstName,
       lastName,
       position,
-      unitId,
-      unitName: unitName || unitId,
+      unitId: matchedUnit.id,
+      unitName: matchedUnit.name || unitName || matchedUnit.id,
       phone,
       email,
       password,

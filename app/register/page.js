@@ -1,12 +1,13 @@
 // app/register/page.js
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Shield, UserPlus, CheckCircle2, AlertCircle, ArrowLeft, Clock, LogIn, UserCheck } from 'lucide-react';
-import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId } from '@/lib/thai-utils';
+import { MILITARY_RANKS, validateCitizenId } from '@/lib/thai-utils';
 import { USER_ROLES } from '@/lib/constants';
+import UnitAutocomplete from '@/components/UnitAutocomplete';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -16,8 +17,8 @@ export default function RegisterPage() {
     firstName: '',
     lastName: '',
     position: 'นายทหารฝ่ายกำลังพล',
-    unitId: '9th_INF_DIV',
-    unitName: 'กองพลทหารราบที่ 9 (พล.ร.9)',
+    unitId: '',
+    unitName: '',
     requestedRole: 'UNIT_OFFICER',
     phone: '',
     email: '',
@@ -26,18 +27,44 @@ export default function RegisterPage() {
     pdpaAccepted: false
   });
 
+  const [units, setUnits] = useState([]);
+  const [unitsLoading, setUnitsLoading] = useState(true);
+  const [unitsError, setUnitsError] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [registeredUser, setRegisteredUser] = useState(null);
 
-  const handleUnitChange = (e) => {
-    const unitId = e.target.value;
-    const unit = MILITARY_UNITS.find((u) => u.id === unitId);
+  const loadUnits = useCallback(async () => {
+    setUnitsLoading(true);
+    try {
+      const res = await fetch('/api/units', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !data.success || !Array.isArray(data.units)) {
+        throw new Error(data.message || 'ไม่สามารถโหลดโครงสร้างหน่วยได้');
+      }
+      setUnits(data.units);
+      setUnitsError('');
+    } catch (err) {
+      setUnitsError(err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูลหน่วย');
+    } finally {
+      setUnitsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadUnits();
+    const handleFocus = () => loadUnits();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [loadUnits]);
+
+  const handleUnitSelect = (unit) => {
     setFormData((prev) => ({
       ...prev,
-      unitId,
-      unitName: unit ? unit.name : unitId
+      unitId: unit ? unit.id : '',
+      unitName: unit ? unit.name : ''
     }));
   };
 
@@ -48,6 +75,11 @@ export default function RegisterPage() {
     // Check citizen ID
     if (!validateCitizenId(formData.citizenId)) {
       setErrorMsg('เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักตรวจสอบทางการ (Mod 11 Checksum)');
+      return;
+    }
+
+    if (!formData.unitId) {
+      setErrorMsg('กรุณาพิมพ์ค้นหาและคลิกเลือกหน่วยสังกัดจากรายการโครงสร้างหน่วย');
       return;
     }
 
@@ -117,7 +149,7 @@ export default function RegisterPage() {
           </h1>
 
           <p style={{ color: 'var(--text-muted)', fontSize: '14.5px', lineHeight: 1.7, margin: '14px 0 24px' }}>
-            ข้อมูลคำขอลงทะเบียนของ <strong>{formData.rank} {formData.firstName} {formData.lastName}</strong> สังกัด <strong>{formData.unitName}</strong> ถูกบันทึกเข้าสู่ระบบเรียบร้อยแล้ว<br />
+            ข้อมูลคำขอลงทะเบียนของ <strong>{formData.rank} {formData.firstName} {formData.lastName}</strong> สังกัด <strong>{registeredUser?.unitName || formData.unitName}</strong> ถูกบันทึกเข้าสู่ระบบเรียบร้อยแล้ว<br />
             ตามนโยบายความมั่นคงปลอดภัย (RBAC) บัญชีของท่านต้องได้รับการตรวจสอบและอนุมัติสิทธิ์จากผู้ดูแลระบบส่วนกลาง (Admin) ก่อนเข้าใช้งาน
           </p>
 
@@ -131,7 +163,7 @@ export default function RegisterPage() {
               <span style={{ color: 'var(--text-muted)' }}>บทบาทที่ขอ:</span>
               <span style={{ color: 'var(--cyan-accent)' }}>{USER_ROLES[formData.requestedRole]?.label || formData.requestedRole}</span>
               <span style={{ color: 'var(--text-muted)' }}>หน่วยงาน:</span>
-              <span>{formData.unitName}</span>
+              <span>{registeredUser?.unitName || formData.unitName}</span>
             </div>
           </div>
 
@@ -263,31 +295,31 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <div className="grid-cols-2">
-            <div className="form-group">
-              <label className="form-label required">ตำแหน่ง</label>
-              <input 
-                type="text" 
-                className="form-input"
-                placeholder="เช่น นายทหารกำลังพล, หน.ฝกร."
-                value={formData.position}
-                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                required
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label required">ตำแหน่ง</label>
+            <input 
+              type="text" 
+              className="form-input"
+              placeholder="เช่น นายทหารกำลังพล, หน.ฝกร."
+              value={formData.position}
+              onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+              required
+            />
+          </div>
 
-            <div className="form-group">
-              <label className="form-label required">หน่วยสังกัด (สิทธิจะถูกผูกกับหน่วยนี้)</label>
-              <select 
-                className="form-select"
-                value={formData.unitId}
-                onChange={handleUnitChange}
-                required
-              >
-                {MILITARY_UNITS.map((u) => (
-                  <option key={u.id} value={u.id}>[{u.level}] {u.name}</option>
-                ))}
-              </select>
+          <div className="form-group">
+            <label className="form-label required">หน่วยสังกัด (สิทธิจะถูกผูกกับหน่วยนี้)</label>
+            <UnitAutocomplete
+              units={units}
+              value={formData.unitId}
+              onChange={handleUnitSelect}
+              loading={unitsLoading}
+              error={unitsError}
+              onRetry={loadUnits}
+              required
+            />
+            <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '5px' }}>
+              * ข้อมูลเชื่อมโยงโดยตรงกับโครงสร้างหน่วยในเมนู &quot;จัดการโครงสร้างหน่วย&quot; (พิมพ์ชื่อหน่วย ชื่อย่อ รหัสหน่วย หรือจังหวัดเพื่อค้นหา)
             </div>
           </div>
 
