@@ -157,7 +157,11 @@ export default function SettingsPage() {
       const res = await fetch('/api/telegram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'CHECK_BOT' })
+        body: JSON.stringify({
+          action: 'CHECK_BOT',
+          botToken: config.botToken,
+          chatId: config.chatId
+        })
       });
       const data = await res.json();
       if (data.botInfo) setBotInfo(data.botInfo);

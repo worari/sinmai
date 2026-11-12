@@ -95,25 +95,36 @@ export async function POST(request) {
       const updated = updateTelegramConfig(updateData);
       db.saveToFile(['notifications', 'telegramConfig']);
       await db.flush();
+
+      const botInfo = updated.botToken ? await getTelegramBotInfo() : null;
+
       return NextResponse.json({
         success: true,
-        message: 'บันทึกการตั้งค่า Telegram Bot สำเร็จและบันทึกลงฐานข้อมูลแล้ว',
+        message: botInfo?.ok
+          ? botInfo.chatError
+            ? `บันทึกการตั้งค่าแล้ว เชื่อมต่อ @${botInfo.bot?.username || 'Bot'} สำเร็จ แต่ไม่สามารถเข้าถึง Chat ID (${updated.chatId || ''}): ${botInfo.chatError}`
+            : `บันทึกการตั้งค่า Telegram Bot (@${botInfo.bot?.username || 'Bot'}${botInfo.chat?.title ? ` → ${botInfo.chat.title}` : ''}) และบันทึกลงฐานข้อมูลแล้ว`
+          : 'บันทึกการตั้งค่า Telegram Bot สำเร็จและบันทึกลงฐานข้อมูลแล้ว',
         config: {
           botToken: maskToken(updated.botToken),
           hasBotToken: Boolean(updated.botToken),
           chatId: updated.chatId || '',
           enabled: updated.enabled
-        }
+        },
+        ...(botInfo ? { botInfo } : {})
       });
     }
 
     if (action === 'CHECK_BOT') {
-      const botInfo = await getTelegramBotInfo();
+      const botInfo = await getTelegramBotInfo({ botToken, chatId });
+      const connectedOk = Boolean(botInfo.ok && !botInfo.chatError);
       return NextResponse.json({
-        success: botInfo.ok,
-        message: botInfo.ok
-          ? `เชื่อมต่อ @${botInfo.bot?.username || 'Bot'} สำเร็จ`
-          : botInfo.description || 'ไม่สามารถเชื่อมต่อ Telegram Bot ได้',
+        success: connectedOk,
+        message: !botInfo.ok
+          ? botInfo.description || 'ไม่สามารถเชื่อมต่อ Telegram Bot ได้'
+          : botInfo.chatError
+            ? `เชื่อมต่อ @${botInfo.bot?.username || 'Bot'} สำเร็จ แต่ไม่สามารถเข้าถึง Chat ID: ${botInfo.chatError}`
+            : `เชื่อมต่อ @${botInfo.bot?.username || 'Bot'}${botInfo.chat?.title ? ` (${botInfo.chat.title})` : ''} สำเร็จ`,
         botInfo
       });
     }
