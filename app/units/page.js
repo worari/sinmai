@@ -1,7 +1,7 @@
 // app/units/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { 
   Building2, 
   GitFork, 
@@ -37,7 +37,10 @@ import {
   ChevronsLeft,
   ChevronsRight,
   LayoutGrid,
-  Table
+  Table,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { ARMY_LEVELS } from '@/lib/military-units';
 import { triggerStatusPopup } from '@/components/StatusModal';
@@ -100,10 +103,12 @@ export default function MilitaryUnitsPage() {
   const [overwriteExisting, setOverwriteExisting] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // View Mode & Pagination State
-  const [viewMode, setViewMode] = useState('CARDS'); // 'CARDS' or 'TABLE'
+  // View Mode & Pagination State (Default to Data Table)
+  const [viewMode, setViewMode] = useState('TABLE'); // 'TABLE' (default) or 'CARDS'
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12);
+  const [pageSize, setPageSize] = useState(15);
+  const [sortField, setSortField] = useState('level'); // 'level', 'code', 'name', 'province', 'rtaPhone'
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' or 'desc'
 
   // Expanded nodes for Tree View
   const [expandedNodes, setExpandedNodes] = useState({});
@@ -502,23 +507,72 @@ export default function MilitaryUnitsPage() {
   // รีเซ็ตหน้ากลับเป็นหน้า 1 เสมอเมื่อเปลี่ยนแท็บ ตัวกรองค้นหา หรือจำนวนรายการต่อหน้า
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, searchTerm, pageSize]);
+  }, [activeTab, searchTerm, pageSize, sortField, sortDirection]);
 
-  // จัดกลุ่มและเรียงลำดับหน่วยตามระดับโครงสร้าง 1 -> 2 -> 3
+  // สลับการเรียงลำดับคอลัมน์ใน Data Table
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // จัดกลุ่มและเรียงลำดับหน่วย (ค่าเริ่มต้น: จัดกลุ่มตามระดับ 1 -> 2 -> 3)
   const sortedUnits = [...filteredUnits].sort((a, b) => {
-    // 1) เรียงตามระดับโครงสร้าง 1 -> 2 -> 3
-    if (a.level !== b.level) {
-      return a.level - b.level;
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    if (sortField === 'level') {
+      // 1) เรียงตามระดับโครงสร้าง 1 -> 2 -> 3
+      if (a.level !== b.level) {
+        return (a.level - b.level) * dir;
+      }
+      // 2) ถ้าอยู่ในระดับเดียวกัน เรียงตามหน่วยต้นสังกัด (parentId)
+      if (a.parentId !== b.parentId) {
+        return String(a.parentId || '').localeCompare(String(b.parentId || '')) * dir;
+      }
+      // 3) เรียงตามรหัสหรือชื่อย่อ
+      const codeA = a.code || a.shortName || a.name || '';
+      const codeB = b.code || b.shortName || b.name || '';
+      return codeA.localeCompare(codeB, 'th') * dir;
     }
-    // 2) ถ้าอยู่ในระดับเดียวกัน เรียงตามหน่วยต้นสังกัด (parentId)
-    if (a.parentId !== b.parentId) {
-      return String(a.parentId || '').localeCompare(String(b.parentId || ''));
+    if (sortField === 'code') {
+      const codeA = a.code || a.shortName || '';
+      const codeB = b.code || b.shortName || '';
+      return codeA.localeCompare(codeB, 'th') * dir;
     }
-    // 3) เรียงตามรหัสหรือชื่อย่อ
-    const codeA = a.code || a.shortName || a.name || '';
-    const codeB = b.code || b.shortName || b.name || '';
-    return codeA.localeCompare(codeB, 'th');
+    if (sortField === 'name') {
+      return (a.name || '').localeCompare(b.name || '', 'th') * dir;
+    }
+    if (sortField === 'province') {
+      return (a.province || '').localeCompare(b.province || '', 'th') * dir;
+    }
+    if (sortField === 'rtaPhone') {
+      return (a.rtaPhone || '').localeCompare(b.rtaPhone || '') * dir;
+    }
+    return 0;
   });
+
+  // ฟังก์ชันแสดง Header ที่คลิกเรียงลำดับได้
+  const renderSortHeader = (label, field, width, align = 'left') => {
+    const isSorted = sortField === field;
+    return (
+      <th
+        style={{ width, cursor: 'pointer', userSelect: 'none', textAlign: align }}
+        onClick={() => handleSort(field)}
+        title={`คลิกเพื่อเรียงลำดับตาม${label} (${isSorted && sortDirection === 'asc' ? 'มากไปน้อย' : 'น้อยไปมาก'})`}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', justifyContent: align === 'center' ? 'center' : 'flex-start' }}>
+          <span>{label}</span>
+          {isSorted ? (
+            sortDirection === 'asc' ? <ArrowUp size={12} color="var(--gold-primary)" /> : <ArrowDown size={12} color="var(--gold-primary)" />
+          ) : (
+            <ArrowUpDown size={11} color="var(--text-dim)" style={{ opacity: 0.4 }} />
+          )}
+        </div>
+      </th>
+    );
+  };
 
   // การคำนวณ Pagination
   const totalUnits = sortedUnits.length;
@@ -564,12 +618,12 @@ export default function MilitaryUnitsPage() {
                 setPageSize(Number(e.target.value));
                 setCurrentPage(1);
               }}
-              style={{ width: '85px', height: '30px', fontSize: '12px', padding: '2px 8px' }}
+              style={{ width: '90px', height: '30px', fontSize: '12px', padding: '2px 8px' }}
             >
-              <option value={12}>12 หน่วย</option>
-              <option value={24}>24 หน่วย</option>
-              <option value={48}>48 หน่วย</option>
-              <option value={96}>96 หน่วย</option>
+              <option value={15}>15 หน่วย</option>
+              <option value={25}>25 หน่วย</option>
+              <option value={50}>50 หน่วย</option>
+              <option value={100}>100 หน่วย</option>
               <option value={totalUnits || 1000}>ทั้งหมด</option>
             </select>
           </div>
@@ -951,6 +1005,16 @@ export default function MilitaryUnitsPage() {
               <div style={{ display: 'flex', gap: '3px', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '3px', borderRadius: '8px' }}>
                 <button
                   type="button"
+                  onClick={() => setViewMode('TABLE')}
+                  className={`btn btn-sm ${viewMode === 'TABLE' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', fontSize: '12px' }}
+                  title="แสดงผลแบบตารางข้อมูล (Data Table)"
+                >
+                  <Table size={13} />
+                  <span>ตารางข้อมูล (Data Table)</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setViewMode('CARDS')}
                   className={`btn btn-sm ${viewMode === 'CARDS' ? 'btn-primary' : 'btn-secondary'}`}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', fontSize: '12px' }}
@@ -958,16 +1022,6 @@ export default function MilitaryUnitsPage() {
                 >
                   <LayoutGrid size={13} />
                   <span>การ์ดหน่วย</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('TABLE')}
-                  className={`btn btn-sm ${viewMode === 'TABLE' ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', fontSize: '12px' }}
-                  title="แสดงผลแบบตารางข้อมูล"
-                >
-                  <Table size={13} />
-                  <span>ตาราง</span>
                 </button>
               </div>
             )}
@@ -1524,12 +1578,17 @@ export default function MilitaryUnitsPage() {
             </div>
           ) : (
             /* ========================================================
-               TABLE VIEW (แสดงรายการแบบตาราง)
+               TABLE VIEW (แสดงรายการแบบตารางข้อมูล Data Table)
                ======================================================== */
             <div className="glass-panel" style={{ padding: '20px' }}>
               <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                 <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
                   แสดงผล <strong style={{ color: '#fff' }}>{paginatedUnits.length}</strong> จากทั้งหมด <strong style={{ color: 'var(--gold-primary)' }}>{totalUnits}</strong> หน่วย
+                  {sortField && (
+                    <span style={{ fontSize: '12px', color: 'var(--text-dim)', marginLeft: '8px' }}>
+                      (เรียงตาม{sortField === 'level' ? 'ระดับโครงสร้าง' : sortField === 'code' ? 'รหัส/ตัวย่อ' : sortField === 'name' ? 'ชื่อเต็ม' : sortField === 'province' ? 'จังหวัด' : 'เบอร์โทร.ทบ.'} {sortDirection === 'asc' ? 'น้อยไปมาก ▲' : 'มากไปน้อย ▼'})
+                    </span>
+                  )}
                 </div>
                 <a 
                   href="/submit" 
@@ -1544,153 +1603,211 @@ export default function MilitaryUnitsPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '130px' }}>ระดับโครงสร้าง</th>
-                      <th style={{ width: '140px' }}>รหัส / ตัวย่อ</th>
-                      <th>ชื่อเต็มหน่วยทหาร</th>
-                      <th>หน่วยแม่ / สังกัด</th>
-                      <th style={{ width: '160px' }}>เบอร์ติดต่อ (โทร.ทบ.)</th>
-                      <th style={{ width: '180px' }}>จังหวัด / ที่ตั้ง & แผนที่</th>
-                      <th style={{ width: '85px' }}>สถานะ</th>
-                      <th style={{ width: '100px', textAlign: 'center' }}>จัดการ</th>
+                      {renderSortHeader('ระดับโครงสร้าง', 'level', '135px')}
+                      {renderSortHeader('รหัส / ตัวย่อ', 'code', '135px')}
+                      {renderSortHeader('ชื่อเต็มหน่วยทหาร', 'name', 'auto')}
+                      <th style={{ width: '180px' }}>หน่วยแม่ / สังกัด</th>
+                      {renderSortHeader('เบอร์ติดต่อ (โทร.ทบ.)', 'rtaPhone', '165px')}
+                      {renderSortHeader('จังหวัด / ที่ตั้ง & แผนที่', 'province', '185px')}
+                      <th style={{ width: '85px', textAlign: 'center' }}>สถานะ</th>
+                      <th style={{ width: '150px', textAlign: 'center' }}>จัดการ</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedUnits.map((u) => {
-                      const parent = units.find((p) => p.id === u.parentId);
-
-                      return (
-                        <tr key={u.id}>
-                          <td>
-                            <span className={`badge ${
-                              u.level === 1 ? 'badge-gold' : u.level === 2 ? 'badge-cyan' : 'badge-emerald'
-                            }`} style={{ fontSize: '11px' }}>
-                              {u.level === 1 ? '1. ระดับ ทบ.' : u.level === 2 ? '2. ระดับ กองพล' : '3. ระดับ กรม/พัน'}
-                            </span>
-                          </td>
-
-                          <td>
-                            <span style={{ fontWeight: 600, color: 'var(--gold-primary)', fontSize: '13px' }}>
-                              {u.shortName || u.code}
-                            </span>
-                          </td>
-
-                          <td>
-                            <div style={{ fontWeight: 500, color: '#fff', fontSize: '13.5px' }}>{u.name}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>รหัส ID: {u.id}</div>
-                          </td>
-
-                          <td>
-                            {parent ? (
-                              <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                                <span style={{ color: 'var(--cyan-accent)', fontWeight: 500 }}>{parent.shortName || parent.code}</span>
-                                <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block' }}>{parent.name}</span>
-                              </div>
-                            ) : (
-                              <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>หน่วยขึ้นตรง ทบ.</span>
-                            )}
-                          </td>
-
-                          {/* เบอร์โทร.ทบ. 5 หลัก */}
-                          <td>
-                            {u.rtaPhone ? (
-                              <div>
-                                <span style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  background: 'rgba(212, 175, 55, 0.15)',
-                                  border: '1px solid rgba(212, 175, 55, 0.3)',
-                                  borderRadius: '4px',
-                                  padding: '2px 8px',
-                                  fontSize: '12px',
-                                  color: 'var(--gold-primary)',
-                                  fontFamily: 'monospace',
-                                  fontWeight: 700,
-                                  letterSpacing: '0.5px'
-                                }}>
-                                  <PhoneCall size={12} /> {u.rtaPhone}
-                                </span>
-                                {u.phone && (
-                                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                                    โทรนอก: {u.phone}
-                                  </div>
-                                )}
-                              </div>
-                            ) : u.phone ? (
-                              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{u.phone}</div>
-                            ) : (
-                              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>-</span>
-                            )}
-                          </td>
-
-                          {/* จังหวัด / ที่ตั้ง & ลิงก์ Google Maps */}
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#fff' }}>
-                              <MapPin size={13} color="var(--gold-primary)" />
-                              <span>{u.province || '-'}</span>
-                            </div>
-                            {u.locationName && (
-                              <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                                {u.locationName}
-                              </div>
-                            )}
-                            {u.lat && u.lng ? (
-                              <a 
-                                href={`https://www.google.com/maps?q=${u.lat},${u.lng}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '3px',
-                                  fontSize: '11px',
-                                  color: 'var(--cyan-accent)',
-                                  marginTop: '3px',
-                                  textDecoration: 'none'
-                                }}
-                              >
-                                <ExternalLink size={10} />
-                                <span>ดูพิกัด Google Map</span>
-                              </a>
-                            ) : null}
-                          </td>
-
-                          <td>
-                            <span className={`badge ${u.status === 'ACTIVE' ? 'badge-emerald' : 'badge-ruby'}`} style={{ fontSize: '10.5px' }}>
-                              {u.status === 'ACTIVE' ? 'ใช้งาน' : 'ระงับ'}
-                            </span>
-                          </td>
-
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              <button 
-                                onClick={() => handleOpenEditModal(u)}
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '4px 8px' }}
-                                title="แก้ไขข้อมูลหน่วย"
-                              >
-                                <Edit size={13} />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteUnit(u)}
-                                className="btn btn-secondary btn-sm"
-                                style={{ padding: '4px 8px', color: '#fca5a5' }}
-                                title="ลบหน่วยนี้"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-
-                    {paginatedUnits.length === 0 && (
+                    {paginatedUnits.length === 0 ? (
                       <tr>
                         <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
-                          ไม่พบข้อมูลโครงสร้างหน่วยที่ตรงกับเงื่อนไขการค้นหา
+                          <Building2 size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
+                          <div>ไม่พบข้อมูลโครงสร้างหน่วยที่ตรงกับเงื่อนไขการค้นหา</div>
                         </td>
                       </tr>
+                    ) : (
+                      (() => {
+                        let lastLevel = null;
+                        return paginatedUnits.map((u) => {
+                          const parent = units.find((p) => p.id === u.parentId);
+                          const lvl = u.level || 3;
+                          const isNewLevel = sortField === 'level' && lvl !== lastLevel;
+                          if (isNewLevel) {
+                            lastLevel = lvl;
+                          }
+
+                          const lvlLabel = lvl === 1 ? '1. ระดับ ทบ. / บชร. / กองทัพภาค' : lvl === 2 ? '2. ระดับ กองพล / มณฑลทหารบก (มทบ.)' : '3. ระดับ กรม หรือ กองพัน';
+                          const lvlBadgeClass = lvl === 1 ? 'badge-gold' : lvl === 2 ? 'badge-cyan' : 'badge-emerald';
+                          const lvlIcon = lvl === 1 ? '🎖️' : lvl === 2 ? '🏢' : '⚔️';
+                          const lvlColor = lvl === 1 ? 'var(--gold-primary)' : lvl === 2 ? 'var(--cyan-accent)' : 'var(--emerald-success)';
+                          const lvlBg = lvl === 1 ? 'rgba(212, 175, 55, 0.12)' : lvl === 2 ? 'rgba(6, 182, 212, 0.10)' : 'rgba(16, 185, 129, 0.10)';
+
+                          return (
+                            <Fragment key={u.id}>
+                              {isNewLevel && (
+                                <tr style={{ background: lvlBg, borderTop: `2px solid ${lvlColor}`, borderBottom: `1px solid ${lvlColor}` }}>
+                                  <td colSpan={8} style={{ padding: '8px 16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '16px' }}>{lvlIcon}</span>
+                                        <strong style={{ color: '#fff', fontSize: '13.5px' }}>{lvlLabel}</strong>
+                                        <span className={`badge ${lvlBadgeClass}`} style={{ fontSize: '11px' }}>
+                                          ระดับ {lvl}
+                                        </span>
+                                      </div>
+                                      <span style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>
+                                        {lvl === 1 ? 'ทภ.1 - 4, นสศ., นปอ., ยศ.ทบ. และส่วนกลาง' : lvl === 2 ? 'กองพลทหารราบ, กองพลทหารม้า, มทบ.' : 'กรมทหารราบ, กองพันทหารราบ, ทหารปืนใหญ่, ทหารช่าง'}
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+
+                              <tr style={{ transition: 'background-color 0.15s ease' }}>
+                                <td>
+                                  <span className={`badge ${
+                                    u.level === 1 ? 'badge-gold' : u.level === 2 ? 'badge-cyan' : 'badge-emerald'
+                                  }`} style={{ fontSize: '11px' }}>
+                                    {u.level === 1 ? '1. ระดับ ทบ.' : u.level === 2 ? '2. ระดับ กองพล' : '3. ระดับ กรม/พัน'}
+                                  </span>
+                                </td>
+
+                                <td>
+                                  <span style={{ fontWeight: 600, color: 'var(--gold-primary)', fontSize: '13px' }}>
+                                    {u.shortName || u.code}
+                                  </span>
+                                </td>
+
+                                <td>
+                                  <div style={{ fontWeight: 500, color: '#fff', fontSize: '13.5px' }}>{u.name}</div>
+                                  <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>รหัส ID: {u.id}</div>
+                                </td>
+
+                                <td>
+                                  {parent ? (
+                                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                                      <span style={{ color: 'var(--cyan-accent)', fontWeight: 500 }}>{parent.shortName || parent.code}</span>
+                                      <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block' }}>{parent.name}</span>
+                                    </div>
+                                  ) : (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>หน่วยขึ้นตรง ทบ.</span>
+                                  )}
+                                </td>
+
+                                {/* เบอร์โทร.ทบ. 5 หลัก */}
+                                <td>
+                                  {u.rtaPhone ? (
+                                    <div>
+                                      <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        background: 'rgba(212, 175, 55, 0.15)',
+                                        border: '1px solid rgba(212, 175, 55, 0.3)',
+                                        borderRadius: '4px',
+                                        padding: '2px 8px',
+                                        fontSize: '12px',
+                                        color: 'var(--gold-primary)',
+                                        fontFamily: 'monospace',
+                                        fontWeight: 700,
+                                        letterSpacing: '0.5px'
+                                      }}>
+                                        <PhoneCall size={12} /> {u.rtaPhone}
+                                      </span>
+                                      {u.phone && (
+                                        <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                          โทรนอก: {u.phone}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : u.phone ? (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{u.phone}</div>
+                                  ) : (
+                                    <span style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>-</span>
+                                  )}
+                                </td>
+
+                                {/* จังหวัด / ที่ตั้ง & ลิงก์ Google Maps */}
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#fff' }}>
+                                    <MapPin size={13} color="var(--gold-primary)" />
+                                    <span>{u.province || '-'}</span>
+                                  </div>
+                                  {u.locationName && (
+                                    <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                      {u.locationName}
+                                    </div>
+                                  )}
+                                  {u.lat && u.lng ? (
+                                    <a 
+                                      href={`https://www.google.com/maps?q=${u.lat},${u.lng}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        fontSize: '11px',
+                                        color: 'var(--cyan-accent)',
+                                        marginTop: '3px',
+                                        textDecoration: 'none'
+                                      }}
+                                    >
+                                      <ExternalLink size={10} />
+                                      <span>ดูพิกัด Google Map</span>
+                                    </a>
+                                  ) : null}
+                                </td>
+
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className={`badge ${u.status === 'ACTIVE' ? 'badge-emerald' : 'badge-ruby'}`} style={{ fontSize: '10.5px' }}>
+                                    {u.status === 'ACTIVE' ? 'ใช้งาน' : 'ระงับ'}
+                                  </span>
+                                </td>
+
+                                <td style={{ textAlign: 'center' }}>
+                                  <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
+                                    {u.level === 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenAddModal(2, u.id)}
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ fontSize: '10.5px', padding: '3px 6px', color: 'var(--cyan-accent)' }}
+                                        title="เพิ่มหน่วยระดับกองพลสังกัดหน่วยนี้"
+                                      >
+                                        + กองพล
+                                      </button>
+                                    )}
+                                    {u.level === 2 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenAddModal(3, u.id)}
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ fontSize: '10.5px', padding: '3px 6px', color: 'var(--emerald-light, #a7f3d0)' }}
+                                        title="เพิ่มหน่วยระดับกรม/พันสังกัดหน่วยนี้"
+                                      >
+                                        + กรม/พัน
+                                      </button>
+                                    )}
+                                    <button 
+                                      onClick={() => handleOpenEditModal(u)}
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ padding: '3px 7px' }}
+                                      title="แก้ไขข้อมูลหน่วย"
+                                    >
+                                      <Edit size={13} />
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDeleteUnit(u)}
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ padding: '3px 7px', color: '#fca5a5' }}
+                                      title="ลบหน่วยนี้"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            </Fragment>
+                          );
+                        });
+                      })()
                     )}
                   </tbody>
                 </table>
