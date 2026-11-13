@@ -42,7 +42,7 @@ import {
   ArrowUp,
   ArrowDown
 } from 'lucide-react';
-import { ARMY_LEVELS } from '@/lib/military-units';
+import { ARMY_LEVELS, RTA_LEVEL_OPTIONS, RTA_ORGANIZATION_SECTIONS, getRtaSection } from '@/lib/military-units';
 import { triggerStatusPopup } from '@/components/StatusModal';
 
 // พิกัดค่ายทหารหลักของกองทัพบก สำหรับกดเลือกปักหมุดด่วน
@@ -65,6 +65,7 @@ export default function MilitaryUnitsPage() {
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('ALL'); // ALL, 1, 2, 3, TREE
+  const [filterSection, setFilterSection] = useState('ALL'); // ALL, COMMAND, COMBAT, etc.
   const [searchTerm, setSearchTerm] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -77,6 +78,8 @@ export default function MilitaryUnitsPage() {
   const [modalForm, setModalForm] = useState({
     id: '',
     level: 2,
+    levelName: 'ระดับ กองพล',
+    customLevelName: '',
     parentId: '',
     code: '',
     shortName: '',
@@ -88,7 +91,7 @@ export default function MilitaryUnitsPage() {
     address: '',
     rtaPhone: '', // โทร.ทบ. 5 หลัก
     phone: '',    // เบอร์โทรศัพท์ทั่วไป
-    type: 'REGULAR',
+    type: 'COMBAT', // 7 ส่วนหลัก ทบ.
     status: 'ACTIVE'
   });
   const [saving, setSaving] = useState(false);
@@ -157,9 +160,13 @@ export default function MilitaryUnitsPage() {
   const handleOpenAddModal = (defaultLevel = 2, defaultParentId = '') => {
     setEditingUnit(null);
     setShowMapPicker(false);
+    const defaultLevelName = defaultLevel === 1 ? 'ระดับ ทบ.' : defaultLevel === 2 ? 'ระดับ กองพล' : 'ระดับ กรม/กองพัน';
+    const defaultType = defaultLevel === 1 ? 'REGIONAL' : 'COMBAT';
     setModalForm({
       id: '',
       level: defaultLevel,
+      levelName: defaultLevelName,
+      customLevelName: '',
       parentId: defaultParentId || (defaultLevel === 2 ? '1st_ARMY' : defaultLevel === 3 ? '2nd_INF_DIV' : ''),
       code: '',
       shortName: '',
@@ -171,7 +178,7 @@ export default function MilitaryUnitsPage() {
       address: '',
       rtaPhone: '97000',
       phone: '',
-      type: 'REGULAR',
+      type: defaultType,
       status: 'ACTIVE'
     });
     setIsModalOpen(true);
@@ -182,9 +189,14 @@ export default function MilitaryUnitsPage() {
   const handleOpenEditModal = (unit) => {
     setEditingUnit(unit);
     setShowMapPicker(false);
+    const standardLevels = ['ระดับ ทบ.', 'ระดับ กองพล', 'ระดับ กรม/กองพัน'];
+    const isCustom = unit.levelName && !standardLevels.includes(unit.levelName);
+    const rtaSec = getRtaSection(unit.type);
     setModalForm({
       id: unit.id,
       level: unit.level,
+      levelName: isCustom ? 'อื่นๆ' : (unit.levelName || (unit.level === 1 ? 'ระดับ ทบ.' : unit.level === 2 ? 'ระดับ กองพล' : 'ระดับ กรม/กองพัน')),
+      customLevelName: isCustom ? unit.levelName : '',
       parentId: unit.parentId || '',
       code: unit.code || unit.shortName || '',
       shortName: unit.shortName || '',
@@ -196,7 +208,7 @@ export default function MilitaryUnitsPage() {
       address: unit.address || '',
       rtaPhone: unit.rtaPhone || '',
       phone: unit.phone || '',
-      type: unit.type || 'REGULAR',
+      type: rtaSec.code,
       status: unit.status || 'ACTIVE'
     });
     setIsModalOpen(true);
@@ -258,9 +270,14 @@ export default function MilitaryUnitsPage() {
     }
 
     try {
+      const finalLevelName = modalForm.levelName === 'อื่นๆ' 
+        ? (modalForm.customLevelName.trim() || 'อื่นๆ')
+        : modalForm.levelName;
+
       const payload = {
         ...modalForm,
         level: parseInt(modalForm.level, 10),
+        levelName: finalLevelName,
         code: modalForm.code || modalForm.shortName,
         shortName: modalForm.shortName || modalForm.code,
         rtaPhone: modalForm.rtaPhone ? String(modalForm.rtaPhone).replace(/\D/g, '').slice(0, 5) : '',
@@ -288,10 +305,11 @@ export default function MilitaryUnitsPage() {
       loadUnits();
 
       // แจ้งเตือน Popup Modal ยืนยันการบันทึกหน่วย
+      const curSec = getRtaSection(payload.type);
       triggerStatusPopup({
         type: 'success',
-        title: editingUnit ? 'แก้ไขข้อมูลหน่วยสำเร็จ' : 'เพิ่มหน่วยใหม่ในโครงสร้างสำเร็จ',
-        message: `ระบบได้บันทึก "${payload.name}" (${payload.shortName}) ระดับ ${ARMY_LEVELS[payload.level]?.label || 'หน่วย'} ในสายการบังคับบัญชาเรียบร้อยแล้ว`,
+        title: editingUnit ? 'แก้ไขข้อมูลหน่วยสำเร็จ' : 'เพิ่มหน่วยใหม่ในสายการบังคับบัญชาสำเร็จ',
+        message: `ระบบได้บันทึก "${payload.name}" (${payload.shortName}) ${finalLevelName} [${curSec.shortLabel}] ในสายการบังคับบัญชาเรียบร้อยแล้ว`,
         casualtyName: payload.name,
         action: editingUnit ? 'ปรับปรุงข้อมูลหน่วย' : 'เพิ่มหน่วยใหม่ในสายการบังคับบัญชา',
         by: 'ผู้ดูแลระบบโครงสร้างหน่วย (Admin)',
@@ -492,22 +510,28 @@ export default function MilitaryUnitsPage() {
   // Filtered Units
   const filteredUnits = units.filter((u) => {
     const matchTab = activeTab === 'ALL' || activeTab === 'TREE' || u.level === parseInt(activeTab, 10);
+    const sec = getRtaSection(u.type);
+    const matchSection = filterSection === 'ALL' || sec.code === filterSection;
     const q = searchTerm.toLowerCase().trim();
     const matchSearch =
       !q ||
       (u.name && u.name.toLowerCase().includes(q)) ||
       (u.shortName && u.shortName.toLowerCase().includes(q)) ||
       (u.code && u.code.toLowerCase().includes(q)) ||
+      (u.levelName && u.levelName.toLowerCase().includes(q)) ||
+      (sec.shortLabel && sec.shortLabel.toLowerCase().includes(q)) ||
+      (sec.nameTh && sec.nameTh.toLowerCase().includes(q)) ||
+      (sec.nameEn && sec.nameEn.toLowerCase().includes(q)) ||
       (u.province && u.province.toLowerCase().includes(q)) ||
       (u.rtaPhone && u.rtaPhone.includes(q)) ||
       (u.locationName && u.locationName.toLowerCase().includes(q));
-    return matchTab && matchSearch;
+    return matchTab && matchSection && matchSearch;
   });
 
   // รีเซ็ตหน้ากลับเป็นหน้า 1 เสมอเมื่อเปลี่ยนแท็บ ตัวกรองค้นหา หรือจำนวนรายการต่อหน้า
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, searchTerm, pageSize, sortField, sortDirection]);
+  }, [activeTab, filterSection, searchTerm, pageSize, sortField, sortDirection]);
 
   // สลับการเรียงลำดับคอลัมน์ใน Data Table
   const handleSort = (field) => {
@@ -535,6 +559,11 @@ export default function MilitaryUnitsPage() {
       const codeA = a.code || a.shortName || a.name || '';
       const codeB = b.code || b.shortName || b.name || '';
       return codeA.localeCompare(codeB, 'th') * dir;
+    }
+    if (sortField === 'type') {
+      const secA = getRtaSection(a.type).number;
+      const secB = getRtaSection(b.type).number;
+      return (secA - secB) * dir;
     }
     if (sortField === 'code') {
       const codeA = a.code || a.shortName || '';
@@ -987,9 +1016,26 @@ export default function MilitaryUnitsPage() {
             </button>
           </div>
 
-          {/* Search Box & View Mode Toggle */}
+          {/* Search Box, Section Filter & View Mode Toggle */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', width: '280px' }}>
+            {activeTab !== 'TREE' && (
+              <select
+                className="form-select form-select-sm"
+                value={filterSection}
+                onChange={(e) => setFilterSection(e.target.value)}
+                style={{ height: '36px', fontSize: '12.5px', minWidth: '185px', padding: '4px 10px' }}
+                title="กรองตามหมวดหมู่โครงสร้างกองทัพบก 7 ส่วนหลัก"
+              >
+                <option value="ALL">🏛️ ทุกหมวดหมู่ (7 ส่วนหลัก)</option>
+                {RTA_ORGANIZATION_SECTIONS.map((sec) => (
+                  <option key={sec.code} value={sec.code}>
+                    {sec.icon} {sec.label}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <div style={{ position: 'relative', width: '260px' }}>
               <Search size={15} color="var(--text-dim)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input 
                 type="text"
@@ -1423,10 +1469,21 @@ export default function MilitaryUnitsPage() {
                               >
                                 <div>
                                   {/* Top Badges */}
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                                    <span className={`badge ${lvlBadgeClass}`} style={{ fontSize: '10.5px' }}>
-                                      {lvl === 1 ? 'ระดับ ทบ.' : lvl === 2 ? 'ระดับ กองพล' : 'ระดับ กรม/พัน'}
-                                    </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span className={`badge ${lvlBadgeClass}`} style={{ fontSize: '10.5px' }}>
+                                        {u.levelName || (lvl === 1 ? 'ระดับ ทบ.' : lvl === 2 ? 'ระดับ กองพล' : 'ระดับ กรม/พัน')}
+                                      </span>
+                                      {(() => {
+                                        const sec = getRtaSection(u.type);
+                                        return (
+                                          <span className={`badge ${sec.badgeClass}`} style={{ fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                            <span>{sec.icon}</span>
+                                            <span>{sec.shortLabel}</span>
+                                          </span>
+                                        );
+                                      })()}
+                                    </div>
 
                                     <span className={`badge ${u.status === 'ACTIVE' ? 'badge-emerald' : 'badge-ruby'}`} style={{ fontSize: '10px' }}>
                                       {u.status === 'ACTIVE' ? 'พร้อมใช้งาน' : 'ระงับ'}
@@ -1586,7 +1643,7 @@ export default function MilitaryUnitsPage() {
                   แสดงผล <strong style={{ color: '#fff' }}>{paginatedUnits.length}</strong> จากทั้งหมด <strong style={{ color: 'var(--gold-primary)' }}>{totalUnits}</strong> หน่วย
                   {sortField && (
                     <span style={{ fontSize: '12px', color: 'var(--text-dim)', marginLeft: '8px' }}>
-                      (เรียงตาม{sortField === 'level' ? 'ระดับโครงสร้าง' : sortField === 'code' ? 'รหัส/ตัวย่อ' : sortField === 'name' ? 'ชื่อเต็ม' : sortField === 'province' ? 'จังหวัด' : 'เบอร์โทร.ทบ.'} {sortDirection === 'asc' ? 'น้อยไปมาก ▲' : 'มากไปน้อย ▼'})
+                      (เรียงตาม{sortField === 'level' ? 'ระดับโครงสร้าง' : sortField === 'type' ? 'หมวดหมู่ 7 ส่วนหลัก' : sortField === 'code' ? 'รหัส/ตัวย่อ' : sortField === 'name' ? 'ชื่อเต็ม' : sortField === 'province' ? 'จังหวัด' : 'เบอร์โทร.ทบ.'} {sortDirection === 'asc' ? 'น้อยไปมาก ▲' : 'มากไปน้อย ▼'})
                     </span>
                   )}
                 </div>
@@ -1604,11 +1661,12 @@ export default function MilitaryUnitsPage() {
                   <thead>
                     <tr>
                       {renderSortHeader('ระดับโครงสร้าง', 'level', '135px')}
-                      {renderSortHeader('รหัส / ตัวย่อ', 'code', '135px')}
+                      {renderSortHeader('หมวดหมู่ (7 ส่วนหลัก)', 'type', '180px')}
+                      {renderSortHeader('รหัส / ตัวย่อ', 'code', '125px')}
                       {renderSortHeader('ชื่อเต็มหน่วยทหาร', 'name', 'auto')}
-                      <th style={{ width: '180px' }}>หน่วยแม่ / สังกัด</th>
-                      {renderSortHeader('เบอร์ติดต่อ (โทร.ทบ.)', 'rtaPhone', '165px')}
-                      {renderSortHeader('จังหวัด / ที่ตั้ง & แผนที่', 'province', '185px')}
+                      <th style={{ width: '160px' }}>หน่วยแม่ / สังกัด</th>
+                      {renderSortHeader('เบอร์ติดต่อ (โทร.ทบ.)', 'rtaPhone', '155px')}
+                      {renderSortHeader('จังหวัด / ที่ตั้ง & แผนที่', 'province', '175px')}
                       <th style={{ width: '85px', textAlign: 'center' }}>สถานะ</th>
                       <th style={{ width: '150px', textAlign: 'center' }}>จัดการ</th>
                     </tr>
@@ -1616,7 +1674,7 @@ export default function MilitaryUnitsPage() {
                   <tbody>
                     {paginatedUnits.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
+                        <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-dim)' }}>
                           <Building2 size={36} style={{ margin: '0 auto 10px', opacity: 0.4 }} />
                           <div>ไม่พบข้อมูลโครงสร้างหน่วยที่ตรงกับเงื่อนไขการค้นหา</div>
                         </td>
@@ -1642,7 +1700,7 @@ export default function MilitaryUnitsPage() {
                             <Fragment key={u.id}>
                               {isNewLevel && (
                                 <tr style={{ background: lvlBg, borderTop: `2px solid ${lvlColor}`, borderBottom: `1px solid ${lvlColor}` }}>
-                                  <td colSpan={8} style={{ padding: '8px 16px' }}>
+                                  <td colSpan={9} style={{ padding: '8px 16px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ fontSize: '16px' }}>{lvlIcon}</span>
@@ -1663,9 +1721,30 @@ export default function MilitaryUnitsPage() {
                                 <td>
                                   <span className={`badge ${
                                     u.level === 1 ? 'badge-gold' : u.level === 2 ? 'badge-cyan' : 'badge-emerald'
-                                  }`} style={{ fontSize: '11px' }}>
-                                    {u.level === 1 ? '1. ระดับ ทบ.' : u.level === 2 ? '2. ระดับ กองพล' : '3. ระดับ กรม/พัน'}
+                                  }`} style={{ fontSize: '11px', display: 'inline-block' }}>
+                                    {u.levelName || (u.level === 1 ? 'ระดับ ทบ.' : u.level === 2 ? 'ระดับ กองพล' : 'ระดับ กรม/พัน')}
                                   </span>
+                                  <div style={{ fontSize: '10.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                    ชั้นที่ {u.level || 3}
+                                  </div>
+                                </td>
+
+                                {/* หมวดหมู่หน่วย (7 ส่วนหลัก) */}
+                                <td>
+                                  {(() => {
+                                    const sec = getRtaSection(u.type);
+                                    return (
+                                      <div>
+                                        <span className={`badge ${sec.badgeClass}`} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                          <span>{sec.icon}</span>
+                                          <span>{sec.shortLabel}</span>
+                                        </span>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                          {sec.nameEn}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
 
                                 <td>
@@ -1854,7 +1933,7 @@ export default function MilitaryUnitsPage() {
                 <span>{editingUnit ? 'แก้ไขข้อมูลโครงสร้างหน่วย' : 'เพิ่มหน่วยใหม่ในสายการบังคับบัญชา'}</span>
               </h2>
               <span className="badge badge-gold" style={{ fontSize: '11px' }}>
-                {modalForm.level === 1 ? '1. ระดับ ทบ.' : modalForm.level === 2 ? '2. ระดับ กองพล' : '3. ระดับ กรม/พัน'}
+                {modalForm.levelName === 'อื่นๆ' ? (modalForm.customLevelName || 'ระดับ อื่นๆ') : (modalForm.levelName || (modalForm.level === 1 ? '1. ระดับ ทบ.' : modalForm.level === 2 ? '2. ระดับ กองพล' : '3. ระดับ กรม/พัน'))}
               </span>
             </div>
 
@@ -1862,26 +1941,41 @@ export default function MilitaryUnitsPage() {
               
               <div className="grid-cols-2">
                 
-                {/* เลือกระดับ */}
+                {/* เลือกระดับโครงสร้าง (Level Name) */}
                 <div className="form-group">
-                  <label className="form-label required">ระดับโครงสร้างหน่วย</label>
+                  <label className="form-label required">
+                    ระดับโครงสร้างหน่วย (Level Name)
+                  </label>
                   <select 
                     className="form-select"
-                    value={modalForm.level}
+                    value={modalForm.levelName}
                     onChange={(e) => {
-                      const newLvl = parseInt(e.target.value, 10);
+                      const sel = e.target.value;
+                      let newLvl = modalForm.level;
+                      if (sel === 'ระดับ ทบ.') newLvl = 1;
+                      else if (sel === 'ระดับ กองพล') newLvl = 2;
+                      else if (sel === 'ระดับ กรม/กองพัน') newLvl = 3;
+
                       setModalForm({
                         ...modalForm,
+                        levelName: sel,
                         level: newLvl,
-                        parentId: newLvl === 2 ? '1st_ARMY' : newLvl === 3 ? '2nd_INF_DIV' : ''
+                        parentId: newLvl === 1 ? '' : newLvl === 2 ? '1st_ARMY' : '2nd_INF_DIV'
                       });
                     }}
                     required
                   >
-                    <option value={1}>1. ระดับ ทบ. / บชร. / กองทัพภาค</option>
-                    <option value={2}>2. ระดับ กองพล / มณฑลทหารบก (มทบ.)</option>
-                    <option value={3}>3. ระดับ กรม หรือ กองพัน</option>
+                    <option value="ระดับ ทบ.">ระดับ ทบ. (1. ทภ. / บชร. / กองทัพภาค / ส่วนกลาง)</option>
+                    <option value="ระดับ กองพล">ระดับ กองพล (2. กองพล / มณฑลทหารบก มทบ.)</option>
+                    <option value="ระดับ กรม/กองพัน">ระดับ กรม/กองพัน (3. กรม หรือ กองพัน)</option>
+                    <option value="อื่นๆ">อื่นๆ (กำหนดชื่อระดับโครงสร้างเอง)</option>
                   </select>
+                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                    {modalForm.levelName === 'ระดับ ทบ.' ? 'หน่วยขึ้นตรงส่วนกลาง / กองทัพภาค (เช่น ทภ.1-4, นสศ., นปอ.)' :
+                     modalForm.levelName === 'ระดับ กองพล' ? 'กองพลทหารราบ, กองพลทหารม้า, มณฑลทหารบก (มทบ.)' :
+                     modalForm.levelName === 'ระดับ กรม/กองพัน' ? 'กรมทหารราบ, กองพันทหารราบ, ทหารปืนใหญ่, ทหารช่าง' :
+                     'ระบุชื่อระดับโครงสร้างเพิ่มเติมตามความต้องการ'}
+                  </span>
                 </div>
 
                 {/* เลือกสังกัดแม่ */}
@@ -1919,6 +2013,54 @@ export default function MilitaryUnitsPage() {
                 </div>
 
               </div>
+
+              {/* กรณีเลือกระดับโครงสร้างเป็น อื่นๆ ให้แสดงช่องกรอกชื่อระดับและเลือกลำดับชั้น */}
+              {modalForm.levelName === 'อื่นๆ' && (
+                <div style={{
+                  marginBottom: '16px',
+                  background: 'rgba(212, 175, 55, 0.05)',
+                  border: '1px solid rgba(212, 175, 55, 0.25)',
+                  borderRadius: '8px',
+                  padding: '12px 14px'
+                }}>
+                  <div className="grid-cols-2" style={{ gap: '12px' }}>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label required" style={{ color: 'var(--gold-light)' }}>
+                        ชื่อระดับโครงสร้างที่กำหนดเอง
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="เช่น ระดับ บชร., ระดับ หน่วยเฉพาะกิจ, ระดับ กองพันพิเศษ"
+                        value={modalForm.customLevelName}
+                        onChange={(e) => setModalForm({ ...modalForm, customLevelName: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label required">
+                        ลำดับชั้นสายการบังคับบัญชา (Tier)
+                      </label>
+                      <select
+                        className="form-select"
+                        value={modalForm.level}
+                        onChange={(e) => {
+                          const l = parseInt(e.target.value, 10);
+                          setModalForm({
+                            ...modalForm,
+                            level: l,
+                            parentId: l === 1 ? '' : l === 2 ? '1st_ARMY' : '2nd_INF_DIV'
+                          });
+                        }}
+                      >
+                        <option value={1}>เทียบเท่า ชั้นที่ 1 (ขึ้นตรง ทบ. ส่วนกลาง)</option>
+                        <option value={2}>เทียบเท่า ชั้นที่ 2 (สังกัด ทภ. / กองทัพภาค)</option>
+                        <option value={3}>เทียบเท่า ชั้นที่ 3 (สังกัด กองพล / มทบ.)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ชื่อย่อ และ ชื่อเต็ม */}
               <div className="grid-cols-2">
@@ -2198,16 +2340,20 @@ export default function MilitaryUnitsPage() {
               {/* ประเภทหน่วย และ สถานะ */}
               <div className="grid-cols-2">
                 <div className="form-group">
-                  <label className="form-label">ประเภทหน่วย</label>
+                  <label className="form-label required">
+                    ประเภทหน่วย / หมวดหมู่ (โครงสร้าง ทบ. 7 ส่วนหลัก)
+                  </label>
                   <select 
                     className="form-select"
                     value={modalForm.type}
                     onChange={(e) => setModalForm({ ...modalForm, type: e.target.value })}
+                    required
                   >
-                    <option value="REGULAR">หน่วยรบ / รบหลัก</option>
-                    <option value="SUPPORT">หน่วยสนับสนุนการรบ</option>
-                    <option value="SERVICE">หน่วยช่วยรบ / ยุทธบริการ</option>
-                    <option value="SPECIAL">หน่วยรบพิเศษ / เฉพาะกิจ</option>
+                    {RTA_ORGANIZATION_SECTIONS.map((sec) => (
+                      <option key={sec.code} value={sec.code}>
+                        {sec.number ? `${sec.number}. ` : ''}{sec.shortLabel} ({sec.nameEn})
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -2223,6 +2369,30 @@ export default function MilitaryUnitsPage() {
                   </select>
                 </div>
               </div>
+
+              {/* รายละเอียดคำอธิบายหมวดหมู่ ทบ. ที่เลือก */}
+              {(() => {
+                const curSec = getRtaSection(modalForm.type);
+                return (
+                  <div style={{
+                    marginTop: '-6px',
+                    marginBottom: '16px',
+                    padding: '10px 14px',
+                    background: `${curSec.color}10`,
+                    borderLeft: `3px solid ${curSec.color}`,
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: curSec.color, marginBottom: '2px' }}>
+                      <span style={{ fontSize: '14px' }}>{curSec.icon}</span>
+                      <span>หมวดหมู่ ทบ.: {curSec.label}</span>
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11.5px', lineHeight: 1.4 }}>
+                      {curSec.description}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ปุ่มบันทึกและยกเลิก */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
@@ -2495,7 +2665,8 @@ export default function MilitaryUnitsPage() {
                       <thead style={{ position: 'sticky', top: 0, background: '#0a1d24', zIndex: 2 }}>
                         <tr>
                           <th style={{ padding: '8px 10px', textAlign: 'center', width: '40px' }}>#</th>
-                          <th style={{ padding: '8px 10px', textAlign: 'center', width: '85px' }}>ระดับ</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'center', width: '105px' }}>ระดับโครงสร้าง</th>
+                          <th style={{ padding: '8px 10px', width: '150px' }}>หมวดหมู่ (7 ส่วนหลัก)</th>
                           <th style={{ padding: '8px 10px' }}>รหัสหน่วย (ID)</th>
                           <th style={{ padding: '8px 10px' }}>ชื่อย่อ</th>
                           <th style={{ padding: '8px 10px' }}>ชื่อเต็มหน่วย</th>
@@ -2507,43 +2678,66 @@ export default function MilitaryUnitsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(importPreview.units || []).map((u, i) => (
-                          <tr key={u.id || i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
-                            <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-dim)' }}>{i + 1}</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                fontSize: '10.5px',
-                                fontWeight: 700,
-                                background: u.level === 1 ? 'rgba(212, 175, 55, 0.2)' : u.level === 2 ? 'rgba(6, 182, 212, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                                color: u.level === 1 ? 'var(--gold-primary)' : u.level === 2 ? 'var(--cyan-accent)' : 'var(--emerald-light, #6ee7b7)'
-                              }}>
-                                {u.level === 1 ? '1. ทบ.' : u.level === 2 ? '2. กองพล' : '3. กรม/พัน'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{u.id}</td>
-                            <td style={{ padding: '8px 10px', fontWeight: 600 }}>{u.shortName || u.code}</td>
-                            <td style={{ padding: '8px 10px', color: '#fff' }}>{u.name}</td>
-                            <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>{u.parentId || '-'}</td>
-                            <td style={{ padding: '8px 10px' }}>{u.province || '-'}</td>
-                            <td style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>{u.locationName || '-'}</td>
-                            <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--gold-light)' }}>
-                              {u.rtaPhone ? `☎ ${u.rtaPhone}` : '-'}
-                            </td>
-                            <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                              <span style={{
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                fontSize: '10px',
-                                background: u.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                color: u.status === 'ACTIVE' ? '#6ee7b7' : '#fca5a5'
-                              }}>
-                                {u.status || 'ACTIVE'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {(importPreview.units || []).map((u, i) => {
+                          const sec = getRtaSection(u.type);
+                          const dispLevelName = u.levelName || (u.level === 1 ? 'ระดับ ทบ.' : u.level === 2 ? 'ระดับ กองพล' : 'ระดับ กรม/กองพัน');
+                          return (
+                            <tr key={u.id || i} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                              <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--text-dim)' }}>{i + 1}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '10.5px',
+                                  fontWeight: 700,
+                                  background: u.level === 1 ? 'rgba(212, 175, 55, 0.2)' : u.level === 2 ? 'rgba(6, 182, 212, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                                  color: u.level === 1 ? 'var(--gold-primary)' : u.level === 2 ? 'var(--cyan-accent)' : 'var(--emerald-light, #6ee7b7)',
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  {dispLevelName}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px 10px' }}>
+                                <span style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '10.5px',
+                                  fontWeight: 600,
+                                  background: `${sec.color}15`,
+                                  color: sec.color,
+                                  border: `1px solid ${sec.color}35`,
+                                  whiteSpace: 'nowrap'
+                                }}>
+                                  <span>{sec.icon}</span>
+                                  <span>{sec.shortLabel}</span>
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{u.id}</td>
+                              <td style={{ padding: '8px 10px', fontWeight: 600 }}>{u.shortName || u.code}</td>
+                              <td style={{ padding: '8px 10px', color: '#fff' }}>{u.name}</td>
+                              <td style={{ padding: '8px 10px', color: 'var(--text-muted)' }}>{u.parentId || '-'}</td>
+                              <td style={{ padding: '8px 10px' }}>{u.province || '-'}</td>
+                              <td style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>{u.locationName || '-'}</td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center', color: 'var(--gold-light)' }}>
+                                {u.rtaPhone ? `☎ ${u.rtaPhone}` : '-'}
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                <span style={{
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  fontSize: '10px',
+                                  background: u.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                  color: u.status === 'ACTIVE' ? '#6ee7b7' : '#fca5a5'
+                                }}>
+                                  {u.status || 'ACTIVE'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
