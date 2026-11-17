@@ -2519,6 +2519,7 @@ export default function ClaimDetailPage({ params }) {
                   <input 
                     type="date"
                     className="form-input"
+                    max={new Date().toISOString().split('T')[0]}
                     value={transferDate}
                     onChange={(e) => setTransferDate(e.target.value)}
                     required
@@ -2565,8 +2566,9 @@ export default function ClaimDetailPage({ params }) {
                     type="text"
                     className="form-input"
                     placeholder="เช่น 140-2-89412-5"
+                    maxLength={20}
                     value={transferAccount}
-                    onChange={(e) => setTransferAccount(e.target.value)}
+                    onChange={(e) => setTransferAccount(e.target.value.replace(/[^0-9-]/g, '').slice(0, 20))}
                     required
                   />
                 </div>

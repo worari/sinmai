@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Shield, UserPlus, CheckCircle2, AlertCircle, ArrowLeft, Clock, LogIn, UserCheck } from 'lucide-react';
-import { MILITARY_RANKS, validateCitizenId } from '@/lib/thai-utils';
+import { MILITARY_RANKS, validateCitizenId, validatePhoneNumber, validateEmail, validateName, formatPhoneNumber } from '@/lib/thai-utils';
 import { USER_ROLES } from '@/lib/constants';
 import UnitAutocomplete from '@/components/UnitAutocomplete';
 
@@ -78,8 +78,30 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!validateName(formData.firstName)) {
+      setErrorMsg('กรุณากรอกชื่อจริงอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ');
+      return;
+    }
+
+    if (!validateName(formData.lastName)) {
+      setErrorMsg('กรุณากรอกนามสกุลอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ');
+      return;
+    }
+
     if (!formData.unitId) {
       setErrorMsg('กรุณาพิมพ์ค้นหาและคลิกเลือกหน่วยสังกัดจากรายการโครงสร้างหน่วย');
+      return;
+    }
+
+    // Check phone number (10 digits starting with 0)
+    if (!validatePhoneNumber(formData.phone)) {
+      setErrorMsg('เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678 หรือ 09x-xxx-xxxx');
+      return;
+    }
+
+    // Check email (must contain @ and valid domain)
+    if (!validateEmail(formData.email)) {
+      setErrorMsg('รูปแบบอีเมลไม่ถูกต้อง กรุณากรอกอีเมลที่มีเครื่องหมาย @ และชื่อโดเมนที่ถูกต้อง เช่น officer@army.mil.th');
       return;
     }
 
@@ -263,9 +285,9 @@ export default function RegisterPage() {
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="ชื่อจริง"
+                placeholder="ชื่อจริง (เช่น สมศักดิ์)"
                 value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, firstName: e.target.value.replace(/[0-9]/g, '') })}
                 required
               />
             </div>
@@ -275,9 +297,9 @@ export default function RegisterPage() {
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="นามสกุล"
+                placeholder="นามสกุล (เช่น มั่นคง)"
                 value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, lastName: e.target.value.replace(/[0-9]/g, '') })}
                 required
               />
             </div>
@@ -332,28 +354,60 @@ export default function RegisterPage() {
           </div>
 
           <div className="grid-cols-2">
+            {/* เบอร์โทรศัพท์ติดต่อ (บังคับ 10 หลัก) */}
             <div className="form-group">
-              <label className="form-label required">เบอร์โทรศัพท์ติดต่อ</label>
+              <label className="form-label required">
+                เบอร์โทรศัพท์ติดต่อ (10 หลัก)
+              </label>
               <input 
-                type="text" 
+                type="tel" 
                 className="form-input"
-                placeholder="08x-xxx-xxxx หรือ เบอร์ภายใน ทบ."
+                placeholder="08xxxxxxxx (10 หลัก)"
+                maxLength={10}
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => {
+                  const numOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  setFormData({ ...formData, phone: numOnly });
+                }}
                 required
               />
+              <div style={{ fontSize: '11.5px', marginTop: '4px' }}>
+                {!formData.phone ? (
+                  <span style={{ color: 'var(--text-dim)' }}>กรอกตัวเลข 10 หลักขึ้นต้นด้วย 0 เช่น 0812345678</span>
+                ) : formData.phone.length < 10 ? (
+                  <span style={{ color: '#fbbf24' }}>⚠️ กำลังกรอก {formData.phone.length}/10 หลัก (ต้องการอีก {10 - formData.phone.length} หลัก)</span>
+                ) : validatePhoneNumber(formData.phone) ? (
+                  <span style={{ color: 'var(--emerald-success)' }}>✓ เบอร์โทรศัพท์ถูกต้อง ({formatPhoneNumber(formData.phone)})</span>
+                ) : (
+                  <span style={{ color: 'var(--ruby-danger)' }}>✗ เบอร์โทรศัพท์ 10 หลักต้องขึ้นต้นด้วย 0</span>
+                )}
+              </div>
             </div>
 
+            {/* Email (ใช้อีเมลสำหรับเข้าสู่ระบบ มี @) */}
             <div className="form-group">
-              <label className="form-label required">Email (ใช้อีเมลสำหรับเข้าสู่ระบบ)</label>
+              <label className="form-label required">
+                Email (ใช้อีเมลสำหรับเข้าสู่ระบบ)
+              </label>
               <input 
                 type="email" 
                 className="form-input"
                 placeholder="officer@army.mil.th"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value.trim().toLowerCase() })}
                 required
               />
+              <div style={{ fontSize: '11.5px', marginTop: '4px' }}>
+                {!formData.email ? (
+                  <span style={{ color: 'var(--text-dim)' }}>อีเมลต้องมีเครื่องหมาย @ และชื่อโดเมนสำหรับเข้าสู่ระบบ</span>
+                ) : !formData.email.includes('@') ? (
+                  <span style={{ color: '#fbbf24' }}>⚠️ อีเมลจำเป็นต้องมีเครื่องหมาย @ (เช่น @army.mil.th หรือ @gmail.com)</span>
+                ) : validateEmail(formData.email) ? (
+                  <span style={{ color: 'var(--emerald-success)' }}>✓ รูปแบบอีเมลถูกต้องสำหรับเข้าใช้งาน</span>
+                ) : (
+                  <span style={{ color: 'var(--ruby-danger)' }}>✗ รูปแบบอีเมลไม่ถูกต้อง กรุณาระบุชื่อโดเมน เช่น .com, .mil.th</span>
+                )}
+              </div>
             </div>
           </div>
 

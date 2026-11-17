@@ -37,7 +37,7 @@ import {
   Smartphone,
   Globe
 } from 'lucide-react';
-import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId, formatThaiDate } from '@/lib/thai-utils';
+import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId, formatThaiDate, validatePhoneNumber, validateEmail, validateName, formatPhoneNumber } from '@/lib/thai-utils';
 import { USER_ROLES, USER_STATUS } from '@/lib/constants';
 import { getSocketClient } from '@/lib/socket-client';
 
@@ -247,6 +247,21 @@ export default function UserManagementPage() {
       return;
     }
 
+    if (!validateName(addForm.firstName) || !validateName(addForm.lastName)) {
+      showNotification('ชื่อและนามสกุลต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ', true);
+      return;
+    }
+
+    if (addForm.phone && !validatePhoneNumber(addForm.phone)) {
+      showNotification('เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678', true);
+      return;
+    }
+
+    if (!validateEmail(addForm.email)) {
+      showNotification('รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมนที่ถูกต้อง', true);
+      return;
+    }
+
     setSavingAction(true);
     try {
       const res = await fetch('/api/users', {
@@ -289,6 +304,26 @@ export default function UserManagementPage() {
   const handleEditUser = async (e) => {
     e.preventDefault();
     if (!editForm) return;
+
+    if (editForm.citizenId && !validateCitizenId(editForm.citizenId)) {
+      showNotification('เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักตรวจสอบ (Mod 11)', true);
+      return;
+    }
+
+    if ((editForm.firstName && !validateName(editForm.firstName)) || (editForm.lastName && !validateName(editForm.lastName))) {
+      showNotification('ชื่อและนามสกุลต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ', true);
+      return;
+    }
+
+    if (editForm.phone && !validatePhoneNumber(editForm.phone)) {
+      showNotification('เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678', true);
+      return;
+    }
+
+    if (editForm.email && !validateEmail(editForm.email)) {
+      showNotification('รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมนที่ถูกต้อง', true);
+      return;
+    }
 
     setSavingAction(true);
     try {
@@ -1299,27 +1334,44 @@ export default function UserManagementPage() {
 
               <div className="grid-cols-2">
                 <div className="form-group">
-                  <label className="form-label required">เบอร์โทรศัพท์</label>
+                  <label className="form-label required">เบอร์โทรศัพท์ (10 หลัก)</label>
                   <input 
-                    type="text" 
+                    type="tel" 
                     className="form-input"
+                    maxLength={10}
                     value={addForm.phone}
-                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
-                    placeholder="08x-xxx-xxxx"
+                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    placeholder="08xxxxxxxx (10 หลัก)"
                     required
                   />
+                  <div style={{ fontSize: '11px', marginTop: '3px' }}>
+                    {addForm.phone.length < 10 ? (
+                      <span style={{ color: '#fbbf24' }}>⚠️ {addForm.phone.length}/10 หลัก</span>
+                    ) : validatePhoneNumber(addForm.phone) ? (
+                      <span style={{ color: 'var(--emerald-success)' }}>✓ เบอร์โทรศัพท์ถูกต้อง ({formatPhoneNumber(addForm.phone)})</span>
+                    ) : (
+                      <span style={{ color: 'var(--ruby-danger)' }}>✗ ต้องขึ้นต้นด้วย 0</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label required">อีเมล</label>
+                  <label className="form-label required">อีเมล (ต้องมี @)</label>
                   <input 
                     type="email" 
                     className="form-input"
                     value={addForm.email}
-                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value.trim().toLowerCase() })}
                     placeholder="officer@army.mil.th"
                     required
                   />
+                  <div style={{ fontSize: '11px', marginTop: '3px' }}>
+                    {addForm.email && !addForm.email.includes('@') ? (
+                      <span style={{ color: '#fbbf24' }}>⚠️ ต้องมีเครื่องหมาย @</span>
+                    ) : validateEmail(addForm.email) ? (
+                      <span style={{ color: 'var(--emerald-success)' }}>✓ รูปแบบอีเมลถูกต้อง</span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -1477,25 +1529,43 @@ export default function UserManagementPage() {
 
               <div className="grid-cols-2">
                 <div className="form-group">
-                  <label className="form-label required">เบอร์โทรศัพท์</label>
+                  <label className="form-label required">เบอร์โทรศัพท์ (10 หลัก)</label>
                   <input 
-                    type="text" 
+                    type="tel" 
                     className="form-input"
+                    maxLength={10}
                     value={editForm.phone || ''}
-                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    placeholder="08xxxxxxxx (10 หลัก)"
                     required
                   />
+                  <div style={{ fontSize: '11px', marginTop: '3px' }}>
+                    {(editForm.phone || '').length < 10 ? (
+                      <span style={{ color: '#fbbf24' }}>⚠️ {(editForm.phone || '').length}/10 หลัก</span>
+                    ) : validatePhoneNumber(editForm.phone) ? (
+                      <span style={{ color: 'var(--emerald-success)' }}>✓ เบอร์โทรศัพท์ถูกต้อง ({formatPhoneNumber(editForm.phone)})</span>
+                    ) : (
+                      <span style={{ color: 'var(--ruby-danger)' }}>✗ ต้องขึ้นต้นด้วย 0</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label required">อีเมล</label>
+                  <label className="form-label required">อีเมล (ต้องมี @)</label>
                   <input 
                     type="email" 
                     className="form-input"
                     value={editForm.email || ''}
-                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value.trim().toLowerCase() })}
                     required
                   />
+                  <div style={{ fontSize: '11px', marginTop: '3px' }}>
+                    {editForm.email && !editForm.email.includes('@') ? (
+                      <span style={{ color: '#fbbf24' }}>⚠️ ต้องมีเครื่องหมาย @</span>
+                    ) : validateEmail(editForm.email) ? (
+                      <span style={{ color: 'var(--emerald-success)' }}>✓ รูปแบบอีเมลถูกต้อง</span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 

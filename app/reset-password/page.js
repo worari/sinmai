@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { KeyRound, CheckCircle2, AlertCircle, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { validateCitizenId, validatePhoneNumber, validateEmail } from '@/lib/thai-utils';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -21,6 +22,21 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+
+    if (!validateCitizenId(citizenId)) {
+      setErrorMsg('เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักตรวจสอบทางการ (Mod 11 Checksum)');
+      return;
+    }
+
+    if (!validateEmail(email)) {
+      setErrorMsg('รูปแบบอีเมลไม่ถูกต้อง กรุณากรอกอีเมลที่มีเครื่องหมาย @ และชื่อโดเมน');
+      return;
+    }
+
+    if (!validatePhoneNumber(phone)) {
+      setErrorMsg('เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678');
+      return;
+    }
 
     if (newPassword !== confirmPassword) {
       setErrorMsg('รหัสผ่านใหม่และการยืนยันไม่ตรงกัน');
@@ -116,33 +132,35 @@ export default function ResetPasswordPage() {
             <input
               type="text"
               className="form-input"
-              placeholder="1100500xxxxxx"
+              placeholder="กรอกตัวเลข 13 หลัก"
+              maxLength={13}
               value={citizenId}
-              onChange={(e) => setCitizenId(e.target.value)}
+              onChange={(e) => setCitizenId(e.target.value.replace(/\D/g, '').slice(0, 13))}
               required
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label required">2. อีเมลที่ลงทะเบียนไว้</label>
+            <label className="form-label required">2. อีเมลที่ลงทะเบียนไว้ (ต้องมี @)</label>
             <input
               type="email"
               className="form-input"
               placeholder="officer@army.mil.th"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value.trim().toLowerCase())}
               required
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label required">3. เบอร์โทรศัพท์ที่ลงทะเบียนไว้</label>
+            <label className="form-label required">3. เบอร์โทรศัพท์ที่ลงทะเบียนไว้ (10 หลัก)</label>
             <input
-              type="text"
+              type="tel"
               className="form-input"
-              placeholder="08x-xxx-xxxx"
+              placeholder="08xxxxxxxx (10 หลัก)"
+              maxLength={10}
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
               required
             />
           </div>

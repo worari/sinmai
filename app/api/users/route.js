@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { extractClientInfo } from '@/lib/client-info';
 import { requireAuth } from '@/lib/api-auth';
+import { validateCitizenId, validatePhoneNumber, validateEmail, validateName } from '@/lib/thai-utils';
 
 function getAdminActor(sessionUser, request) {
   const clientInfo = extractClientInfo(request);
@@ -41,6 +42,22 @@ export async function POST(request) {
 
     if (!citizenId || !firstName || !lastName || !email || !password) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน' }, { status: 400 });
+    }
+
+    if (!validateCitizenId(citizenId)) {
+      return NextResponse.json({ success: false, message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักตรวจสอบ (Mod 11)' }, { status: 400 });
+    }
+
+    if (!validateName(firstName) || !validateName(lastName)) {
+      return NextResponse.json({ success: false, message: 'ชื่อและนามสกุลต้องมีอย่างน้อย 2 ตัวอักษร และไม่มีตัวเลข' }, { status: 400 });
+    }
+
+    if (phone && !validatePhoneNumber(phone)) {
+      return NextResponse.json({ success: false, message: 'เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0' }, { status: 400 });
+    }
+
+    if (!validateEmail(email)) {
+      return NextResponse.json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมน' }, { status: 400 });
     }
 
     const newUser = db.createUser({
@@ -83,6 +100,26 @@ export async function PUT(request) {
     const { userId, adminUser: _ignored, ...updateData } = await request.json();
     if (!userId) {
       return NextResponse.json({ success: false, message: 'ต้องระบุ userId' }, { status: 400 });
+    }
+
+    if (updateData.citizenId && !validateCitizenId(updateData.citizenId)) {
+      return NextResponse.json({ success: false, message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักตรวจสอบ (Mod 11)' }, { status: 400 });
+    }
+
+    if (updateData.firstName && !validateName(updateData.firstName)) {
+      return NextResponse.json({ success: false, message: 'ชื่อต้องมีอย่างน้อย 2 ตัวอักษร และไม่มีตัวเลข' }, { status: 400 });
+    }
+
+    if (updateData.lastName && !validateName(updateData.lastName)) {
+      return NextResponse.json({ success: false, message: 'นามสกุลต้องมีอย่างน้อย 2 ตัวอักษร และไม่มีตัวเลข' }, { status: 400 });
+    }
+
+    if (updateData.phone && !validatePhoneNumber(updateData.phone)) {
+      return NextResponse.json({ success: false, message: 'เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0' }, { status: 400 });
+    }
+
+    if (updateData.email && !validateEmail(updateData.email)) {
+      return NextResponse.json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมน' }, { status: 400 });
     }
 
     const updated = db.updateUser(userId, updateData, currentAdmin);

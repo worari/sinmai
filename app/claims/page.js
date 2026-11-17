@@ -29,7 +29,7 @@ import {
   RefreshCw,
   FileSpreadsheet
 } from 'lucide-react';
-import { formatThaiDate, REQUIRED_DOCUMENTS, validateAttachmentFile, MILITARY_RANKS, getPersonnelTypeFromRank, getGenderFromRank, validateCitizenId } from '@/lib/thai-utils';
+import { formatThaiDate, REQUIRED_DOCUMENTS, validateAttachmentFile, MILITARY_RANKS, getPersonnelTypeFromRank, getGenderFromRank, validateCitizenId, validateName } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
@@ -328,6 +328,16 @@ export default function ClaimsListPage() {
 
     if (!editFormData.casualtyFirstName || !editFormData.casualtyLastName) {
       setEditError('กรุณากรอกชื่อและนามสกุลกำลังพล');
+      return;
+    }
+
+    if (!validateName(editFormData.casualtyFirstName)) {
+      setEditError('ชื่อกำลังพลต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ');
+      return;
+    }
+
+    if (!validateName(editFormData.casualtyLastName)) {
+      setEditError('นามสกุลกำลังพลต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ');
       return;
     }
 

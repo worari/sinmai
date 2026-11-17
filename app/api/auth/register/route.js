@@ -1,7 +1,7 @@
 // app/api/auth/register/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { validateCitizenId } from '@/lib/thai-utils';
+import { validateCitizenId, validatePhoneNumber, validateEmail, validateName } from '@/lib/thai-utils';
 import { extractClientInfo } from '@/lib/client-info';
 import { enforceRateLimit } from '@/lib/api-auth';
 
@@ -28,6 +28,27 @@ export async function POST(request) {
 
     if (!citizenId || !rank || !firstName || !lastName || !position || !unitId || !phone || !email || !password) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกข้อมูลให้ครบทุกช่อง' }, { status: 400 });
+    }
+
+    if (!validateName(firstName) || !validateName(lastName)) {
+      return NextResponse.json({
+        success: false,
+        message: 'ชื่อและนามสกุลต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ'
+      }, { status: 400 });
+    }
+
+    if (!validatePhoneNumber(phone)) {
+      return NextResponse.json({
+        success: false,
+        message: 'เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678'
+      }, { status: 400 });
+    }
+
+    if (!validateEmail(email)) {
+      return NextResponse.json({
+        success: false,
+        message: 'รูปแบบอีเมลไม่ถูกต้อง กรุณากรอกอีเมลที่มีเครื่องหมาย @ และชื่อโดเมนที่ถูกต้อง เช่น officer@army.mil.th'
+      }, { status: 400 });
     }
 
     if (pdpaAccepted !== true) {

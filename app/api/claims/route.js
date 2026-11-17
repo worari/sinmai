@@ -1,7 +1,7 @@
 // app/api/claims/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { validateCitizenId, validateAttachmentFile } from '@/lib/thai-utils';
+import { validateCitizenId, validateAttachmentFile, validateName, validateDateNotFuture } from '@/lib/thai-utils';
 import { requireAuth } from '@/lib/api-auth';
 
 export async function GET(request) {
@@ -91,12 +91,53 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'กรุณากรอกชื่อและนามสกุลของผู้สูญเสีย' }, { status: 400 });
     }
 
+    if (!validateName(claimData.casualtyFirstName) || !validateName(claimData.casualtyLastName)) {
+      return NextResponse.json({ 
+        success: false, 
+        message: 'ชื่อและนามสกุลของผู้สูญเสียต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ' 
+      }, { status: 400 });
+    }
+
     // ตรวจสอบเลข ปชช. ผู้สูญเสีย
     if (!validateCitizenId(claimData.casualtyCitizenId)) {
       return NextResponse.json({ 
         success: false, 
         message: 'เลขประจำตัวประชาชนของผู้สูญเสียไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)' 
       }, { status: 400 });
+    }
+
+    // ตรวจสอบการยื่นเรื่องซ้ำ
+    const dupCheck = db.checkDuplicateCasualty(claimData.casualtyCitizenId);
+    if (dupCheck.isDuplicate) {
+      return NextResponse.json({
+        success: false,
+        message: `ห้ามยื่นเรื่องซ้ำ: กำลังพลเลขประจำตัวประชาชนนี้เคยยื่นเสนอเรื่องแล้ว (${dupCheck.trackingCode}) โดย ${dupCheck.unitName}`
+      }, { status: 409 });
+    }
+
+    // ตรวจสอบความถูกต้องของวันที่ (ไม่เกินวันปัจจุบัน และลำดับวันต้องถูกต้อง)
+    if (claimData.casualtyBirthDate && !validateDateNotFuture(claimData.casualtyBirthDate)) {
+      return NextResponse.json({ success: false, message: 'วัน/เดือน/ปีเกิดของผู้สูญเสียต้องไม่อยู่ในอนาคต' }, { status: 400 });
+    }
+
+    if (claimData.lossDate && !validateDateNotFuture(claimData.lossDate)) {
+      return NextResponse.json({ success: false, message: 'วันที่เกิดเหตุ/สูญเสีย ต้องไม่อยู่ในอนาคต' }, { status: 400 });
+    }
+
+    if (claimData.casualtyBirthDate && claimData.lossDate && claimData.lossDate < claimData.casualtyBirthDate) {
+      return NextResponse.json({ success: false, message: 'วันที่เกิดเหตุ/สูญเสีย ต้องอยู่หลังจากวัน/เดือน/ปีเกิดของผู้สูญเสีย' }, { status: 400 });
+    }
+
+    if (claimData.reportDate && !validateDateNotFuture(claimData.reportDate)) {
+      return NextResponse.json({ success: false, message: 'วันที่รายงานต้องไม่อยู่ในอนาคต' }, { status: 400 });
+    }
+
+    if (claimData.lossDate && claimData.reportDate && claimData.reportDate < claimData.lossDate) {
+      return NextResponse.json({ success: false, message: 'วันที่รายงานต้องเป็นวันเดียวกันหรือหลังจากวันที่เกิดเหตุ/สูญเสีย' }, { status: 400 });
+    }
+
+    if (!claimData.causeOfLoss || String(claimData.causeOfLoss).trim().length < 10) {
+      return NextResponse.json({ success: false, message: 'กรุณาระบุรายละเอียดและพฤติการณ์เหตุการณ์ตาม กพ.4 อย่างน้อย 10 ตัวอักษร' }, { status: 400 });
     }
 
     // ตรวจสอบเอกสารข้อที่ 1 (รายงาน กพ.4)

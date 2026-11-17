@@ -48,7 +48,9 @@ import {
   getGenderFromRank,
   INCIDENT_TYPES,
   DRIVER_STATUSES,
-  ALCOHOL_TEST_RESULTS
+  ALCOHOL_TEST_RESULTS,
+  validateName,
+  validateDateNotFuture
 } from '@/lib/thai-utils';
 import { INITIAL_MILITARY_UNITS } from '@/lib/military-units';
 import LocationPicker from '@/components/LocationPicker';
@@ -348,8 +350,8 @@ export default function SubmitClaimPage() {
   };
 
   const handleCitizenIdChange = async (val) => {
-    const clean = val.replace(/\D/g, '');
-    setFormData((prev) => ({ ...prev, casualtyCitizenId: val }));
+    const clean = val.replace(/\D/g, '').slice(0, 13);
+    setFormData((prev) => ({ ...prev, casualtyCitizenId: clean }));
     setDuplicateAlert(null);
     setErrorMsg('');
 
@@ -364,7 +366,7 @@ export default function SubmitClaimPage() {
               casualtyName: data.casualtyName,
               unitName: data.unitName
             });
-            setErrorMsg(`ห้ามยื่นเรื่องซ้ำ: เลขประจำตัวประชาชน ${val} เคยมีการยื่นเสนอเรื่องแล้ว (${data.trackingCode})`);
+            setErrorMsg(`ห้ามยื่นเรื่องซ้ำ: เลขประจำตัวประชาชน ${formatCitizenId(clean)} เคยมีการยื่นเสนอเรื่องแล้ว (${data.trackingCode}) โดย ${data.unitName}`);
           }
         } catch (e) {
           console.error(e);
@@ -632,30 +634,66 @@ export default function SubmitClaimPage() {
       return;
     }
 
+    if (!validateName(formData.casualtyFirstName)) {
+      setErrorMsg('ชื่อของผู้สูญเสียต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ');
+      return;
+    }
+
+    if (!validateName(formData.casualtyLastName)) {
+      setErrorMsg('นามสกุลของผู้สูญเสียต้องมีอย่างน้อย 2 ตัวอักษร และต้องไม่มีตัวเลขหรือสัญลักษณ์พิเศษ');
+      return;
+    }
+
     if (!validateCitizenId(formData.casualtyCitizenId)) {
       setErrorMsg('เลขประจำตัวประชาชนผู้สูญเสีย 13 หลักไม่ถูกต้องตามหลักตรวจสอบทางการ (Mod 11 Checksum)');
       return;
     }
 
     if (duplicateAlert && (!isEditingDraft || duplicateAlert.trackingCode !== draftTrackingCode)) {
-      setErrorMsg(`ห้ามยื่นเรื่องซ้ำ: กำลังพลเลขประจำตัวประชาชน ${formData.casualtyCitizenId} เคยมีการยื่นเสนอเรื่องแล้ว (${duplicateAlert.trackingCode})`);
+      setErrorMsg(`ห้ามยื่นเรื่องซ้ำ: กำลังพลเลขประจำตัวประชาชน ${formatCitizenId(formData.casualtyCitizenId)} เคยมีการยื่นเสนอเรื่องแล้ว (${duplicateAlert.trackingCode})`);
       return;
     }
 
-    if (!formData.causeOfLoss) {
-      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย (พฤติการณ์เหตุการณ์ตาม กพ.4)');
+    // ตรวจสอบความถูกต้องของวันที่ (ห้ามเป็นวันที่ในอนาคต และลำดับวันต้องสัมพันธ์กัน)
+    if (!formData.casualtyBirthDate || !validateDateNotFuture(formData.casualtyBirthDate)) {
+      setErrorMsg('วัน/เดือน/ปีเกิดของผู้สูญเสียไม่ถูกต้อง หรือเป็นวันที่ในอนาคต');
+      return;
+    }
+
+    if (!formData.lossDate || !validateDateNotFuture(formData.lossDate)) {
+      setErrorMsg('วันที่เกิดเหตุ/สูญเสีย ต้องไม่เป็นวันที่ในอนาคต');
+      return;
+    }
+
+    if (formData.casualtyBirthDate && formData.lossDate < formData.casualtyBirthDate) {
+      setErrorMsg('วันที่เกิดเหตุ/สูญเสีย ต้องอยู่หลังจากวัน/เดือน/ปีเกิดของผู้สูญเสีย');
+      return;
+    }
+
+    if (!formData.reportDate || !validateDateNotFuture(formData.reportDate)) {
+      setErrorMsg('วันที่รายงานต้องไม่เป็นวันที่ในอนาคต');
+      return;
+    }
+
+    if (formData.lossDate && formData.reportDate < formData.lossDate) {
+      setErrorMsg('วันที่รายงานต้องเป็นวันเดียวกันหรือหลังจากวันที่เกิดเหตุ/สูญเสีย');
+      return;
+    }
+
+    if (!formData.causeOfLoss || formData.causeOfLoss.trim().length < 10) {
+      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย (รายละเอียดและพฤติการณ์เหตุการณ์ตาม กพ.4 อย่างน้อย 10 ตัวอักษร)');
       return;
     }
 
     const specificCause = (formData.lossSpecificCause || (formData.lossType === 'DECEASED' ? formData.deathCertificateCause : formData.disabledOrganDetail) || formData.deathCertificateCause || '').trim();
 
-    if (formData.lossType === 'DECEASED' && !specificCause) {
-      setErrorMsg('กรุณาระบุสาเหตุการเสียชีวิต (ตามใบมรณบัตร)');
+    if (formData.lossType === 'DECEASED' && (!specificCause || specificCause.length < 3)) {
+      setErrorMsg('กรุณาระบุสาเหตุการเสียชีวิต (ตามใบมรณบัตร) ให้ชัดเจนอย่างน้อย 3 ตัวอักษร');
       return;
     }
 
-    if (formData.lossType === 'DISABLED' && !specificCause) {
-      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย / อวัยวะที่สูญเสีย (กรณีพิการทุพพลภาพ)');
+    if (formData.lossType === 'DISABLED' && (!specificCause || specificCause.length < 3)) {
+      setErrorMsg('กรุณาระบุสาเหตุการสูญเสีย / อวัยวะที่สูญเสีย (กรณีพิการทุพพลภาพ) ให้ชัดเจนอย่างน้อย 3 ตัวอักษร');
       return;
     }
 
@@ -906,6 +944,7 @@ export default function SubmitClaimPage() {
               <input 
                 type="date" 
                 className="form-input"
+                max={new Date().toISOString().split('T')[0]}
                 value={formData.reportDate}
                 onChange={(e) => setFormData({ ...formData, reportDate: e.target.value })}
                 required
@@ -1155,9 +1194,9 @@ export default function SubmitClaimPage() {
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="ชื่อตัว"
+                placeholder="ชื่อตัว (เช่น สมศักดิ์)"
                 value={formData.casualtyFirstName}
-                onChange={(e) => setFormData({ ...formData, casualtyFirstName: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, casualtyFirstName: e.target.value.replace(/[0-9]/g, '') })}
                 required
               />
             </div>
@@ -1167,9 +1206,9 @@ export default function SubmitClaimPage() {
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="นามสกุล"
+                placeholder="นามสกุล (เช่น ใจภักดี)"
                 value={formData.casualtyLastName}
-                onChange={(e) => setFormData({ ...formData, casualtyLastName: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, casualtyLastName: e.target.value.replace(/[0-9]/g, '') })}
                 required
               />
             </div>
@@ -1179,8 +1218,8 @@ export default function SubmitClaimPage() {
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="x-xxxx-xxxxx-xx-x"
-                maxLength={17}
+                placeholder="กรอกตัวเลข 13 หลัก"
+                maxLength={13}
                 value={formData.casualtyCitizenId}
                 onChange={(e) => handleCitizenIdChange(e.target.value)}
                 required
@@ -1198,15 +1237,26 @@ export default function SubmitClaimPage() {
                   ⚠️ <strong>ห้ามยื่นเรื่องซ้ำ:</strong> เลขประจำตัวประชาชนนี้เคยยื่นเสนอเรื่องแล้ว ({duplicateAlert.trackingCode}) โดย {duplicateAlert.unitName}
                 </div>
               ) : formData.casualtyCitizenId ? (
-                <span style={{
-                  fontSize: '11.5px',
-                  marginTop: '4px',
-                  display: 'block',
-                  color: validateCitizenId(formData.casualtyCitizenId) ? 'var(--emerald-success)' : 'var(--ruby-danger)'
-                }}>
-                  {validateCitizenId(formData.casualtyCitizenId) ? '✓ เลขบัตร ปชช. ถูกต้อง (พร้อมตรวจสอบซ้ำ)' : '✗ เลขบัตร ปชช. ไม่ถูกต้องตามหลัก Mod 11'}
+                <div style={{ fontSize: '11.5px', marginTop: '4px' }}>
+                  {formData.casualtyCitizenId.length < 13 ? (
+                    <span style={{ color: '#fbbf24' }}>
+                      ⚠️ กรอกแล้ว {formData.casualtyCitizenId.length}/13 หลัก (ต้องการอีก {13 - formData.casualtyCitizenId.length} หลัก)
+                    </span>
+                  ) : validateCitizenId(formData.casualtyCitizenId) ? (
+                    <span style={{ color: 'var(--emerald-success)' }}>
+                      ✓ เลขบัตร ปชช. ถูกต้อง ({formatCitizenId(formData.casualtyCitizenId)})
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--ruby-danger)' }}>
+                      ✗ เลขบัตร ปชช. 13 หลักไม่ถูกต้องตามหลัก Mod 11
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                  กรอกตัวเลข 13 หลักของผู้สูญเสีย ระบบจะตรวจสอบความถูกต้องทางการทันที
                 </span>
-              ) : null}
+              )}
             </div>
 
           </div>
@@ -1274,6 +1324,7 @@ export default function SubmitClaimPage() {
               <input 
                 type="date" 
                 className="form-input"
+                max={new Date().toISOString().split('T')[0]}
                 value={formData.casualtyBirthDate}
                 onChange={(e) => setFormData({ ...formData, casualtyBirthDate: e.target.value })}
                 required
@@ -1288,6 +1339,7 @@ export default function SubmitClaimPage() {
               <input 
                 type="date" 
                 className="form-input"
+                max={new Date().toISOString().split('T')[0]}
                 value={formData.lossDate}
                 onChange={(e) => setFormData({ ...formData, lossDate: e.target.value })}
                 required

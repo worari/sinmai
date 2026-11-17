@@ -1,7 +1,7 @@
 // app/api/track/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { calculateSlaStatus } from '@/lib/thai-utils';
+import { calculateSlaStatus, validateCitizenId } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { enforceRateLimit } from '@/lib/api-auth';
 
@@ -20,6 +20,13 @@ export async function POST(request) {
       return NextResponse.json({
         success: false,
         message: 'กรุณากรอกเลขประจำตัวประชาชน (13 หลัก) และวัน/เดือน/ปีเกิดให้ครบถ้วน'
+      }, { status: 400 });
+    }
+
+    if (!validateCitizenId(citizenId)) {
+      return NextResponse.json({
+        success: false,
+        message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)'
       }, { status: 400 });
     }
 

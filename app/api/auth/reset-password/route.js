@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { enforceRateLimit } from '@/lib/api-auth';
+import { validateCitizenId, validatePhoneNumber, validateEmail } from '@/lib/thai-utils';
 
 export async function POST(request) {
   try {
@@ -19,6 +20,27 @@ export async function POST(request) {
       return NextResponse.json({
         success: false,
         message: 'เพื่อความปลอดภัยไซเบอร์ กรุณากรอกเลขประจำตัวประชาชน 13 หลัก อีเมล และเบอร์โทรศัพท์ที่ลงทะเบียนไว้ให้ครบทุกช่อง'
+      }, { status: 400 });
+    }
+
+    if (!validateCitizenId(targetCitizenId)) {
+      return NextResponse.json({
+        success: false,
+        message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามรูปแบบทางการ (Checksum Error)'
+      }, { status: 400 });
+    }
+
+    if (!validatePhoneNumber(phone)) {
+      return NextResponse.json({
+        success: false,
+        message: 'เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678'
+      }, { status: 400 });
+    }
+
+    if (!validateEmail(email)) {
+      return NextResponse.json({
+        success: false,
+        message: 'รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมน'
       }, { status: 400 });
     }
 

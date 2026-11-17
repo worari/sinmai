@@ -16,7 +16,7 @@ import {
   ArrowRight,
   User
 } from 'lucide-react';
-import { formatThaiDate } from '@/lib/thai-utils';
+import { formatThaiDate, validateCitizenId } from '@/lib/thai-utils';
 
 export default function TrackClaimPage() {
   const [citizenId, setCitizenId] = useState('');
@@ -41,6 +41,11 @@ export default function TrackClaimPage() {
     const cleanId = citizenId.replace(/\D/g, '');
     if (cleanId.length !== 13) {
       setErrorMsg('กรุณากรอกเลขประจำตัวประชาชนให้ครบ 13 หลัก');
+      return;
+    }
+
+    if (!validateCitizenId(cleanId)) {
+      setErrorMsg('เลขประจำตัวประชาชน 13 หลักไม่ถูกต้องตามหลักตรวจสอบทางการ (Mod 11 Checksum)');
       return;
     }
 
@@ -113,10 +118,10 @@ export default function TrackClaimPage() {
               <input 
                 type="text" 
                 className="form-input"
-                placeholder="x-xxxx-xxxxx-xx-x"
-                maxLength={17}
+                placeholder="กรอกตัวเลข 13 หลัก"
+                maxLength={13}
                 value={citizenId}
-                onChange={(e) => setCitizenId(e.target.value)}
+                onChange={(e) => setCitizenId(e.target.value.replace(/\D/g, '').slice(0, 13))}
                 required
               />
               <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
@@ -129,6 +134,7 @@ export default function TrackClaimPage() {
               <input 
                 type="date" 
                 className="form-input"
+                max={new Date().toISOString().split('T')[0]}
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
                 required

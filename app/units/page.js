@@ -263,10 +263,13 @@ export default function MilitaryUnitsPage() {
     setSuccessMsg('');
 
     // ตรวจสอบเบอร์โทร.ทบ. 5 หลัก (ถ้ากรอก)
-    if (modalForm.rtaPhone && modalForm.rtaPhone.length !== 5) {
-      setErrorMsg('เบอร์ติดต่อหน่วย โทร.ทบ. ต้องเป็นตัวเลข 5 หลัก พอดี (เช่น 97123 หรือ 54001)');
-      setSaving(false);
-      return;
+    if (modalForm.rtaPhone) {
+      const cleanRta = modalForm.rtaPhone.replace(/\D/g, '');
+      if (cleanRta.length !== 5) {
+        setErrorMsg('เบอร์ติดต่อหน่วย โทร.ทบ. ต้องเป็นตัวเลข 5 หลัก พอดี (เช่น 97123 หรือ 54001)');
+        setSaving(false);
+        return;
+      }
     }
 
     try {
