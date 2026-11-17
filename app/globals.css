@@ -398,3 +398,112 @@ a {
     opacity: 0;
   }
 }
+
+/* =========================================================
+   Mobile-First Responsive Layout & Touch Accessibility
+   ========================================================= */
+
+@media (max-width: 768px) {
+  .container {
+    padding: 0 12px;
+  }
+
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+
+  .desktop-only, .desktop-flex {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: block !important;
+  }
+
+  .mobile-flex {
+    display: flex !important;
+  }
+
+  /* Touch-friendly interactive elements */
+  .btn {
+    min-height: 42px;
+  }
+
+  /* Prevent auto-zoom on iOS Safari when tapping inputs */
+  .form-input, .form-select, .form-textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  /* Compact padding for cards and panels on mobile */
+  .glass-panel {
+    border-radius: 10px;
+  }
+
+  /* Responsive typography scaling */
+  h1 {
+    font-size: clamp(20px, 5vw, 26px);
+  }
+  
+  h2 {
+    font-size: clamp(17px, 4vw, 21px);
+  }
+
+  /* Stacking form grids on mobile */
+  .form-grid-2, .form-grid-3, .form-grid-4 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Safe area padding at bottom of main to prevent overlap with bottom nav */
+  main {
+    padding-bottom: 78px !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: none !important;
+  }
+
+  .desktop-only {
+    display: block !important;
+  }
+
+  .desktop-flex {
+    display: flex !important;
+  }
+}
+
+/* Touch-friendly horizontal table & chip scrolling */
+.table-responsive,
+.table-scroll-container,
+[style*="overflowX: auto"],
+[style*="overflow-x: auto"] {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(20, 184, 166, 0.35);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 184, 166, 0.6);
+}

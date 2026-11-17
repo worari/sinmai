@@ -72,24 +72,32 @@ export default function TrackClaimPage() {
   };
 
   return (
-    <div className="container" style={{ paddingTop: '32px', maxWidth: '900px' }}>
+    <div className="container" style={{ paddingTop: 'clamp(20px, 4vw, 32px)', paddingBottom: '50px', maxWidth: '900px' }}>
       
       {/* Title */}
       <div style={{ textAlign: 'center', marginBottom: '32px' }}>
         <div style={{
-          width: '56px',
-          height: '56px',
-          borderRadius: '14px',
-          background: 'linear-gradient(135deg, #d4af37 0%, #aa8010 100%)',
+          width: '76px',
+          height: '76px',
+          borderRadius: '50%',
+          overflow: 'hidden',
+          margin: '0 auto 14px',
+          boxShadow: '0 0 24px rgba(20, 184, 166, 0.45)',
+          border: '2px solid rgba(255, 255, 255, 0.25)',
+          background: '#041417',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 12px',
-          boxShadow: '0 0 20px rgba(212, 175, 55, 0.35)'
+          justifyContent: 'center'
         }}>
-          <Search size={30} color="#070d1e" />
+          <img 
+            src="/logo.png" 
+            alt="ตราสัญลักษณ์ กรมกำลังพลทหารบก" 
+            width={76} 
+            height={76} 
+            style={{ objectFit: 'contain' }}
+          />
         </div>
-        <h1 style={{ fontSize: '24px' }}>ระบบตรวจสอบและติดตามสถานะสิทธิเงินค่าสินไหมทดแทน</h1>
+        <h1 style={{ fontSize: 'clamp(18px, 4.5vw, 24px)', fontWeight: 700 }}>ระบบตรวจสอบและติดตามสถานะสิทธิเงินค่าสินไหมทดแทน</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '6px' }}>
           สำหรับกำลังพลและทายาทผู้มีสิทธิ ตรวจสอบขั้นตอนการดำเนินเรื่อง กรอบเวลา SLA และผลการโอนเงิน
         </p>

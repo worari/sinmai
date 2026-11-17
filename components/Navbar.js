@@ -23,7 +23,8 @@ import {
   UserPlus, 
   ShieldAlert, 
   FileText,
-  Home
+  Home,
+  Menu
 } from 'lucide-react';
 import {
   getSocketClient,
@@ -32,7 +33,14 @@ import {
   isNotificationSoundEnabled
 } from '@/lib/socket-client';
 
-export default function Navbar({ currentUser: propUser, theme: propTheme, setTheme: propSetTheme, isLoggedIn: propIsLoggedIn }) {
+export default function Navbar({ 
+  currentUser: propUser, 
+  theme: propTheme, 
+  setTheme: propSetTheme, 
+  isLoggedIn: propIsLoggedIn,
+  isMobile = false,
+  onToggleMobileMenu
+}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -253,42 +261,103 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
       position: 'sticky',
       top: 0,
       zIndex: 50,
-      background: 'rgba(4, 20, 23, 0.88)',
+      background: 'rgba(4, 20, 23, 0.92)',
       backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
       borderBottom: '1px solid var(--border-subtle)',
       transition: 'background 0.3s ease, border-color 0.3s ease'
     }}>
-      <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '72px' }}>
-        
-        {/* Brand Logo & Name */}
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #059669 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 0 16px rgba(20, 184, 166, 0.4)',
-            border: '1px solid rgba(255, 255, 255, 0.2)'
-          }}>
-            <Shield size={24} color="#ffffff" strokeWidth={2.4} />
-          </div>
-          <div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '17px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>ระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทน</span>
-              {isLoggedIn && <span className="live-dot" title="ระบบรายงานสด Real-time กำลังทำงาน"></span>}
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--gold-primary)', fontWeight: 500 }}>
-              กองทัพบก • กรมกำลังพลทหารบก (กพ.ทบ.)
-            </div>
-          </div>
-        </Link>
+      <div 
+        className="container" 
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          height: isMobile ? '64px' : '72px',
+          padding: isMobile ? '0 12px' : '0 20px',
+          gap: '8px'
+        }}
+      >
+        {/* Left Side: Mobile Hamburger Menu & Brand Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', minWidth: 0 }}>
+          {isLoggedIn && (
+            <button
+              type="button"
+              onClick={onToggleMobileMenu}
+              className="btn btn-secondary btn-sm mobile-menu-btn"
+              style={{
+                width: '38px',
+                height: '38px',
+                padding: 0,
+                borderRadius: '8px',
+                display: isMobile ? 'inline-flex' : 'none',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}
+              title="เปิดเมนูหลัก"
+              aria-label="เปิดเมนูหลัก"
+            >
+              <Menu size={20} />
+            </button>
+          )}
 
-        {/* Navigation Middle: เมนูพอร์ทัลสาธารณะ (ถ้ายังไม่ได้ Login จะมีเฉพาะเมนูหน้าพอร์ทัลและตรวจสอบสิทธิ) */}
+          {/* Brand Logo & Name */}
+          <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', textDecoration: 'none', minWidth: 0 }}>
+            <div style={{
+              width: isMobile ? '38px' : '44px',
+              height: isMobile ? '38px' : '44px',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 16px rgba(20, 184, 166, 0.45)',
+              border: '1.5px solid rgba(255, 255, 255, 0.25)',
+              background: '#041417',
+              flexShrink: 0
+            }}>
+              <img 
+                src="/logo.png" 
+                alt="ตราสัญลักษณ์ กรมกำลังพลทหารบก" 
+                width={isMobile ? 38 : 44} 
+                height={isMobile ? 38 : 44} 
+                style={{ objectFit: 'contain' }}
+              />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ 
+                fontFamily: 'var(--font-heading)', 
+                fontWeight: 700, 
+                fontSize: isMobile ? '14px' : '17px', 
+                color: 'var(--text-main)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                <span>{isMobile ? 'สินไหมทดแทน ทบ.' : 'ระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทน'}</span>
+                {isLoggedIn && <span className="live-dot" title="ระบบรายงานสด Real-time กำลังทำงาน"></span>}
+              </div>
+              <div style={{ 
+                fontSize: isMobile ? '10.5px' : '12px', 
+                color: 'var(--gold-primary)', 
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                {isMobile ? 'กรมกำลังพลทหารบก (กพ.ทบ.)' : 'กองทัพบก • กรมกำลังพลทหารบก (กพ.ทบ.)'}
+              </div>
+            </div>
+          </Link>
+        </div>
+
+        {/* Navigation Middle: เมนูพอร์ทัลสาธารณะ (ถ้ายังไม่ได้ Login) */}
         {!isLoggedIn ? (
-          <nav style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <nav className="desktop-portal-nav" style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: '8px' }}>
             <Link 
               href="/" 
               className={`btn btn-sm ${pathname === '/' ? 'btn-primary' : 'btn-secondary'}`}
@@ -312,8 +381,8 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
             </Link>
           </nav>
         ) : (
-          /* กรณี Login แล้ว แสดง Badge ระบุบทบาทปัจจุบันที่กำลังปฏิบัติงาน */
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          /* กรณี Login แล้ว แสดง Badge ระบุบทบาทปัจจุบัน (ซ่อนบนหน้าจอขนาดเล็กเพื่อประหยัดพื้นที่) */
+          <div className="desktop-role-badge" style={{ display: isMobile ? 'none' : 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -647,10 +716,10 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                     background: 'rgba(20, 184, 166, 0.12)',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '8px',
-                    padding: '6px 12px',
+                    padding: isMobile ? '6px' : '6px 12px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '10px',
+                    gap: isMobile ? '4px' : '10px',
                     cursor: 'pointer',
                     textAlign: 'left'
                   }}
@@ -664,18 +733,21 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'var(--cyan-accent)',
-                    fontWeight: 700
+                    fontWeight: 700,
+                    flexShrink: 0
                   }}>
                     <UserCheck size={18} />
                   </div>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      {currentUser?.name || `${currentUser?.rank || ''} ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'เจ้าหน้าที่ ทบ.'}
+                  {!isMobile && (
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {currentUser?.name || `${currentUser?.rank || ''} ${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim() || 'เจ้าหน้าที่ ทบ.'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>
+                        {currentUser?.badge || currentUser?.role || ''}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--gold-primary)' }}>
-                      {currentUser?.badge || currentUser?.role || ''}
-                    </div>
-                  </div>
+                  )}
                   <ChevronDown size={14} color="var(--text-dim)" />
                 </button>
 
@@ -685,7 +757,8 @@ export default function Navbar({ currentUser: propUser, theme: propTheme, setThe
                     position: 'absolute',
                     top: '50px',
                     right: 0,
-                    width: '340px',
+                    width: isMobile ? 'calc(100vw - 24px)' : '340px',
+                    maxWidth: '360px',
                     padding: '14px',
                     zIndex: 100,
                     background: 'rgba(4, 20, 23, 0.98)',

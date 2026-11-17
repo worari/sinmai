@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Navbar from '@/components/Navbar';
+import MobileBottomNav from '@/components/MobileBottomNav';
 import StatusModal from '@/components/StatusModal';
 import NotificationToast from '@/components/NotificationToast';
 import PdpaConsentBanner from '@/components/PdpaConsentBanner';
@@ -13,6 +14,8 @@ import { Shield, Lock, LogIn, ArrowLeft, UserCheck } from 'lucide-react';
 
 export default function AppShell({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [theme, setTheme] = useState('teal');
@@ -84,6 +87,25 @@ export default function AppShell({ children }) {
       window.removeEventListener('storage', handleAuthChange);
     };
   }, []);
+
+  // ตรวจจับขนาดหน้าจอสำหรับโหมด Mobile-First Responsive
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (mobile) {
+        setSidebarOpen(false);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // ปิด Drawer เมนูอัตโนมัติเมื่อมีการเปลี่ยนเส้นทางหน้า (Route Change)
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [pathname]);
 
   // ตรวจสอบสิทธิการใช้งานระบบจากสถานะแบบทดสอบความรู้ (ผ่าน=ใช้งานได้, ไม่ผ่าน=ใช้งานไม่ได้)
   useEffect(() => {
@@ -159,19 +181,20 @@ export default function AppShell({ children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-main)' }}>
       
-      {/* แสดง Sidebar เฉพาะเมื่อผู้ใช้งานเข้าสู่ระบบ (Login) แล้วเท่านั้น */}
+      {/* แสดง Sidebar หรือ Mobile Slide-Over Drawer */}
       {isLoggedIn && (
         <Sidebar 
-          isOpen={sidebarOpen} 
-          setIsOpen={setSidebarOpen} 
+          isOpen={isMobile ? mobileDrawerOpen : sidebarOpen} 
+          setIsOpen={isMobile ? setMobileDrawerOpen : setSidebarOpen} 
           currentUser={currentUser}
+          isMobile={isMobile}
         />
       )}
 
-      {/* Main Content Area: ถ้ายังไม่ได้ Login ให้ขยายเต็ม 100% ไม่มี Sidebar ด้านข้าง */}
+      {/* Main Content Area */}
       <div style={{
         flex: 1,
-        marginLeft: isLoggedIn ? (sidebarOpen ? '260px' : '78px') : '0px',
+        marginLeft: isLoggedIn && !isMobile ? (sidebarOpen ? '260px' : '78px') : '0px',
         transition: 'margin-left 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         minWidth: 0,
         display: 'flex',
@@ -183,10 +206,12 @@ export default function AppShell({ children }) {
           theme={theme} 
           setTheme={setTheme}
           isLoggedIn={isLoggedIn}
+          isMobile={isMobile}
+          onToggleMobileMenu={() => setMobileDrawerOpen((prev) => !prev)}
         />
 
         {/* Page Content */}
-        <main style={{ flex: 1, paddingBottom: '60px' }}>
+        <main style={{ flex: 1, paddingBottom: isMobile ? '84px' : '60px' }}>
           {shouldBlockAccess ? (
             /* กรณีไม่ได้ Login แต่พยายามเข้า URL ภายใน */
             <div className="container" style={{ paddingTop: '70px', maxWidth: '580px', textAlign: 'center' }}>
@@ -298,6 +323,12 @@ export default function AppShell({ children }) {
           </div>
         </footer>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (สำหรับสมาร์ทโฟนและแท็บเล็ต) */}
+      <MobileBottomNav 
+        currentUser={currentUser} 
+        onToggleMenu={() => setMobileDrawerOpen((prev) => !prev)} 
+      />
 
       {/* PDPA & Cookie Consent Banner / Modal */}
       <PdpaConsentBanner />

@@ -20,11 +20,12 @@ import {
   BookOpen,
   UserCheck,
   GitFork,
-  CheckCircle2
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { triggerStatusPopup } from '@/components/StatusModal';
 
-export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser }) {
+export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser, isMobile = false }) {
   const pathname = usePathname();
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState(propUser || null);
@@ -166,97 +167,139 @@ export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser }) {
   const roleInfo = getRoleBadge(userRole);
 
   return (
-    <aside style={{
-      width: isOpen ? '260px' : '78px',
-      transition: 'width 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-      background: 'rgba(5, 22, 26, 0.96)',
-      backdropFilter: 'blur(20px)',
-      borderRight: '1px solid var(--border-subtle)',
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      bottom: 0,
-      zIndex: 60,
-      display: 'flex',
-      flexDirection: 'column',
-      boxShadow: '4px 0 24px rgba(0,0,0,0.45)'
-    }}>
-      {/* Top Header / Branding */}
-      <div style={{
-        height: '72px',
-        display: 'flex',
-        alignItems: 'center',
-        padding: isOpen ? '0 18px' : '0 14px',
-        justifyContent: isOpen ? 'space-between' : 'center',
-        borderBottom: '1px solid var(--border-glass)'
-      }}>
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', overflow: 'hidden' }}>
-          <div style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, var(--gold-light) 0%, var(--gold-primary) 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 0 15px var(--gold-glow)',
-            flexShrink: 0
-          }}>
-            <Shield size={22} color="#041417" strokeWidth={2.4} />
-          </div>
-          {isOpen && (
-            <div style={{ whiteSpace: 'nowrap' }}>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '15px', color: '#fff' }}>
-                สินไหมทดแทน ทบ.
-              </div>
-              <div style={{ fontSize: '10.5px', color: 'var(--gold-primary)' }}>
-                กพ.ทบ. • สก.ทบ.
-              </div>
-            </div>
-          )}
-        </Link>
-
-        {isOpen && (
-          <button 
-            onClick={() => setIsOpen(false)}
-            className="btn btn-secondary btn-sm"
-            style={{ width: '28px', height: '28px', padding: 0, borderRadius: '50%' }}
-            title="ย่อเมนู"
-          >
-            <ChevronLeft size={16} />
-          </button>
-        )}
-      </div>
-
-      {/* Expand Button When Collapsed */}
-      {!isOpen && (
-        <div style={{ padding: '8px 0', display: 'flex', justifyContent: 'center', borderBottom: '1px solid var(--border-glass)' }}>
-          <button 
-            onClick={() => setIsOpen(true)}
-            className="btn btn-secondary btn-sm"
-            style={{ width: '32px', height: '32px', padding: 0, borderRadius: '50%', margin: '0 auto' }}
-            title="ขยายเมนู"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
+    <>
+      {/* Backdrop Overlay บนหน้าจอมือถือ */}
+      {isMobile && isOpen && (
+        <div 
+          onClick={() => setIsOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            zIndex: 90,
+            transition: 'opacity 0.25s ease'
+          }}
+          aria-hidden="true"
+        />
       )}
 
-      {/* Nav Menu Items (Filtered by RBAC Role) */}
-      <nav style={{ flex: 1, padding: '16px 10px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {visibleNavItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-          const Icon = item.icon;
+      <aside style={{
+        width: isMobile ? '280px' : (isOpen ? '260px' : '78px'),
+        maxWidth: isMobile ? '86vw' : undefined,
+        transform: isMobile ? (isOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none',
+        transition: isMobile ? 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)' : 'width 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        background: 'rgba(5, 22, 26, 0.98)',
+        backdropFilter: 'blur(20px)',
+        borderRight: '1px solid var(--border-subtle)',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        zIndex: isMobile ? 100 : 60,
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: isMobile ? '6px 0 32px rgba(0,0,0,0.6)' : '4px 0 24px rgba(0,0,0,0.45)'
+      }}>
+        {/* Top Header / Branding */}
+        <div style={{
+          height: '72px',
+          display: 'flex',
+          alignItems: 'center',
+          padding: (isOpen || isMobile) ? '0 16px' : '0 14px',
+          justifyContent: (isOpen || isMobile) ? 'space-between' : 'center',
+          borderBottom: '1px solid var(--border-glass)'
+        }}>
+          <Link 
+            href="/" 
+            onClick={() => isMobile && setIsOpen(false)}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', overflow: 'hidden' }}
+          >
+            <div style={{
+              width: '42px',
+              height: '42px',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 12px rgba(20, 184, 166, 0.35)',
+              flexShrink: 0,
+              background: '#041417'
+            }}>
+              <img 
+                src="/logo.png" 
+                alt="ตราสัญลักษณ์ กรมกำลังพลทหารบก" 
+                width={42} 
+                height={42} 
+                style={{ objectFit: 'contain' }}
+              />
+            </div>
+            {(isOpen || isMobile) && (
+              <div style={{ whiteSpace: 'nowrap' }}>
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '15px', color: '#fff' }}>
+                  สินไหมทดแทน ทบ.
+                </div>
+                <div style={{ fontSize: '10.5px', color: 'var(--gold-primary)' }}>
+                  กพ.ทบ. • สก.ทบ.
+                </div>
+              </div>
+            )}
+          </Link>
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: isOpen ? '10px 14px' : '10px 0',
+          {isMobile ? (
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="btn btn-secondary btn-sm"
+              style={{ width: '32px', height: '32px', padding: 0, borderRadius: '50%' }}
+              title="ปิดเมนู"
+            >
+              <X size={18} />
+            </button>
+          ) : isOpen ? (
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="btn btn-secondary btn-sm"
+              style={{ width: '28px', height: '28px', padding: 0, borderRadius: '50%' }}
+              title="ย่อเมนู"
+            >
+              <ChevronLeft size={16} />
+            </button>
+          ) : null}
+        </div>
+
+        {/* Expand Button When Collapsed on Desktop */}
+        {!isMobile && !isOpen && (
+          <div style={{ padding: '8px 0', display: 'flex', justifyContent: 'center', borderBottom: '1px solid var(--border-glass)' }}>
+            <button 
+              onClick={() => setIsOpen(true)}
+              className="btn btn-secondary btn-sm"
+              style={{ width: '32px', height: '32px', padding: 0, borderRadius: '50%', margin: '0 auto' }}
+              title="ขยายเมนู"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Nav Menu Items (Filtered by RBAC Role) */}
+        <nav style={{ flex: 1, padding: '16px 10px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {visibleNavItems.map((item) => {
+            const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => isMobile && setIsOpen(false)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: (isOpen || isMobile) ? '10px 14px' : '10px 0',
+                  justifyContent: (isOpen || isMobile) ? 'flex-start' : 'center',
                 justifyContent: isOpen ? 'flex-start' : 'center',
                 borderRadius: '8px',
                 textDecoration: 'none',
@@ -392,5 +435,6 @@ export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser }) {
         )}
       </div>
     </aside>
+    </>
   );
 }

@@ -451,53 +451,95 @@ export default function PortalHomePage() {
   ];
 
   return (
-    <div className="container" style={{ paddingTop: '24px' }}>
+    <div className="container" style={{ paddingTop: 'clamp(16px, 3vw, 24px)', paddingBottom: '40px' }}>
       
       {/* Hero Banner: สิทธิประโยชน์ประกันชีวิตและสินไหมทดแทน ทบ. */}
-      <div className="glass-panel" style={{
-        padding: '36px 32px',
-        marginBottom: '32px',
+      <div className="glass-panel hero-banner" style={{
+        padding: 'clamp(20px, 4vw, 36px) clamp(16px, 4vw, 32px)',
+        marginBottom: '28px',
         position: 'relative',
         overflow: 'hidden',
         borderLeft: '5px solid var(--gold-primary)',
-        background: 'linear-gradient(135deg, rgba(16, 28, 58, 0.85) 0%, rgba(9, 17, 38, 0.95) 100%)'
+        background: 'linear-gradient(135deg, rgba(16, 28, 58, 0.88) 0%, rgba(9, 17, 38, 0.96) 100%)'
       }}>
-        <div style={{ maxWidth: '820px', position: 'relative', zIndex: 2 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', borderRadius: '20px', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid var(--border-subtle)', marginBottom: '14px' }}>
-            <Award size={15} color="var(--gold-primary)" />
-            <span style={{ fontSize: '12.5px', color: 'var(--gold-light)', fontWeight: 600 }}>พอร์ทัลบริการสิทธิประโยชน์กำลังพล กองทัพบก</span>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between', 
+          gap: '24px', 
+          flexDirection: 'row',
+          flexWrap: 'wrap-reverse',
+          position: 'relative', 
+          zIndex: 2 
+        }}>
+          {/* Hero Content Left */}
+          <div style={{ flex: '1 1 500px', maxWidth: '820px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', borderRadius: '20px', background: 'rgba(212, 175, 55, 0.15)', border: '1px solid var(--border-subtle)', marginBottom: '14px' }}>
+              <Award size={15} color="var(--gold-primary)" />
+              <span style={{ fontSize: '12px', color: 'var(--gold-light)', fontWeight: 600 }}>พอร์ทัลบริการสิทธิประโยชน์กำลังพล กองทัพบก</span>
+            </div>
+
+            <h1 style={{ fontSize: 'clamp(20px, 4.5vw, 28px)', lineHeight: 1.35, marginBottom: '12px' }}>
+              ระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทน <br />
+              <span className="gold-gradient-text">กรมกำลังพลทหารบก (กพ.ทบ.) ร่วมกับ กรมสวัสดิการทหารบก (สก.ทบ.)</span>
+            </h1>
+
+            <p style={{ color: 'var(--text-muted)', fontSize: 'clamp(13.5px, 2.5vw, 15px)', lineHeight: 1.7, marginBottom: '22px' }}>
+              ดูแลสิทธิสวัสดิการและเงินสินไหมทดแทนประกันชีวิตแก่กำลังพลที่เสียชีวิตหรือพิการทุพพลภาพจากการปฏิบัติหน้าที่ราชการ ดำเนินเรื่องรวดเร็ว โปร่งใส ควบคุมตามกรอบเวลา SLA 30 วัน พร้อมการแจ้งเตือนสดทาง Socket.io และ Telegram
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <a href="#tracking-section" className="btn btn-primary" style={{ padding: '11px 20px', minHeight: '44px' }}>
+                <Search size={16} />
+                <span>ติดตามสถานะสิทธิ (เลข ปชช.)</span>
+              </a>
+
+              {currentUser ? (
+                <Link href="/dashboard" className="btn btn-secondary" style={{ padding: '11px 20px', minHeight: '44px' }}>
+                  <Shield size={16} />
+                  <span>เข้าสู่แดชบอร์ดเจ้าหน้าที่</span>
+                </Link>
+              ) : (
+                <Link href="/login" className="btn btn-secondary" style={{ padding: '11px 20px', minHeight: '44px' }}>
+                  <LogIn size={16} />
+                  <span>เข้าสู่ระบบ (เจ้าหน้าที่)</span>
+                </Link>
+              )}
+            </div>
           </div>
 
-          <h1 style={{ fontSize: '28px', lineHeight: 1.3, marginBottom: '12px' }}>
-            ระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทน <br />
-            <span className="gold-gradient-text">กรมกำลังพลทหารบก (กพ.ทบ.) ร่วมกับ กรมสวัสดิการทหารบก (สก.ทบ.)</span>
-          </h1>
-
-          <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: 1.7, marginBottom: '22px' }}>
-            ดูแลสิทธิสวัสดิการและเงินสินไหมทดแทนประกันชีวิตแก่กำลังพลที่เสียชีวิตหรือพิการทุพพลภาพจากการปฏิบัติหน้าที่ราชการ ดำเนินเรื่องรวดเร็ว โปร่งใส ควบคุมตามกรอบเวลา SLA 30 วัน พร้อมการแจ้งเตือนสดทาง Socket.io และ Telegram
-          </p>
-
-          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-            <a href="#tracking-section" className="btn btn-primary" style={{ padding: '12px 24px' }}>
-              <Search size={16} />
-              <span>ติดตามสถานะสิทธิ (เลข ปชช. + วันเกิด)</span>
-            </a>
-
-            {currentUser ? (
-              <Link href="/dashboard" className="btn btn-secondary" style={{ padding: '12px 24px' }}>
-                <Shield size={16} />
-                <span>เข้าสู่แดชบอร์ดเจ้าหน้าที่</span>
-              </Link>
-            ) : (
-              <Link href="/login" className="btn btn-secondary" style={{ padding: '12px 24px' }}>
-                <LogIn size={16} />
-                <span>เข้าสู่ระบบ (สำหรับเจ้าหน้าที่)</span>
-              </Link>
-            )}
+          {/* Hero Official Emblem Right */}
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            flex: '0 0 auto',
+            margin: '0 auto'
+          }}>
+            <div style={{
+              width: 'clamp(90px, 18vw, 136px)',
+              height: 'clamp(90px, 18vw, 136px)',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              boxShadow: '0 0 35px rgba(20, 184, 166, 0.45)',
+              border: '3px solid rgba(255, 255, 255, 0.3)',
+              background: '#041417',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <img 
+                src="/logo.png" 
+                alt="ตราสัญลักษณ์ กรมกำลังพลทหารบก กองทัพบก" 
+                width={136} 
+                height={136} 
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Decorative Badge */}
+        {/* Decorative Glow */}
         <div style={{
           position: 'absolute',
           top: '-20px',
@@ -505,7 +547,7 @@ export default function PortalHomePage() {
           width: '260px',
           height: '260px',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(212, 175, 55, 0.1) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(20, 184, 166, 0.15) 0%, transparent 70%)',
           pointerEvents: 'none'
         }}></div>
       </div>
