@@ -133,6 +133,28 @@ export default function SubmitClaimPage() {
   const [level3Id, setLevel3Id] = useState('R9_BN1');
   const [subUnitName, setSubUnitName] = useState('');
 
+  // ข้อมูลระบุตัวตนของผู้ใช้งานที่ล็อกอินจริงในระบบ (สำหรับแสดงผลผู้เสนอเรื่อง และผูกกับบันทึกคำร้อง)
+  const currentUserDisplayName = 
+    (currentUser?.name && !currentUser.name.includes('undefined'))
+      ? currentUser.name
+      : [currentUser?.rank, currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ').trim() ||
+        currentUser?.email ||
+        'เจ้าหน้าที่ผู้เสนอเรื่อง';
+
+  const currentUserUnitName = 
+    currentUser?.unitName || 
+    (currentUser?.unitId ? (allUnits.find((u) => u.id === currentUser.unitId)?.name || currentUser.unitId) : '') ||
+    'หน่วยต้นสังกัด ทบ.';
+
+  const currentUserPosition = currentUser?.position || '';
+  const currentUserRoleBadge = 
+    currentUser?.role === 'ADMIN' ? 'ผู้ดูแลระบบ (ADMIN)' :
+    currentUser?.role === 'UNIT_OFFICER' ? 'เจ้าหน้าที่หน่วย' :
+    currentUser?.role === 'KSP_OFFICER' ? 'เจ้าหน้าที่ กพ.ทบ.' :
+    currentUser?.role === 'COMMANDER' ? 'ผู้บังคับบัญชา' :
+    currentUser?.role === 'INSURANCE_REP' ? 'บ.ประกันภัย' :
+    (currentUser?.role || '');
+
   // โหลดรายการหน่วยทั้งหมดจาก API (/api/units) เชื่อมโยงฐานข้อมูลจริง 860+ หน่วย
   const loadUnits = useCallback(async () => {
     setUnitsLoading(true);
@@ -154,16 +176,48 @@ export default function SubmitClaimPage() {
     }
   }, []);
 
+  const normalizeUserData = (rawUser) => {
+    if (!rawUser) return null;
+    const fullName = (rawUser.name && !rawUser.name.includes('undefined'))
+      ? rawUser.name.trim()
+      : [rawUser.rank, rawUser.firstName, rawUser.lastName].filter(Boolean).join(' ').trim();
+    return {
+      ...rawUser,
+      name: fullName || 'เจ้าหน้าที่ ทบ.'
+    };
+  };
+
   // โหลดรายการหน่วยทั้งหมดจาก API และผูกกับสังกัดผู้ใช้งาน หรือโหลดข้อมูลแบบร่าง (ถ้ามี draftId)
   useEffect(() => {
     let activeUser = null;
     const saved = localStorage.getItem('rta_user');
     if (saved) {
       try {
-        activeUser = JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        activeUser = normalizeUserData(parsed);
         setCurrentUser(activeUser);
       } catch (e) {}
     }
+
+    // ซิงค์และตรวจสอบข้อมูลผู้ใช้งานจริงจาก Signed HttpOnly Session Cookie ล่าสุดจากเซิร์ฟเวอร์
+    fetch('/api/auth/session', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.authenticated && data?.user) {
+          const verifiedUser = normalizeUserData(data.user);
+          setCurrentUser(verifiedUser);
+          try {
+            localStorage.setItem('rta_user', JSON.stringify(verifiedUser));
+          } catch (e) {}
+
+          if (!activeUser && verifiedUser?.unitId) {
+            loadUnits().then((list) => {
+              resolveInitialUnitHierarchy(verifiedUser.unitId, list);
+            });
+          }
+        }
+      })
+      .catch(() => {});
 
     loadUnits().then((fetchedUnits) => {
       const list = fetchedUnits && fetchedUnits.length > 0 ? fetchedUnits : allUnits;
@@ -187,8 +241,25 @@ export default function SubmitClaimPage() {
     });
 
     const handleFocus = () => loadUnits();
+    const handleAuthChange = () => {
+      const freshSaved = localStorage.getItem('rta_user');
+      if (freshSaved) {
+        try {
+          const parsed = JSON.parse(freshSaved);
+          setCurrentUser(normalizeUserData(parsed));
+        } catch (e) {}
+      }
+    };
+
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    window.addEventListener('rta_auth_change', handleAuthChange);
+    window.addEventListener('storage', handleAuthChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('rta_auth_change', handleAuthChange);
+      window.removeEventListener('storage', handleAuthChange);
+    };
   }, [loadUnits]);
 
   const loadDraftClaim = async (draftId, user, unitsList = allUnits) => {
@@ -623,7 +694,7 @@ export default function SubmitClaimPage() {
       a.click();
       document.body.removeChild(a);
     } else {
-      const content = `เอกสารแนบทางราชการ กองทัพบก\nเอกสาร: ${doc.name || doc.title}\nไฟล์แนบ: ${doc.fileName || 'doc_attached.pdf'}\nผู้เสนอเรื่อง: ${currentUser?.name || formData.unitName}\nกำลังพล: ${formData.casualtyRank} ${formData.casualtyFirstName} ${formData.casualtyLastName}\nสังกัด: ${formData.unitName}`;
+      const content = `เอกสารแนบทางราชการ กองทัพบก\nเอกสาร: ${doc.name || doc.title}\nไฟล์แนบ: ${doc.fileName || 'doc_attached.pdf'}\nผู้เสนอเรื่อง: ${currentUserDisplayName} (${currentUserUnitName})\nกำลังพล: ${formData.casualtyRank} ${formData.casualtyFirstName} ${formData.casualtyLastName}\nสังกัด: ${formData.unitName}`;
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -672,6 +743,12 @@ export default function SubmitClaimPage() {
 
       const claimPayload = {
         ...formData,
+        reporterId: currentUser?.id || 'usr-unit-1',
+        reporterName: currentUserDisplayName,
+        reporterUnit: currentUserUnitName,
+        reporterPosition: currentUserPosition,
+        reporterPhone: currentUser?.phone || '',
+        reporterEmail: currentUser?.email || '',
         incidentType: formData.incidentType,
         isDriver: formData.incidentType === 'ACCIDENT' ? formData.isDriver : null,
         alcoholTestResult: formData.incidentType === 'ACCIDENT' ? formData.alcoholTestResult : null,
@@ -720,7 +797,7 @@ export default function SubmitClaimPage() {
         trackingCode: savedClaim.trackingCode,
         casualtyName: `${savedClaim.casualtyRank} ${savedClaim.casualtyFirstName} ${savedClaim.casualtyLastName}`,
         action: 'บันทึกแบบร่าง (Draft Saved)',
-        by: currentUser ? `${currentUser.name} (${currentUser.role})` : 'เจ้าหน้าที่หน่วย',
+        by: `${currentUserDisplayName} (${currentUserUnitName})`,
         ref: savedClaim.trackingCode
       });
 
@@ -850,6 +927,12 @@ export default function SubmitClaimPage() {
     try {
       const claimPayload = {
         ...formData,
+        reporterId: currentUser?.id || 'usr-unit-1',
+        reporterName: currentUserDisplayName,
+        reporterUnit: currentUserUnitName,
+        reporterPosition: currentUserPosition,
+        reporterPhone: currentUser?.phone || '',
+        reporterEmail: currentUser?.email || '',
         incidentType: formData.incidentType,
         isDriver: formData.incidentType === 'ACCIDENT' ? formData.isDriver : null,
         alcoholTestResult: formData.incidentType === 'ACCIDENT' ? formData.alcoholTestResult : null,
@@ -898,7 +981,7 @@ export default function SubmitClaimPage() {
         trackingCode: resData.claim.trackingCode,
         casualtyName: `${resData.claim.casualtyRank} ${resData.claim.casualtyFirstName} ${resData.claim.casualtyLastName}`,
         action: isEditingDraft ? 'ยื่นเสนอเรื่องขอรับสิทธิสินไหม (ส่งจากแบบร่าง)' : 'ยื่นเสนอขอรับสิทธิสินไหม (สร้างคำร้องใหม่)',
-        by: currentUser ? `${currentUser.name} (${currentUser.role})` : 'เจ้าหน้าที่หน่วย',
+        by: `${currentUserDisplayName} (${currentUserUnitName})`,
         ref: resData.claim.trackingCode
       });
 
@@ -941,10 +1024,34 @@ export default function SubmitClaimPage() {
           </p>
         </div>
 
-        <div className="glass-panel" style={{ padding: '12px 18px', textAlign: 'right', borderLeft: '3px solid var(--gold-primary)' }}>
-          <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>ผู้เสนอเรื่อง (เข้าสู่ระบบโดย)</div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>{currentUser?.name || 'ร.อ. สมหมาย กล้าหาญ'}</div>
-          <div style={{ fontSize: '12px', color: 'var(--gold-primary)' }}>{formData.unitName}</div>
+        {/* กล่องแสดงผลผู้เสนอเรื่อง (เข้าสู่ระบบโดย) ดึงข้อมูลจริงของผู้ใช้งานที่ล็อกอิน */}
+        <div 
+          className="glass-panel" 
+          style={{ 
+            padding: '12px 18px', 
+            textAlign: 'right', 
+            borderLeft: '4px solid var(--gold-primary)',
+            background: 'linear-gradient(135deg, rgba(20, 30, 48, 0.75) 0%, rgba(36, 59, 85, 0.55) 100%)',
+            boxShadow: '0 4px 18px rgba(0,0,0,0.3)',
+            borderRadius: '10px',
+            minWidth: '240px'
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', letterSpacing: '0.4px', textTransform: 'uppercase', marginBottom: '3px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+            <span style={{ display: 'inline-block', width: '7px', height: '7px', borderRadius: '50%', background: 'var(--emerald-success)', boxShadow: '0 0 8px rgba(16,185,129,0.8)' }}></span>
+            <span>ผู้เสนอเรื่อง (เข้าสู่ระบบโดย)</span>
+          </div>
+          <div style={{ fontSize: '14.5px', fontWeight: 700, color: '#fff', letterSpacing: '0.2px' }}>
+            {currentUserDisplayName}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--gold-primary)', fontWeight: 600, marginTop: '2px' }}>
+            🏛️ {currentUserUnitName}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', flexWrap: 'wrap' }}>
+            {currentUserPosition && <span>{currentUserPosition}</span>}
+            {currentUserPosition && currentUserRoleBadge && <span>•</span>}
+            {currentUserRoleBadge && <span className="badge badge-blue" style={{ fontSize: '10px', padding: '1px 6px' }}>{currentUserRoleBadge}</span>}
+          </div>
         </div>
       </div>
 

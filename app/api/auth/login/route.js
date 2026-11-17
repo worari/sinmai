@@ -112,6 +112,7 @@ export async function POST(request) {
     await db.flush();
 
     const { password: _, ...userWithoutPass } = user;
+    userWithoutPass.name = userWithoutPass.name || fullName || 'เจ้าหน้าที่ ทบ.';
     const response = NextResponse.json(
       { success: true, user: userWithoutPass },
       { headers: { 'Cache-Control': 'no-store' } }

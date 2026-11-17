@@ -17,8 +17,13 @@ export async function GET(request) {
     return response;
   }
 
+  const user = auth.user;
+  if (!user.name) {
+    user.name = `${user.rank || ''} ${user.firstName || ''} ${user.lastName || ''}`.trim() || 'เจ้าหน้าที่ ทบ.';
+  }
+
   return NextResponse.json(
-    { success: true, authenticated: true, user: auth.user },
+    { success: true, authenticated: true, user },
     { headers: { 'Cache-Control': 'no-store' } }
   );
 }

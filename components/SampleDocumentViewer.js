@@ -441,7 +441,7 @@ export default function SampleDocumentViewer({
                     <div style={{ gridColumn: 'span 2' }}>
                       • <strong>สาเหตุการตาย (ตามผลชันสูตร):</strong> {claim?.deathCertificateCause || 'บาดแผลจากสะเก็ดระเบิดรุนแรงหลายแห่ง เสียเลือดมากในช่องอก'}
                     </div>
-                    <div>• <strong>ผู้แจ้งการตาย:</strong> ร.อ. สมหมาย กล้าหาญ (ผู้บังคับหน่วย)</div>
+                    <div>• <strong>ผู้แจ้งการตาย:</strong> {claim?.reporterName || 'ผู้บังคับหน่วยต้นสังกัด'}</div>
                     <div>• <strong>นายทะเบียน:</strong> นายชวลิต เกียรติสกุลชัย (ลงนามสมบูรณ์)</div>
                   </div>
                 </div>
