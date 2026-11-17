@@ -72,7 +72,7 @@ export async function POST(request) {
     const body = await request.json();
 
     if (body.action === 'RESET_DEFAULT') {
-      const units = db.resetUnits();
+      const units = await db.resetUnits();
       await db.flush();
       return NextResponse.json({
         success: true,

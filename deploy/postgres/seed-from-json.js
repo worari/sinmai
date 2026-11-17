@@ -37,15 +37,28 @@ BEGIN;
 
 // 1. Military Units
 if (Array.isArray(data.units)) {
-  sql += `-- 1. โครงสร้างหน่วยทหาร\n`;
+  sql += `-- 1. โครงสร้างหน่วยทหาร (860+ หน่วย พร้อม extra_data 7 ส่วนหลัก)\n`;
+  const KNOWN_COLS = new Set(['id', 'name', 'shortName', 'short_name', 'code', 'level', 'parentId', 'parent_id', 'region', 'status', 'createdAt', 'created_at']);
   for (const u of data.units) {
-    sql += `INSERT INTO military_units (id, name, short_name, code, level, parent_id, region, status)
-VALUES (${escapeSql(u.id)}, ${escapeSql(u.name)}, ${escapeSql(u.shortName || u.short_name)}, ${escapeSql(u.code)}, ${u.level !== undefined ? escapeNum(u.level) : 'NULL'}, ${escapeSql(u.parentId || u.parent_id)}, ${escapeSql(u.region)}, ${escapeSql(u.status || 'ACTIVE')})
-ON CONFLICT (id) DO NOTHING;\n`;
+    const extraData = {};
+    for (const [k, v] of Object.entries(u)) {
+      if (!KNOWN_COLS.has(k) && v !== undefined && v !== null) {
+        extraData[k] = v;
+      }
+    }
+    sql += `INSERT INTO military_units (id, name, short_name, code, level, parent_id, region, status, extra_data)
+VALUES (${escapeSql(u.id)}, ${escapeSql(u.name)}, ${escapeSql(u.shortName || u.short_name)}, ${escapeSql(u.code)}, ${u.level !== undefined ? escapeNum(u.level) : 'NULL'}, ${escapeSql(u.parentId || u.parent_id)}, ${escapeSql(u.region || 'ส่วนกลาง')}, ${escapeSql(u.status || 'ACTIVE')}, ${escapeJson(extraData, '{}')})
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  short_name = EXCLUDED.short_name,
+  code = EXCLUDED.code,
+  level = EXCLUDED.level,
+  parent_id = EXCLUDED.parent_id,
+  region = EXCLUDED.region,
+  status = EXCLUDED.status,
+  extra_data = EXCLUDED.extra_data;\n`;
   }
-  sql += `INSERT INTO military_units (id, name, short_name, code, level, parent_id, region, status)
-VALUES ('INSURANCE_CO', 'บริษัท ทิพยประกันภัย จำกัด (มหาชน)', 'ทิพยประกันภัย', 'INS', 1, NULL, 'ส่วนกลาง', 'ACTIVE')
-ON CONFLICT (id) DO NOTHING;\n\n`;
+  sql += '\n';
 }
 
 // 2. Users (never overwrite passwords/roles already in production)
@@ -130,6 +143,8 @@ if (data.examSettings) {
   sql += `-- 9. การตั้งค่าห้วงการสอบ\n`;
   sql += `INSERT INTO system_settings (key, value) VALUES ('exam_settings', ${escapeJson(data.examSettings, '{}')}) ON CONFLICT (key) DO NOTHING;\n\n`;
 }
+
+sql += `INSERT INTO system_settings (key, value) VALUES ('military_units_seed_version', '"2026-11-16-v2-860units"'::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;\n\n`;
 
 sql += `COMMIT;\n`;
 
