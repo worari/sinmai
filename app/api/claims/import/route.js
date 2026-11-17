@@ -21,6 +21,7 @@ export async function POST(request) {
       const file = formData.get('file');
       const isPreview = formData.get('preview') === 'true';
       const overwriteExisting = formData.get('overwriteExisting') !== 'false';
+      const clearBeforeImport = formData.get('clearBeforeImport') === 'true';
 
       if (!file || typeof file === 'string') {
         return NextResponse.json(
@@ -66,6 +67,7 @@ export async function POST(request) {
       // บันทึกข้อมูลลงฐานข้อมูลจริง
       const importResult = db.importClaims(parsed.claims, {
         overwriteExisting,
+        clearBeforeImport,
         currentActor: user,
         user
       });
@@ -80,7 +82,7 @@ export async function POST(request) {
 
     // กรณีส่งข้อมูลแบบ JSON (กดยืนยันหลังจาก Preview หรือส่ง payload)
     const body = await request.json();
-    const { claims, overwriteExisting = true } = body;
+    const { claims, overwriteExisting = true, clearBeforeImport = false } = body;
 
     if (!Array.isArray(claims) || claims.length === 0) {
       return NextResponse.json({ success: false, message: 'ไม่พบรายการข้อมูลคำร้องที่ต้องการนำเข้า' }, { status: 400 });
@@ -88,6 +90,7 @@ export async function POST(request) {
 
     const importResult = db.importClaims(claims, {
       overwriteExisting: Boolean(overwriteExisting),
+      clearBeforeImport: Boolean(clearBeforeImport),
       currentActor: user,
       user
     });

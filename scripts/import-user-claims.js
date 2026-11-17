@@ -25,6 +25,13 @@ async function main() {
   const fileBuffer = fs.readFileSync(targetPath);
   console.log(`📦 ขนาดไฟล์: ${(fileBuffer.length / 1024).toFixed(1)} KB`);
 
+  // ตรวจสอบความพร้อมของฐานข้อมูล PostgreSQL (ถ้ามีการเชื่อมต่อ)
+  try {
+    await db.ensureReady({ forceRefresh: false });
+  } catch (e) {
+    // หากไม่มี Postgres ให้ใช้งานพื้นที่จัดเก็บไฟล์ JSON ตามปกติ
+  }
+
   // ตรวจสอบและดึงข้อมูลหน่วยทหารทั้งหมดในฐานข้อมูล
   const allUnits = db.getAllUnits();
   console.log(`🏢 จำนวนโครงสร้างหน่วยในระบบสำหรับเชื่อมโยง: ${allUnits.length} หน่วย`);
@@ -43,15 +50,24 @@ async function main() {
 
   console.log(`✅ ประมวลผลข้อมูลสำเร็จ: ${parseResult.validCount} รายการ (พบข้อผิดพลาด: ${parseResult.errorCount}, ข้อสังเกต: ${parseResult.warningCount})`);
 
+  // ลบข้อมูลคำร้องเดิมทั้งหมด เพื่อเอาเฉพาะข้อมูลจากไฟล์แนบเท่านั้น (1,086 รายการ)
+  const previousClaimsCount = db.claims.length;
+  console.log(`🧹 กำลังลบข้อมูลคำร้องเดิมในระบบ (${previousClaimsCount} รายการ) เพื่อนำเข้าเฉพาะข้อมูลจากไฟล์แนบ...`);
+  db.claims = [];
+
   // นำเข้าข้อมูลลงในฐานข้อมูล
   console.log('💾 กำลังบันทึกข้อมูลลงในฐานข้อมูลและคำนวณสถานะ...');
   const importResult = db.importClaims(parseResult.claims, {
+    clearBeforeImport: true,
     overwriteExisting: true,
     currentActor: {
       name: 'ระบบนำเข้าประวัติคำร้องเดิม ทบ.',
       role: 'ADMIN'
     }
   });
+
+  // บันทึกลงไฟล์ JSON ถาวร
+  db.saveToFile(['claims', 'activityLogs']);
 
   console.log('⏳ กำลังซิงค์ข้อมูลลง PostgreSQL และพื้นที่จัดเก็บถาวร (Flush)...');
   await db.flush();
@@ -108,3 +124,4 @@ main().catch((err) => {
   console.error('❌ เกิดข้อผิดพลาดร้ายแรงระหว่างการนำเข้า:', err);
   process.exit(1);
 });
+
