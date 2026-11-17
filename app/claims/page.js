@@ -27,7 +27,10 @@ import {
   Check,
   Plus,
   RefreshCw,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FileUp,
+  HelpCircle,
+  Info
 } from 'lucide-react';
 import { formatThaiDate, REQUIRED_DOCUMENTS, validateAttachmentFile, MILITARY_RANKS, getPersonnelTypeFromRank, getGenderFromRank, validateCitizenId, validateName } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
@@ -65,6 +68,15 @@ export default function ClaimsListPage() {
   // 3. Delete Confirmation Modal
   const [selectedClaimForDelete, setSelectedClaimForDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // 4. Import & Export Excel State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [importPreview, setImportPreview] = useState(null);
+  const [overwriteExistingClaims, setOverwriteExistingClaims] = useState(true);
+  const [exportLoading, setExportLoading] = useState(false);
 
   useEffect(() => {
     const readUser = () => {
@@ -440,6 +452,120 @@ export default function ClaimsListPage() {
     return false;
   };
 
+  // ==========================================
+  // Excel Import & Export Handlers
+  // ==========================================
+
+  // ดาวน์โหลดแบบฟอร์มแม่แบบตัวอย่างการนำเข้าข้อมูลคำร้อง
+  const handleDownloadTemplate = () => {
+    window.open('/api/claims/template', '_blank');
+  };
+
+  // เลือกไฟล์นำเข้า
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.xlsx') && !name.endsWith('.xls') && !name.endsWith('.csv')) {
+      setImportError('กรุณาเลือกไฟล์ Excel นามสกุล .xlsx, .xls หรือ .csv เท่านั้น');
+      setImportFile(null);
+      return;
+    }
+    setImportFile(file);
+    setImportError('');
+    setImportPreview(null);
+  };
+
+  // อ่านและตรวจสอบข้อมูลคำร้องก่อนบันทึกจริง (Preview)
+  const handlePreviewExcel = async (e) => {
+    if (e) e.preventDefault();
+    if (!importFile) {
+      setImportError('กรุณาเลือกไฟล์ Excel ที่ต้องการนำเข้าก่อน');
+      return;
+    }
+
+    setImportLoading(true);
+    setImportError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      formData.append('preview', 'true');
+      formData.append('overwriteExisting', String(overwriteExistingClaims));
+
+      const res = await fetch('/api/claims/import', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'ไม่สามารถอ่านไฟล์หรือตรวจสอบข้อมูลคำร้องได้');
+      }
+
+      setImportPreview(data);
+    } catch (err) {
+      setImportError(err.message);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  // ยืนยันบันทึกข้อมูลคำร้องที่นำเข้าลงฐานข้อมูลจริง
+  const handleConfirmImport = async () => {
+    if (!importPreview?.claims || importPreview.claims.length === 0) return;
+
+    setImportLoading(true);
+    setImportError('');
+
+    try {
+      const res = await fetch('/api/claims/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          claims: importPreview.claims,
+          overwriteExisting: overwriteExistingClaims
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'เกิดข้อผิดพลาดในการนำเข้าข้อมูลคำร้อง');
+      }
+
+      triggerStatusPopup({
+        type: 'success',
+        title: 'นำเข้าข้อมูลคำร้องสินไหมสำเร็จ',
+        message: `ระบบได้นำเข้าข้อมูลคำร้องประวัติเดิมเรียบร้อยแล้ว เพิ่มใหม่ ${data.addedCount} เรื่อง, ปรับปรุง ${data.updatedCount} เรื่อง, ข้าม ${data.skippedCount} เรื่อง (ข้อมูลจะปรากฏในรายงาน Dashboard, สถิติย้อนหลัง และการค้นหาติดตามสิทธิทันที)`
+      });
+
+      setIsImportModalOpen(false);
+      setImportFile(null);
+      setImportPreview(null);
+      loadClaims(currentUser);
+    } catch (err) {
+      setImportError(err.message);
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  // ส่งออกรายการคำร้องเป็นไฟล์ Excel (.xlsx) ตามตัวกรองปัจจุบัน
+  const handleExportExcel = () => {
+    try {
+      setExportLoading(true);
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+      if (slaFilter !== 'ALL') params.set('sla', slaFilter);
+
+      window.open(`/api/claims/export?${params.toString()}`, '_blank');
+      setTimeout(() => setExportLoading(false), 1500);
+    } catch (err) {
+      setExportLoading(false);
+    }
+  };
+
   return (
     <div className="container" style={{ paddingTop: '28px', paddingBottom: '60px' }}>
       
@@ -459,11 +585,11 @@ export default function ClaimsListPage() {
             )}
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            จัดการข้อมูลคำร้องครบวงจร (CRUD) • จัดการไฟล์เอกสารแนบ 10 รายการ • ตรวจสอบสถานะและติดตามกรอบเวลา SLA 30 วัน
+            จัดการข้อมูลคำร้องครบวงจร (CRUD) • จัดการไฟล์เอกสารแนบ 10 รายการ • นำเข้า/ส่งออก Excel สำหรับ Dashboard และรายงานย้อนหลัง
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button 
             onClick={() => loadClaims(currentUser)} 
             className="btn btn-secondary btn-sm"
@@ -473,8 +599,35 @@ export default function ClaimsListPage() {
             <RefreshCw size={14} />
             <span>รีเฟรช</span>
           </button>
-          <Link href="/submit" className="btn btn-primary" style={{ gap: '6px' }}>
-            <Plus size={16} />
+
+          <button
+            onClick={() => {
+              setIsImportModalOpen(true);
+              setImportPreview(null);
+              setImportFile(null);
+              setImportError('');
+            }}
+            className="btn btn-secondary btn-sm"
+            title="นำเข้าข้อมูลคำร้องประวัติเดิมจากไฟล์ Excel เพื่อใช้ในรายงาน Dashboard สถิติ และการติดตามสิทธิ"
+            style={{ gap: '6px', borderColor: 'rgba(6, 182, 212, 0.4)', color: '#38bdf8' }}
+          >
+            <Upload size={14} color="#38bdf8" />
+            <span>นำเข้า Excel (Import)</span>
+          </button>
+
+          <button
+            onClick={handleExportExcel}
+            disabled={exportLoading}
+            className="btn btn-secondary btn-sm"
+            title="ส่งออกรายการคำร้องเป็นไฟล์ Excel (.xlsx)"
+            style={{ gap: '6px', borderColor: 'rgba(212, 175, 55, 0.4)', color: 'var(--gold-light)' }}
+          >
+            <FileSpreadsheet size={14} color="var(--gold-primary)" />
+            <span>{exportLoading ? 'กำลังส่งออก...' : 'ส่งออก Excel (Export)'}</span>
+          </button>
+
+          <Link href="/submit" className="btn btn-primary btn-sm" style={{ gap: '6px', padding: '7px 16px' }}>
+            <Plus size={15} />
             <span>+ ยื่นเสนอเรื่องใหม่</span>
           </Link>
         </div>
@@ -1425,6 +1578,364 @@ export default function ClaimsListPage() {
                 <Trash2 size={16} />
                 <span>{deleting ? 'กำลังลบคำร้อง...' : 'ยืนยันการลบคำร้อง'}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. Modal นำเข้าข้อมูลคำร้องสินไหมจากไฟล์ Excel (Import Excel / Legacy DB) */}
+      {/* ========================================================================= */}
+      {isImportModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '920px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            border: '1px solid var(--border-glass)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.7)',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid var(--border-glass)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255, 255, 255, 0.02)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'rgba(6, 182, 212, 0.15)',
+                  color: 'var(--cyan-accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Upload size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '18px', margin: 0, color: '#fff' }}>
+                    นำเข้าข้อมูลคำร้องสินไหม (Import Excel / Legacy Database)
+                  </h2>
+                  <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                    นำเข้าข้อมูลประวัติคำร้องเดิมเพื่อใช้ใน Dashboard สถิติ/รายงานย้อนหลัง และการติดตามสิทธิ
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setImportFile(null);
+                  setImportPreview(null);
+                  setImportError('');
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '6px' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+              
+              {/* Banner แนะนำและปุ่มดาวน์โหลด Template */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(6, 182, 212, 0.08) 100%)',
+                border: '1px solid rgba(212, 175, 55, 0.35)',
+                borderRadius: '10px',
+                padding: '14px 18px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <HelpCircle size={20} color="var(--gold-primary)" />
+                  <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                    <strong>ต้องการแบบฟอร์มตัวอย่าง?</strong> สามารถดาวน์โหลดไฟล์ Excel แม่แบบที่มีคอลัมน์มาตรฐานครบ 24 คอลัมน์ พร้อมตัวอย่างข้อมูลย้อนหลัง 5 เรื่อง
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', borderColor: 'var(--gold-primary)', color: 'var(--gold-light)' }}
+                >
+                  <Download size={14} color="var(--gold-primary)" />
+                  <span>ดาวน์โหลดแบบฟอร์มตัวอย่าง (.xlsx)</span>
+                </button>
+              </div>
+
+              {/* Form เลือกไฟล์ & ตัวเลือก Overwrite */}
+              {!importPreview ? (
+                <form onSubmit={handlePreviewExcel}>
+                  <div style={{
+                    border: '2px dashed rgba(255, 255, 255, 0.2)',
+                    borderRadius: '12px',
+                    padding: '36px 20px',
+                    textAlign: 'center',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    marginBottom: '20px'
+                  }}>
+                    <FileUp size={44} color="var(--cyan-accent)" style={{ margin: '0 auto 12px' }} />
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#fff', marginBottom: '6px' }}>
+                      เลือกไฟล์ Excel หรือ CSV (.xlsx, .xls, .csv)
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                      รองรับคอลัมน์: เลขที่คำร้อง, วันที่รายงาน, วันที่สูญเสีย, เลข ปชช. 13 หลัก, ยศ, ชื่อ, นามสกุล, สังกัด, ประเภทสินไหม, ยอดเงิน, สถานะ
+                    </div>
+
+                    <input 
+                      type="file" 
+                      accept=".xlsx, .xls, .csv"
+                      onChange={handleImportFileChange}
+                      style={{ display: 'none' }}
+                      id="claims-excel-file-upload-input"
+                    />
+                    
+                    <label 
+                      htmlFor="claims-excel-file-upload-input"
+                      className="btn btn-secondary"
+                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 24px' }}
+                    >
+                      <Upload size={16} />
+                      <span>{importFile ? 'เปลี่ยนไฟล์ที่เลือก' : 'คลิกเพื่อเลือกไฟล์จากเครื่อง'}</span>
+                    </label>
+
+                    {importFile && (
+                      <div style={{ marginTop: '14px', fontSize: '13px', color: '#6ee7b7' }}>
+                        ✓ เลือกไฟล์: <strong>{importFile.name}</strong> ({(importFile.size / 1024).toFixed(1)} KB)
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ตัวเลือก Overwrite */}
+                  <div style={{ marginBottom: '22px', background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13.5px' }}>
+                      <input 
+                        type="checkbox"
+                        checked={overwriteExistingClaims}
+                        onChange={(e) => setOverwriteExistingClaims(e.target.checked)}
+                        style={{ width: '17px', height: '17px', accentColor: 'var(--gold-primary)', cursor: 'pointer' }}
+                      />
+                      <span>
+                        <strong>อัปเดตข้อมูลหากมีเลขที่คำร้อง (Tracking Code) หรือเลขประจำตัวประชาชนเดิมในระบบแล้ว (Overwrite/Update existing)</strong>
+                        <span style={{ display: 'block', fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          หากพบเลขที่คำร้องเดิม ระบบจะอัปเดตรายละเอียด สถานะ และยอดเงินสินไหมให้เป็นข้อมูลล่าสุด
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Error message */}
+                  {importError && (
+                    <div style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--ruby-danger)', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <AlertCircle size={18} />
+                      <span>{importError}</span>
+                    </div>
+                  )}
+
+                  {/* ปุ่มล่าง */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button 
+                      type="button"
+                      onClick={() => setIsImportModalOpen(false)}
+                      className="btn btn-secondary"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button 
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={importLoading || !importFile}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '170px', justifyContent: 'center' }}
+                    >
+                      {importLoading ? 'กำลังอ่านและตรวจสอบไฟล์...' : 'ตรวจสอบและดูตัวอย่าง (Preview)'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Preview Mode */
+                <div>
+                  {/* KPI Summary Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                    <div className="glass-panel" style={{ padding: '12px 16px', borderLeft: '3px solid var(--cyan-accent)' }}>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>แถวทั้งหมดในไฟล์</div>
+                      <div style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginTop: '2px' }}>
+                        {importPreview.totalRows || importPreview.claims?.length || 0} <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)' }}>แถว</span>
+                      </div>
+                    </div>
+
+                    <div className="glass-panel" style={{ padding: '12px 16px', borderLeft: '3px solid var(--emerald-success)' }}>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>พร้อมนำเข้า (ผ่านเกณฑ์)</div>
+                      <div style={{ fontSize: '22px', fontWeight: 700, color: '#6ee7b7', marginTop: '2px' }}>
+                        {importPreview.validCount || importPreview.claims?.length || 0} <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)' }}>เรื่อง</span>
+                      </div>
+                    </div>
+
+                    <div className="glass-panel" style={{ padding: '12px 16px', borderLeft: `3px solid ${(importPreview.errors?.length || 0) > 0 ? 'var(--ruby-danger)' : 'var(--gold-primary)'}` }}>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>ข้อผิดพลาด / คำเตือน</div>
+                      <div style={{ fontSize: '22px', fontWeight: 700, color: (importPreview.errors?.length || 0) > 0 ? '#fca5a5' : 'var(--gold-light)', marginTop: '2px' }}>
+                        {importPreview.errors?.length || 0} <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-muted)' }}>ผิดพลาด / {importPreview.warnings?.length || 0} คำเตือน</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Errors List */}
+                  {importPreview.errors && importPreview.errors.length > 0 && (
+                    <div style={{ background: 'rgba(239, 68, 68, 0.14)', border: '1px solid var(--ruby-danger)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', color: '#fca5a5', fontSize: '12.5px' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <AlertCircle size={16} />
+                        <span>พบข้อผิดพลาดที่ไม่สามารถนำเข้าได้ ({importPreview.errors.length} รายการ):</span>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                        {importPreview.errors.slice(0, 8).map((err, idx) => (
+                          <li key={idx} style={{ marginTop: '2px' }}>
+                            แถวที่ {err.row}: {err.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Warnings List */}
+                  {importPreview.warnings && importPreview.warnings.length > 0 && (
+                    <div style={{ background: 'rgba(212, 175, 55, 0.1)', border: '1px solid rgba(212, 175, 55, 0.3)', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', color: 'var(--gold-light)', fontSize: '12.5px' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Info size={16} />
+                        <span>คำแนะนำและข้อสังเกต ({importPreview.warnings.length} รายการ):</span>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                        {importPreview.warnings.slice(0, 5).map((w, idx) => (
+                          <li key={idx} style={{ marginTop: '2px' }}>
+                            แถวที่ {w.row}: {w.message}
+                          </li>
+                        ))}
+                        {importPreview.warnings.length > 5 && (
+                          <li style={{ marginTop: '2px', color: 'var(--text-dim)' }}>
+                            ...และอีก {importPreview.warnings.length - 5} รายการ
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Preview Table */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#fff', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>ตัวอย่างข้อมูลคำร้อง ({Math.min(importPreview.claims?.length || 0, 15)} รายการแรก)</span>
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-dim)' }}>ไฟล์: {importPreview.fileName}</span>
+                    </div>
+
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border-glass)', borderRadius: '8px', maxHeight: '320px' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ background: 'rgba(255, 255, 255, 0.05)', borderBottom: '1px solid var(--border-glass)' }}>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>ลำดับ</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>เลขที่คำร้อง</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>วันที่รายงาน</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>ผู้สูญเสีย</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>เลข ปชช.</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>สังกัด</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>ประเภทสินไหม</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>ยอดเงิน (บ.)</th>
+                            <th style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>สถานะ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {importPreview.claims?.slice(0, 15).map((c, idx) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                              <td style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>{idx + 1}</td>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--gold-primary)' }}>{c.trackingCode}</td>
+                              <td style={{ padding: '8px 10px' }}>{c.reportDate || '-'}</td>
+                              <td style={{ padding: '8px 10px', color: '#fff', fontWeight: 500 }}>{c.casualtyRank} {c.casualtyFirstName} {c.casualtyLastName}</td>
+                              <td style={{ padding: '8px 10px', color: 'var(--text-dim)' }}>{c.casualtyCitizenId ? formatCitizenId(c.casualtyCitizenId) : '-'}</td>
+                              <td style={{ padding: '8px 10px' }}>{c.unitName}</td>
+                              <td style={{ padding: '8px 10px' }}>
+                                <span className={`badge ${c.claimType === 'HIGH_RISK' ? 'badge-amber' : 'badge-blue'}`} style={{ fontSize: '10px' }}>
+                                  {c.claimType === 'HIGH_RISK' ? 'เสี่ยงภัย' : 'ยามปกติ'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px 10px', fontWeight: 600, color: '#38bdf8' }}>
+                                {Number(c.compensationAmount || 0).toLocaleString()}
+                              </td>
+                              <td style={{ padding: '8px 10px' }}>
+                                <span className={`badge ${c.status === 'PAID' ? 'badge-emerald' : c.status === 'APPROVED' ? 'badge-amber' : 'badge-slate'}`} style={{ fontSize: '10px' }}>
+                                  {CLAIM_STATUS[c.status]?.label || c.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Actions Buttons */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImportPreview(null);
+                        setImportError('');
+                      }}
+                      className="btn btn-secondary"
+                      disabled={importLoading}
+                    >
+                      ← เลือกไฟล์อื่น / ย้อนกลับ
+                    </button>
+
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsImportModalOpen(false)}
+                        className="btn btn-secondary"
+                        disabled={importLoading}
+                      >
+                        ยกเลิก
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleConfirmImport}
+                        className="btn btn-primary"
+                        disabled={importLoading || !importPreview.claims || importPreview.claims.length === 0}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: '180px', justifyContent: 'center' }}
+                      >
+                        <Check size={16} />
+                        <span>{importLoading ? 'กำลังบันทึกลงฐานข้อมูล...' : `ยืนยันนำเข้า (${importPreview.claims?.length || 0} เรื่อง)`}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         </div>
