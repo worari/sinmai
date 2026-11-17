@@ -1,8 +1,9 @@
 // app/submit/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import UnitAutocomplete from '@/components/UnitAutocomplete';
 import { 
   FileCheck, 
   Upload, 
@@ -125,22 +126,36 @@ export default function SubmitClaimPage() {
 
   // โครงสร้างหน่วย 3 ระดับ (ระดับ ทบ. -> ระดับ กองพล -> ระดับ กรม/กองพัน)
   const [allUnits, setAllUnits] = useState(INITIAL_MILITARY_UNITS);
+  const [unitsLoading, setUnitsLoading] = useState(true);
+  const [unitsError, setUnitsError] = useState('');
   const [level1Id, setLevel1Id] = useState('1st_ARMY');
   const [level2Id, setLevel2Id] = useState('9th_INF_DIV');
   const [level3Id, setLevel3Id] = useState('R9_BN1');
   const [subUnitName, setSubUnitName] = useState('');
 
+  // โหลดรายการหน่วยทั้งหมดจาก API (/api/units) เชื่อมโยงฐานข้อมูลจริง 860+ หน่วย
+  const loadUnits = useCallback(async () => {
+    setUnitsLoading(true);
+    try {
+      const res = await fetch('/api/units', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !data.success || !Array.isArray(data.units)) {
+        throw new Error(data.message || 'ไม่สามารถโหลดโครงสร้างหน่วยได้');
+      }
+      setAllUnits(data.units);
+      setUnitsError('');
+      return data.units;
+    } catch (err) {
+      console.error('Fetch units failed', err);
+      setUnitsError(err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูลโครงสร้างหน่วย');
+      return [];
+    } finally {
+      setUnitsLoading(false);
+    }
+  }, []);
+
   // โหลดรายการหน่วยทั้งหมดจาก API และผูกกับสังกัดผู้ใช้งาน หรือโหลดข้อมูลแบบร่าง (ถ้ามี draftId)
   useEffect(() => {
-    fetch('/api/units')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.units)) {
-          setAllUnits(data.units);
-        }
-      })
-      .catch((err) => console.error('Fetch units failed', err));
-
     let activeUser = null;
     const saved = localStorage.getItem('rta_user');
     if (saved) {
@@ -150,24 +165,33 @@ export default function SubmitClaimPage() {
       } catch (e) {}
     }
 
-    // ตรวจสอบพารามิเตอร์ draftId จาก URL
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const targetDraftId = urlParams.get('draftId') || urlParams.get('id');
-      if (targetDraftId) {
-        loadDraftClaim(targetDraftId, activeUser);
-        return;
+    loadUnits().then((fetchedUnits) => {
+      const list = fetchedUnits && fetchedUnits.length > 0 ? fetchedUnits : allUnits;
+
+      // ตรวจสอบพารามิเตอร์ draftId จาก URL
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetDraftId = urlParams.get('draftId') || urlParams.get('id');
+        if (targetDraftId) {
+          loadDraftClaim(targetDraftId, activeUser, list);
+          return;
+        }
       }
-    }
 
-    if (activeUser) {
-      resolveInitialUnitHierarchy(activeUser.unitId || '9th_INF_DIV');
-    } else {
-      resolveInitialUnitHierarchy('9th_INF_DIV');
-    }
-  }, []);
+      if (activeUser?.unitId) {
+        resolveInitialUnitHierarchy(activeUser.unitId, list);
+      } else {
+        const defaultTarget = list.find((u) => u.id === '9th_INF_DIV') || list[0];
+        resolveInitialUnitHierarchy(defaultTarget?.id || '9th_INF_DIV', list);
+      }
+    });
 
-  const loadDraftClaim = async (draftId, user) => {
+    const handleFocus = () => loadUnits();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [loadUnits]);
+
+  const loadDraftClaim = async (draftId, user, unitsList = allUnits) => {
     setLoadingDraft(true);
     try {
       const queryParam = user?.id ? `?userId=${user.id}` : '';
@@ -233,9 +257,13 @@ export default function SubmitClaimPage() {
         );
       }
 
-      if (c.unitLevel1Id) setLevel1Id(c.unitLevel1Id);
-      if (c.unitLevel2Id) setLevel2Id(c.unitLevel2Id);
-      if (c.unitLevel3Id) setLevel3Id(c.unitLevel3Id);
+      if (c.unitId) {
+        resolveInitialUnitHierarchy(c.unitId, unitsList);
+      } else if (c.unitLevel1Id) {
+        setLevel1Id(c.unitLevel1Id);
+        if (c.unitLevel2Id) setLevel2Id(c.unitLevel2Id);
+        if (c.unitLevel3Id) setLevel3Id(c.unitLevel3Id);
+      }
       if (c.subUnitName) setSubUnitName(c.subUnitName);
     } catch (err) {
       console.error(err);
@@ -245,8 +273,9 @@ export default function SubmitClaimPage() {
     }
   };
 
-  const resolveInitialUnitHierarchy = (targetUnitId) => {
-    const unit = findUnitById(targetUnitId, allUnits);
+  const resolveInitialUnitHierarchy = (targetUnitId, unitsList = allUnits) => {
+    const list = unitsList && unitsList.length > 0 ? unitsList : allUnits;
+    const unit = findUnitById(targetUnitId, list);
     let l1 = '1st_ARMY';
     let l2 = '';
     let l3 = '';
@@ -255,19 +284,30 @@ export default function SubmitClaimPage() {
       if (unit.level === 3) {
         l3 = unit.id;
         l2 = unit.parentId || '';
-        const parentL2 = findUnitById(l2, allUnits);
-        l1 = parentL2 ? parentL2.parentId || '1st_ARMY' : '1st_ARMY';
+        const parentL2 = findUnitById(l2, list);
+        l1 = parentL2 ? (parentL2.parentId || parentL2.id) : '1st_ARMY';
       } else if (unit.level === 2) {
         l2 = unit.id;
         l1 = unit.parentId || '1st_ARMY';
-        const children = getLevel3Units(l2, allUnits);
+        const children = getLevel3Units(l2, list);
         l3 = children.length > 0 ? children[0].id : '';
       } else if (unit.level === 1) {
         l1 = unit.id;
-        const childrenL2 = getLevel2Units(l1, allUnits);
+        const childrenL2 = getLevel2Units(l1, list);
         l2 = childrenL2.length > 0 ? childrenL2[0].id : '';
         if (l2) {
-          const childrenL3 = getLevel3Units(l2, allUnits);
+          const childrenL3 = getLevel3Units(l2, list);
+          l3 = childrenL3.length > 0 ? childrenL3[0].id : '';
+        }
+      }
+    } else if (list.length > 0) {
+      const firstL1 = getLevel1Units(list)[0];
+      if (firstL1) {
+        l1 = firstL1.id;
+        const childrenL2 = getLevel2Units(l1, list);
+        l2 = childrenL2.length > 0 ? childrenL2[0].id : '';
+        if (l2) {
+          const childrenL3 = getLevel3Units(l2, list);
           l3 = childrenL3.length > 0 ? childrenL3[0].id : '';
         }
       }
@@ -276,16 +316,17 @@ export default function SubmitClaimPage() {
     setLevel1Id(l1);
     setLevel2Id(l2);
     setLevel3Id(l3);
-    updateFormUnit(l1, l2, l3, subUnitName);
+    updateFormUnit(l1, l2, l3, subUnitName, list, unit);
   };
 
-  const updateFormUnit = (l1, l2, l3, sub) => {
-    const l1Obj = findUnitById(l1, allUnits);
-    const l2Obj = findUnitById(l2, allUnits);
-    const l3Obj = findUnitById(l3, allUnits);
+  const updateFormUnit = (l1, l2, l3, sub, unitsList = allUnits, explicitUnit = null) => {
+    const list = unitsList && unitsList.length > 0 ? unitsList : allUnits;
+    const l1Obj = findUnitById(l1, list);
+    const l2Obj = findUnitById(l2, list);
+    const l3Obj = findUnitById(l3, list);
 
-    const activeObj = l3Obj || l2Obj || l1Obj;
-    const finalUnitId = activeObj?.id || l1;
+    const activeObj = explicitUnit || l3Obj || l2Obj || l1Obj;
+    const finalUnitId = activeObj?.id || l3 || l2 || l1;
     const finalUnitName = activeObj?.name || 'กองทัพบก';
 
     const pathParts = [];
@@ -294,7 +335,11 @@ export default function SubmitClaimPage() {
     if (l3Obj) pathParts.push(l3Obj.shortName || l3Obj.name);
     if (sub && sub.trim()) pathParts.push(sub.trim());
 
-    const unitPath = pathParts.join(' ➔ ');
+    let unitPath = pathParts.join(' ➔ ');
+    if (!unitPath && activeObj) {
+      unitPath = getUnitBreadcrumb(activeObj.id, list);
+      if (sub && sub.trim()) unitPath += ` ➔ ${sub.trim()}`;
+    }
 
     setFormData((prev) => ({
       ...prev,
@@ -311,6 +356,74 @@ export default function SubmitClaimPage() {
     }));
   };
 
+  // เลือกหน่วยจาก UnitAutocomplete (รูปแบบเดียวกับหน้าลงทะเบียน)
+  const handleUnitSelect = (selectedUnit) => {
+    if (!selectedUnit) {
+      setFormData((prev) => ({
+        ...prev,
+        unitId: '',
+        unitName: '',
+        unitPath: ''
+      }));
+      return;
+    }
+
+    let l1 = '';
+    let l2 = '';
+    let l3 = '';
+
+    const lvl = Number(selectedUnit.level) || 3;
+    if (lvl === 3) {
+      l3 = selectedUnit.id;
+      l2 = selectedUnit.parentId || '';
+      const parentL2 = findUnitById(l2, allUnits);
+      if (parentL2) {
+        if (parentL2.level === 1) {
+          l1 = parentL2.id;
+        } else {
+          l1 = parentL2.parentId || '';
+        }
+      }
+    } else if (lvl === 2) {
+      l2 = selectedUnit.id;
+      l1 = selectedUnit.parentId || '';
+      const children = getLevel3Units(l2, allUnits);
+      l3 = children.length > 0 ? children[0].id : '';
+    } else {
+      l1 = selectedUnit.id;
+      const childrenL2 = getLevel2Units(l1, allUnits);
+      l2 = childrenL2.length > 0 ? childrenL2[0].id : '';
+      if (l2) {
+        const childrenL3 = getLevel3Units(l2, allUnits);
+        l3 = childrenL3.length > 0 ? childrenL3[0].id : '';
+      }
+    }
+
+    if (!l1) {
+      let curr = selectedUnit;
+      const visited = new Set([curr.id]);
+      while (curr.parentId && !visited.has(curr.parentId)) {
+        visited.add(curr.parentId);
+        const p = findUnitById(curr.parentId, allUnits);
+        if (!p) break;
+        if (p.level === 1) {
+          l1 = p.id;
+          break;
+        }
+        curr = p;
+      }
+      if (!l1) {
+        const firstL1 = getLevel1Units(allUnits)[0];
+        l1 = firstL1 ? firstL1.id : '';
+      }
+    }
+
+    setLevel1Id(l1);
+    setLevel2Id(l2);
+    setLevel3Id(l3);
+    updateFormUnit(l1, l2, l3, subUnitName, allUnits, selectedUnit);
+  };
+
   const handleLevel1Change = (newL1) => {
     setLevel1Id(newL1);
     const availableL2 = getLevel2Units(newL1, allUnits);
@@ -324,7 +437,7 @@ export default function SubmitClaimPage() {
     }
     setLevel3Id(nextL3);
 
-    updateFormUnit(newL1, nextL2, nextL3, subUnitName);
+    updateFormUnit(newL1, nextL2, nextL3, subUnitName, allUnits);
   };
 
   const handleLevel2Change = (newL2) => {
@@ -336,17 +449,17 @@ export default function SubmitClaimPage() {
     }
     setLevel3Id(nextL3);
 
-    updateFormUnit(level1Id, newL2, nextL3, subUnitName);
+    updateFormUnit(level1Id, newL2, nextL3, subUnitName, allUnits);
   };
 
   const handleLevel3Change = (newL3) => {
     setLevel3Id(newL3);
-    updateFormUnit(level1Id, level2Id, newL3, subUnitName);
+    updateFormUnit(level1Id, level2Id, newL3, subUnitName, allUnits);
   };
 
   const handleSubUnitChange = (sub) => {
     setSubUnitName(sub);
-    updateFormUnit(level1Id, level2Id, level3Id, sub);
+    updateFormUnit(level1Id, level2Id, level3Id, sub, allUnits);
   };
 
   const handleCitizenIdChange = async (val) => {
@@ -629,6 +742,11 @@ export default function SubmitClaimPage() {
     setSuccessMsg('');
 
     // Validation
+    if (!formData.unitId) {
+      setErrorMsg('กรุณาพิมพ์ค้นหาหรือคลิกเลือกหน่วยสังกัดของผู้สูญเสียจากรายการโครงสร้างหน่วย');
+      return;
+    }
+
     if (!formData.casualtyFirstName || !formData.casualtyLastName) {
       setErrorMsg('กรุณากรอกชื่อและนามสกุลของผู้สูญเสีย');
       return;
@@ -975,17 +1093,57 @@ export default function SubmitClaimPage() {
             </div>
           </div>
 
-          {/* แถวที่ 2: โครงสร้างสายการบังคับบัญชา 3 ระดับ (Cascading Selectors) */}
+          {/* แถวที่ 2: โครงสร้างสายการบังคับบัญชา 3 ระดับ พร้อมช่องค้นหา Autocomplete รูปแบบเดียวกับหน้าลงทะเบียน */}
           <div style={{
             background: 'rgba(255, 255, 255, 0.02)',
-            border: '1px solid rgba(212, 175, 55, 0.2)',
+            border: '1px solid rgba(212, 175, 55, 0.25)',
             borderRadius: '12px',
-            padding: '18px',
+            padding: '20px',
             marginBottom: '16px'
           }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gold-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Layers size={16} />
-              <span>เลือกโครงสร้างหน่วยสังกัดตามลำดับสายการบังคับบัญชา (3 ระดับ)</span>
+            {/* ช่องกรอกข้อมูลแบบเดียวกับหน้าลงทะเบียน: หน่วยสังกัด (สิทธิจะถูกผูกกับหน่วยนี้) */}
+            <div className="form-group" style={{ marginBottom: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                <label className="form-label required" style={{ margin: 0, fontSize: '13.5px', color: 'var(--gold-light)' }}>
+                  หน่วยสังกัด (สิทธิจะถูกผูกกับหน่วยนี้)
+                </label>
+                <span style={{ fontSize: '11.5px', color: 'var(--cyan-accent)' }}>
+                  * พิมพ์ชื่อหน่วย ชื่อย่อ รหัสหน่วย หรือจังหวัดเพื่อค้นหา
+                </span>
+              </div>
+              <UnitAutocomplete
+                units={allUnits}
+                value={formData.unitId}
+                onChange={handleUnitSelect}
+                loading={unitsLoading}
+                error={unitsError}
+                onRetry={loadUnits}
+                placeholder="พิมพ์ค้นหาชื่อหน่วย, ตัวย่อ (เช่น พล.ร.9, ร.19 พัน.1, นสศ.), รหัสหน่วย หรือจังหวัด..."
+                required
+              />
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '6px' }}>
+                * ข้อมูลเชื่อมโยงโดยตรงกับฐานข้อมูลในเมนู &quot;จัดการโครงสร้างหน่วย&quot; ({allUnits.length > 0 ? `${allUnits.length} หน่วย` : 'กำลังโหลด...'})
+              </div>
+            </div>
+
+            {/* แถบหัวข้อย่อยสำหรับ 3 ระดับ */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '12px',
+              paddingTop: '12px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              flexWrap: 'wrap',
+              gap: '6px'
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gold-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={16} />
+                <span>หรือปรับเลือกลำดับสายการบังคับบัญชา (3 ระดับ เชื่อมโยงฐานข้อมูล)</span>
+              </div>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                ซิงค์กับหน่วยที่ค้นหาอัตโนมัติ
+              </span>
             </div>
 
             <div className="grid-cols-3" style={{ gap: '14px' }}>
