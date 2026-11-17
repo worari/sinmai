@@ -17,8 +17,15 @@ import {
   Award,
   Building2,
   Info,
-  RotateCcw
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Search,
+  X,
+  Eye
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { getPolicyYear } from '@/lib/thai-utils';
 
 const YEAR_COLORS = [
@@ -95,6 +102,30 @@ export default function ReportsPage() {
   const [metricMode, setMetricMode] = useState('compare'); // 'compare' | 'lossType' | 'claimType' | 'amount'
   const [topUnitsScope, setTopUnitsScope] = useState('active'); // 'active' | 'combined'
   const [hoveredMonth, setHoveredMonth] = useState(null);
+
+  // สรุปสาเหตุการสูญเสีย: สถานะการแสดงผล 20 อันดับแรก / ขยายทั้งหมด และ Modal รายงานฉบับละเอียด
+  const [isCausesExpanded, setIsCausesExpanded] = useState(false);
+  const [isCauseModalOpen, setIsCauseModalOpen] = useState(false);
+  const [causeSearchQuery, setCauseSearchQuery] = useState('');
+
+  const handleExportCausesExcel = (causesList, totalCasualties) => {
+    try {
+      const headers = ['อันดับ', 'สาเหตุการสูญเสีย', 'จำนวนผู้สูญเสีย (นาย)', 'สัดส่วนร้อยละ (%)'];
+      const rows = causesList.map((item, idx) => {
+        const percent = totalCasualties > 0 ? ((item[1] / totalCasualties) * 100).toFixed(2) : '0.00';
+        return [idx + 1, item[0], item[1], `${percent}%`];
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [{ wch: 10 }, { wch: 50 }, { wch: 25 }, { wch: 20 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'สรุปสาเหตุการสูญเสีย');
+      XLSX.writeFile(wb, `รายงานสาเหตุการสูญเสีย_รอบปี_${selectedPolicyYear}.xlsx`);
+    } catch (err) {
+      console.error('Export Excel failed:', err);
+      alert('ไม่สามารถส่งออกไฟล์ Excel ได้: ' + (err.message || 'เกิดข้อผิดพลาด'));
+    }
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('rta_user');
@@ -1419,30 +1450,641 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* สาเหตุการสูญเสียในรอบปีที่เลือก */}
-      <div className="glass-panel" style={{ padding: '24px' }}>
-        <h2 style={{ fontSize: '17px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Flame size={18} color="var(--ruby-danger)" />
-          <span>สรุปสาเหตุการสูญเสีย (รอบปี {selectedPolicyYear - 1}/{selectedPolicyYear})</span>
-        </h2>
-
-        <div className="grid-cols-2" style={{ gap: '12px' }}>
-          {stats && Object.keys(stats.causeStats || {}).length > 0 ? (
-            Object.entries(stats.causeStats)
+      {/* ========================================================================= */}
+      {/* สรุปสาเหตุการสูญเสียในรอบปีที่เลือก (แสดง 20 อันดับแรก + ปุ่ม More อ่านต่อ + ตารางวิเคราะห์ละเอียด) */}
+      {/* ========================================================================= */}
+      {(() => {
+        const allSortedCauses = (stats && stats.causeStats)
+          ? Object.entries(stats.causeStats)
+              .filter(([cause, count]) => Boolean(cause) && count > 0)
               .sort((a, b) => b[1] - a[1])
-              .map(([cause, count]) => (
-                <div key={cause} style={{ padding: '12px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', borderLeft: '3px solid var(--ruby-danger)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '13px', color: '#fff' }}>{cause}</div>
-                  <span className="badge badge-amber" style={{ fontWeight: 600 }}>{count} นาย</span>
+          : [];
+
+        const totalCauseCasualties = allSortedCauses.reduce((sum, [, count]) => sum + count, 0);
+        const maxCauseCount = allSortedCauses.length > 0 ? allSortedCauses[0][1] : 1;
+        const displayedCauses = isCausesExpanded ? allSortedCauses : allSortedCauses.slice(0, 20);
+        const remainingCount = Math.max(0, allSortedCauses.length - 20);
+
+        return (
+          <div className="glass-panel" style={{ padding: '24px', position: 'relative' }}>
+            {/* Card Header: Title, Stats pills & Action Buttons */}
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              marginBottom: '20px',
+              paddingBottom: '14px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
+            }}>
+              <div>
+                <h2 style={{ fontSize: '17px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#fff', fontWeight: 600 }}>
+                  <span style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: 'var(--ruby-danger)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Flame size={18} />
+                  </span>
+                  <span>สรุปสาเหตุการสูญเสีย (รอบปี {selectedPolicyYear - 1}/{selectedPolicyYear})</span>
+                </h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontSize: '12px', color: 'var(--text-dim)', flexWrap: 'wrap' }}>
+                  <span>แสดง <strong>{displayedCauses.length}</strong> จากทั้งหมด <strong>{allSortedCauses.length}</strong> สาเหตุ</span>
+                  <span>•</span>
+                  <span>รวมกำลังพลสูญเสีย <strong>{totalCauseCasualties}</strong> นาย</span>
+                  {allSortedCauses.length > 20 && !isCausesExpanded && (
+                    <>
+                      <span>•</span>
+                      <span style={{ color: 'var(--gold-primary)', background: 'rgba(212, 175, 55, 0.1)', padding: '1px 8px', borderRadius: '12px' }}>
+                        20 อันดับแรกที่มีการสูญเสียสูงสุด
+                      </span>
+                    </>
+                  )}
                 </div>
-              ))
-          ) : (
-            <p style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '20px 0', gridColumn: 'span 2' }}>
-              ยังไม่มีข้อมูลสาเหตุในรอบปีที่เลือก
-            </p>
-          )}
+              </div>
+
+              {/* Action: Open Detailed Report Modal */}
+              {allSortedCauses.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsCauseModalOpen(true)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(212, 175, 55, 0.15) 100%)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#fff',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.3) 0%, rgba(212, 175, 55, 0.25) 100%)';
+                    e.currentTarget.style.borderColor = 'var(--ruby-danger)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(212, 175, 55, 0.15) 100%)';
+                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                  }}
+                  title="เปิดตารางวิเคราะห์สถิติสาเหตุการสูญเสียทั้งหมด พร้อมค้นหาและส่งออก Excel"
+                >
+                  <FileText size={15} color="var(--gold-primary)" />
+                  <span>กดดูรายงานเพิ่มเติม ({allSortedCauses.length} สาเหตุ)</span>
+                </button>
+              )}
+            </div>
+
+            {/* Grid of Causes: Styled Top 20 Cards */}
+            {allSortedCauses.length > 0 ? (
+              <>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                  gap: '12px'
+                }}>
+                  {displayedCauses.map(([cause, count], index) => {
+                    const rank = index + 1;
+                    const percent = totalCauseCasualties > 0 ? ((count / totalCauseCasualties) * 100).toFixed(1) : 0;
+                    const relativePercent = Math.max(8, (count / maxCauseCount) * 100);
+
+                    // Rank badge styling
+                    let rankBg = 'rgba(255, 255, 255, 0.08)';
+                    let rankColor = '#94a3b8';
+                    let rankBorder = 'rgba(255, 255, 255, 0.12)';
+                    let cardBorderLeft = '3px solid rgba(255, 255, 255, 0.2)';
+
+                    if (rank === 1) {
+                      rankBg = 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)';
+                      rankColor = '#ffffff';
+                      rankBorder = '#fbbf24';
+                      cardBorderLeft = '3px solid #f59e0b';
+                    } else if (rank === 2) {
+                      rankBg = 'linear-gradient(135deg, #94a3b8 0%, #475569 100%)';
+                      rankColor = '#ffffff';
+                      rankBorder = '#cbd5e1';
+                      cardBorderLeft = '3px solid #94a3b8';
+                    } else if (rank === 3) {
+                      rankBg = 'linear-gradient(135deg, #d97706 0%, #78350f 100%)';
+                      rankColor = '#ffffff';
+                      rankBorder = '#f59e0b';
+                      cardBorderLeft = '3px solid #d97706';
+                    } else if (rank <= 10) {
+                      cardBorderLeft = '3px solid var(--ruby-danger)';
+                    }
+
+                    return (
+                      <div
+                        key={cause}
+                        style={{
+                          padding: '12px 14px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          borderRadius: '8px',
+                          borderLeft: cardBorderLeft,
+                          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                          borderRight: '1px solid rgba(255, 255, 255, 0.05)',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          transition: 'all 0.15s ease',
+                          position: 'relative',
+                          overflow: 'hidden'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                          e.currentTarget.style.transform = 'translateY(0)';
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                            {/* Rank Badge */}
+                            <span style={{
+                              width: '26px',
+                              height: '26px',
+                              borderRadius: '6px',
+                              background: rankBg,
+                              border: `1px solid ${rankBorder}`,
+                              color: rankColor,
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0
+                            }}>
+                              {rank}
+                            </span>
+
+                            {/* Cause Title */}
+                            <span
+                              title={cause}
+                              style={{
+                                fontSize: '13px',
+                                color: '#f8fafc',
+                                fontWeight: 500,
+                                lineHeight: 1.35,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {cause}
+                            </span>
+                          </div>
+
+                          {/* Count & Percent Badges */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                            <span
+                              className="badge badge-amber"
+                              style={{
+                                fontWeight: 600,
+                                fontSize: '12px',
+                                padding: '3px 8px',
+                                background: rank <= 3 ? 'rgba(245, 158, 11, 0.2)' : undefined
+                              }}
+                            >
+                              {count} นาย
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>
+                              ({percent}%)
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Relative Visual Bar */}
+                        <div style={{ width: '100%', height: '3px', background: 'rgba(255, 255, 255, 0.06)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${relativePercent}%`,
+                            height: '100%',
+                            background: rank <= 3 ? 'linear-gradient(90deg, #f59e0b, #ef4444)' : 'linear-gradient(90deg, #06b6d4, #3b82f6)',
+                            borderRadius: '2px',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Footer Controls: More / Read More Button & Full Report Button */}
+                {allSortedCauses.length > 20 && (
+                  <div style={{
+                    marginTop: '20px',
+                    paddingTop: '16px',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px'
+                  }}>
+                    {/* Toggle Expand / Collapse Button (ปุ่ม More / อ่านต่อ) */}
+                    <button
+                      type="button"
+                      onClick={() => setIsCausesExpanded(!isCausesExpanded)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '9px 18px',
+                        borderRadius: '8px',
+                        background: isCausesExpanded ? 'rgba(255, 255, 255, 0.08)' : 'rgba(212, 175, 55, 0.12)',
+                        border: isCausesExpanded ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(212, 175, 55, 0.35)',
+                        color: isCausesExpanded ? 'var(--text-muted)' : 'var(--gold-primary)',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = isCausesExpanded ? 'rgba(255, 255, 255, 0.12)' : 'rgba(212, 175, 55, 0.2)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isCausesExpanded ? 'rgba(255, 255, 255, 0.08)' : 'rgba(212, 175, 55, 0.12)';
+                      }}
+                    >
+                      {isCausesExpanded ? (
+                        <>
+                          <ChevronUp size={16} />
+                          <span>ย่อการแสดงผล (แสดง 20 อันดับแรก)</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown size={16} />
+                          <span>ดูเพิ่มเติม (อีก {remainingCount} รายการ)</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Secondary button: Open Modal Report */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                        * มีสาเหตุอื่นๆ อีก {remainingCount} รายการ
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsCauseModalOpen(true)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#fff',
+                          fontSize: '12.5px',
+                          fontWeight: 500,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Eye size={14} color="var(--cyan-accent)" />
+                        <span>เปิดดูตารางวิเคราะห์ทั้งหมด</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '30px 0' }}>
+                ยังไม่มีข้อมูลสาเหตุในรอบปีที่เลือก
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL: รายงานสถิติสาเหตุการสูญเสียฉบับละเอียด (Detailed Cause Analysis Modal) */}
+      {/* ========================================================================= */}
+      {isCauseModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '960px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+            overflow: 'hidden',
+            borderRadius: '14px'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255, 255, 255, 0.02)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: 'var(--ruby-danger)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Flame size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '17px', margin: 0, color: '#fff', fontWeight: 600 }}>
+                    รายงานสถิติสาเหตุการสูญเสียฉบับละเอียด (รอบปี {selectedPolicyYear - 1}/{selectedPolicyYear})
+                  </h3>
+                  <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--text-dim)' }}>
+                    ตารางวิเคราะห์สาเหตุการสูญเสียกำลังพลทั้งหมด พร้อมสัดส่วนร้อยละและการส่งออกข้อมูล
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCauseModalOpen(false);
+                  setCauseSearchQuery('');
+                }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                  e.currentTarget.style.color = '#fff';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            {(() => {
+              const allCauses = (stats && stats.causeStats)
+                ? Object.entries(stats.causeStats)
+                    .filter(([cause, count]) => Boolean(cause) && count > 0)
+                    .sort((a, b) => b[1] - a[1])
+                : [];
+
+              const totalCasualties = allCauses.reduce((sum, [, count]) => sum + count, 0);
+              const maxCount = allCauses.length > 0 ? allCauses[0][1] : 1;
+              const top5Count = allCauses.slice(0, 5).reduce((sum, [, count]) => sum + count, 0);
+              const top5Percent = totalCasualties > 0 ? ((top5Count / totalCasualties) * 100).toFixed(1) : 0;
+
+              const filteredCauses = allCauses.filter(([cause]) =>
+                !causeSearchQuery.trim() || cause.toLowerCase().includes(causeSearchQuery.toLowerCase())
+              );
+
+              return (
+                <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* KPI Mini-Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                    <div style={{ padding: '12px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', borderLeft: '3px solid var(--ruby-danger)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>สาเหตุการสูญเสียทั้งหมด</div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginTop: '4px' }}>
+                        {allCauses.length} <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-dim)' }}>รายการ</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', borderLeft: '3px solid var(--gold-primary)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>กำลังพลสูญเสียรวม</div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--gold-primary)', marginTop: '4px' }}>
+                        {totalCasualties} <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-dim)' }}>นาย</span>
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', borderLeft: '3px solid var(--cyan-accent)' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>สาเหตุอันดับ 1 สูงสุด</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={allCauses[0]?.[0]}>
+                        {allCauses[0] ? `${allCauses[0][0]} (${allCauses[0][1]} นาย)` : '-'}
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 14px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>สัดส่วน 5 อันดับแรกรวม</div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
+                        {top5Percent}% <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-dim)' }}>({top5Count} นาย)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Toolbar: Search input & Export Excel */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flex: 1, minWidth: '240px', maxWidth: '400px' }}>
+                      <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+                      <input
+                        type="text"
+                        placeholder="ค้นหาสาเหตุการสูญเสีย... (เช่น มะเร็ง, หัวใจ, รถ)"
+                        value={causeSearchQuery}
+                        onChange={(e) => setCauseSearchQuery(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px 8px 34px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '12.5px',
+                          outline: 'none'
+                        }}
+                      />
+                      {causeSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setCauseSearchQuery('')}
+                          style={{
+                            position: 'absolute',
+                            right: '10px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-dim)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleExportCausesExcel(allCauses, totalCasualties)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#34d399',
+                        fontSize: '12.5px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.25)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(16, 185, 129, 0.15)';
+                      }}
+                    >
+                      <Download size={14} />
+                      <span>ส่งออก Excel ({allCauses.length} สาเหตุ)</span>
+                    </button>
+                  </div>
+
+                  {/* Detailed Table */}
+                  <div style={{ maxHeight: '420px', overflowY: 'auto', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: '#0b1120', zIndex: 2 }}>
+                        <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                          <th style={{ padding: '10px 14px', width: '70px', color: 'var(--text-dim)', fontWeight: 600 }}>อันดับ</th>
+                          <th style={{ padding: '10px 14px', color: 'var(--text-dim)', fontWeight: 600 }}>สาเหตุการสูญเสีย</th>
+                          <th style={{ padding: '10px 14px', width: '130px', textAlign: 'right', color: 'var(--text-dim)', fontWeight: 600 }}>จำนวนสูญเสีย</th>
+                          <th style={{ padding: '10px 14px', width: '110px', textAlign: 'right', color: 'var(--text-dim)', fontWeight: 600 }}>สัดส่วน (%)</th>
+                          <th style={{ padding: '10px 14px', width: '160px', color: 'var(--text-dim)', fontWeight: 600 }}>กราฟสัดส่วน</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCauses.length > 0 ? (
+                          filteredCauses.map(([cause, count], idx) => {
+                            const originalRank = allCauses.findIndex(([c]) => c === cause) + 1;
+                            const percent = totalCasualties > 0 ? ((count / totalCasualties) * 100).toFixed(1) : 0;
+                            const barPercent = Math.max(5, (count / maxCount) * 100);
+
+                            return (
+                              <tr
+                                key={cause}
+                                style={{
+                                  borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                                  background: idx % 2 === 0 ? 'transparent' : 'rgba(255, 255, 255, 0.015)'
+                                }}
+                              >
+                                <td style={{ padding: '10px 14px' }}>
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '6px',
+                                    fontSize: '11.5px',
+                                    fontWeight: 700,
+                                    background: originalRank <= 3 ? (originalRank === 1 ? '#f59e0b' : originalRank === 2 ? '#94a3b8' : '#d97706') : 'rgba(255, 255, 255, 0.08)',
+                                    color: originalRank <= 3 ? '#000' : '#cbd5e1'
+                                  }}>
+                                    {originalRank}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', color: '#fff', fontWeight: 500 }}>
+                                  {cause}
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                  <span className="badge badge-amber" style={{ fontWeight: 600 }}>
+                                    {count} นาย
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                  {percent}%
+                                </td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <div style={{ width: '100%', height: '6px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{
+                                      width: `${barPercent}%`,
+                                      height: '100%',
+                                      background: originalRank <= 3 ? 'linear-gradient(90deg, #f59e0b, #ef4444)' : 'linear-gradient(90deg, #06b6d4, #3b82f6)',
+                                      borderRadius: '3px'
+                                    }} />
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-dim)' }}>
+                              ไม่พบสาเหตุที่ตรงกับคำค้นหา "{causeSearchQuery}"
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '14px 24px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255, 255, 255, 0.02)'
+            }}>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                * ข้อมูลประมวลผลจากฐานข้อมูลคำร้องสินไหม ทบ. รอบปี {selectedPolicyYear - 1}/{selectedPolicyYear}
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setIsCauseModalOpen(false);
+                  setCauseSearchQuery('');
+                }}
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {loading && (
         <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12.5px', color: 'var(--text-dim)' }}>
