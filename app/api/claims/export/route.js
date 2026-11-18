@@ -36,16 +36,24 @@ export async function GET(request) {
       );
     }
 
-    // Filter by status
-    if (status !== 'ALL') {
-      claims = claims.filter((c) => c.status === status);
+    // Filter by status (รองรับทั้งกลุ่มสถานะหลักและรายสถานะ)
+    if (status && status !== 'ALL') {
+      if (status === 'GROUP_IN_PROGRESS') {
+        claims = claims.filter((c) => ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_APPROVAL'].includes(c.status));
+      } else if (status === 'GROUP_APPROVED') {
+        claims = claims.filter((c) => ['APPROVED', 'INSURANCE_PROCESSING', 'DOC_REQUESTED'].includes(c.status));
+      } else if (status === 'GROUP_PAID') {
+        claims = claims.filter((c) => c.status === 'PAID' || c.status === 'SK_NOTIFIED');
+      } else {
+        claims = claims.filter((c) => c.status === status);
+      }
     }
 
     // Filter by SLA
     if (sla !== 'ALL') {
       const now = new Date();
       claims = claims.filter((c) => {
-        const created = new Date(c.createdAt || c.reportDate);
+        const created = new Date(c.reportDate || c.createdAt);
         const days = Math.floor((now - created) / (1000 * 60 * 60 * 24));
         const remaining = 30 - days;
         if (sla === 'OVERDUE') return remaining <= 0 && c.status !== 'SK_NOTIFIED' && c.status !== 'PAID';
@@ -60,12 +68,31 @@ export async function GET(request) {
       claims = claims.filter((c) => c.unitId === unitId);
     }
 
-    // Filter by date range
+    // Filter by date range (เปรียบเทียบเฉพาะ YYYY-MM-DD แบบ inclusive ทั้งวันเริ่มต้นและวันสิ้นสุด)
+    const getClaimDateKey = (c) => {
+      const raw = c.reportDate || c.createdAt || '';
+      if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        return raw.slice(0, 10);
+      }
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return '';
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
     if (startDate) {
-      claims = claims.filter((c) => (c.reportDate || c.createdAt) >= startDate);
+      claims = claims.filter((c) => {
+        const key = getClaimDateKey(c);
+        return key && key >= startDate;
+      });
     }
     if (endDate) {
-      claims = claims.filter((c) => (c.reportDate || c.createdAt) <= endDate);
+      claims = claims.filter((c) => {
+        const key = getClaimDateKey(c);
+        return key && key <= endDate;
+      });
     }
 
     const allUnits = db.getAllUnits();

@@ -30,7 +30,8 @@ import {
   FileSpreadsheet,
   FileUp,
   HelpCircle,
-  Info
+  Info,
+  RotateCcw
 } from 'lucide-react';
 import { formatThaiDate, REQUIRED_DOCUMENTS, validateAttachmentFile, MILITARY_RANKS, getPersonnelTypeFromRank, getGenderFromRank, validateCitizenId, validateName } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
@@ -40,6 +41,40 @@ import PaginationBar from '@/components/PaginationBar';
 import { getSocketClient } from '@/lib/socket-client';
 
 const CLAIMS_PER_PAGE = 10;
+
+const getClaimDateKey = (claim) => {
+  const raw = claim?.reportDate || claim?.createdAt || '';
+  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const matchesStatusFilter = (claim, filterValue) => {
+  if (!filterValue || filterValue === 'ALL') return true;
+  if (filterValue === 'GROUP_IN_PROGRESS') {
+    return ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_APPROVAL'].includes(claim.status);
+  }
+  if (filterValue === 'GROUP_APPROVED') {
+    return ['APPROVED', 'INSURANCE_PROCESSING', 'DOC_REQUESTED'].includes(claim.status);
+  }
+  if (filterValue === 'GROUP_PAID') {
+    return claim.status === 'PAID' || claim.status === 'SK_NOTIFIED';
+  }
+  return claim.status === filterValue;
+};
+
+const toLocalYMD = (dateObj) => {
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 export default function ClaimsListPage() {
   const [claims, setClaims] = useState([]);
@@ -51,6 +86,8 @@ export default function ClaimsListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [slaFilter, setSlaFilter] = useState('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
   // CRUD Modals State
@@ -140,29 +177,48 @@ export default function ClaimsListPage() {
   useEffect(() => {
     let result = [...claims];
 
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (c) =>
-          c.trackingCode.toLowerCase().includes(q) ||
-          c.casualtyFirstName.toLowerCase().includes(q) ||
-          c.casualtyLastName.toLowerCase().includes(q) ||
-          (c.casualtyCitizenId || '').includes(q) ||
-          (c.unitName || '').toLowerCase().includes(q)
-      );
+    // Custom Date Range filter (ช่วงวันที่เริ่มต้น - สิ้นสุด แบบ inclusive)
+    if (startDate) {
+      result = result.filter((c) => {
+        const key = getClaimDateKey(c);
+        return key && key >= startDate;
+      });
+    }
+    if (endDate) {
+      result = result.filter((c) => {
+        const key = getClaimDateKey(c);
+        return key && key <= endDate;
+      });
     }
 
-    // Status filter
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter((c) => {
+        const fullName = `${c.casualtyRank || ''} ${c.casualtyFirstName || ''} ${c.casualtyLastName || ''}`.toLowerCase();
+        const cause = `${c.causeOfLoss || ''} ${c.lossSpecificCause || ''}`.toLowerCase();
+        return (
+          (c.trackingCode || '').toLowerCase().includes(q) ||
+          (c.casualtyFirstName || '').toLowerCase().includes(q) ||
+          (c.casualtyLastName || '').toLowerCase().includes(q) ||
+          fullName.includes(q) ||
+          (c.casualtyCitizenId || '').includes(q) ||
+          (c.unitName || '').toLowerCase().includes(q) ||
+          cause.includes(q)
+        );
+      });
+    }
+
+    // Status filter (รองรับทั้งกลุ่มสถานะจากการ์ดสรุปและสถานะรายขั้น)
     if (statusFilter !== 'ALL') {
-      result = result.filter((c) => c.status === statusFilter);
+      result = result.filter((c) => matchesStatusFilter(c, statusFilter));
     }
 
     // SLA filter
     if (slaFilter !== 'ALL') {
       const now = new Date();
       result = result.filter((c) => {
-        const created = new Date(c.createdAt);
+        const created = new Date(c.reportDate || c.createdAt);
         const days = Math.floor((now - created) / (1000 * 60 * 60 * 24));
         const remaining = 30 - days;
 
@@ -174,14 +230,71 @@ export default function ClaimsListPage() {
     }
 
     setFilteredClaims(result);
-  }, [searchQuery, statusFilter, slaFilter, claims]);
+  }, [searchQuery, statusFilter, slaFilter, startDate, endDate, claims]);
 
-  // รีเซ็ตกลับหน้า 1 เมื่อมีการเปลี่ยนคำค้นหาหรือตัวกรอง
+  // รีเซ็ตกลับหน้า 1 เมื่อมีการเปลี่ยนคำค้นหา ช่วงวันที่ หรือตัวกรอง
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, slaFilter]);
+  }, [searchQuery, statusFilter, slaFilter, startDate, endDate]);
+
+  const applyDatePreset = (preset) => {
+    const today = new Date();
+    if (preset === 'CLEAR') {
+      setStartDate('');
+      setEndDate('');
+      return;
+    }
+    if (preset === 'TODAY') {
+      const ymd = toLocalYMD(today);
+      setStartDate(ymd);
+      setEndDate(ymd);
+      return;
+    }
+    if (preset === 'LAST_7') {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 6);
+      setStartDate(toLocalYMD(start));
+      setEndDate(toLocalYMD(today));
+      return;
+    }
+    if (preset === 'LAST_30') {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 29);
+      setStartDate(toLocalYMD(start));
+      setEndDate(toLocalYMD(today));
+      return;
+    }
+    if (preset === 'THIS_MONTH') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      setStartDate(toLocalYMD(start));
+      setEndDate(toLocalYMD(today));
+      return;
+    }
+    if (preset === 'THIS_YEAR') {
+      const start = new Date(today.getFullYear(), 0, 1);
+      setStartDate(toLocalYMD(start));
+      setEndDate(toLocalYMD(today));
+    }
+  };
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('ALL');
+    setSlaFilter('ALL');
+    setStartDate('');
+    setEndDate('');
+    setCurrentPage(1);
+  };
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || statusFilter !== 'ALL' || slaFilter !== 'ALL' || startDate || endDate
+  );
 
   const totalClaimsCount = filteredClaims.length;
+  const filteredCompensationTotal = filteredClaims.reduce(
+    (sum, c) => sum + Number(c.compensationAmount || (c.claimType === 'HIGH_RISK' ? 300000 : 60000)),
+    0
+  );
   const totalPages = Math.max(1, Math.ceil(totalClaimsCount / CLAIMS_PER_PAGE));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
   const paginatedClaims = filteredClaims.slice(
@@ -189,12 +302,18 @@ export default function ClaimsListPage() {
     safeCurrentPage * CLAIMS_PER_PAGE
   );
 
-  // Quick Counter Aggregation
-  const totalCount = claims.length;
-  const draftCount = claims.filter((c) => c.status === 'DRAFT').length;
-  const inProgressCount = claims.filter((c) => c.status === 'SUBMITTED' || c.status === 'UNDER_REVIEW' || c.status === 'PENDING_APPROVAL').length;
-  const approvedCount = claims.filter((c) => c.status === 'APPROVED' || c.status === 'INSURANCE_PROCESSING').length;
-  const paidCount = claims.filter((c) => c.status === 'PAID' || c.status === 'SK_NOTIFIED').length;
+  // Quick Counter Aggregation (อ้างอิงตามช่วงวันที่ที่เลือก เพื่อให้ยอดบนการ์ดตรงกับตาราง 100%)
+  const dateScopedClaims = claims.filter((c) => {
+    const key = getClaimDateKey(c);
+    if (startDate && (!key || key < startDate)) return false;
+    if (endDate && (!key || key > endDate)) return false;
+    return true;
+  });
+  const totalCount = dateScopedClaims.length;
+  const draftCount = dateScopedClaims.filter((c) => c.status === 'DRAFT').length;
+  const inProgressCount = dateScopedClaims.filter((c) => matchesStatusFilter(c, 'GROUP_IN_PROGRESS')).length;
+  const approvedCount = dateScopedClaims.filter((c) => matchesStatusFilter(c, 'GROUP_APPROVED')).length;
+  const paidCount = dateScopedClaims.filter((c) => matchesStatusFilter(c, 'GROUP_PAID')).length;
 
   // ==========================================
   // CRUD Handlers
@@ -550,7 +669,7 @@ export default function ClaimsListPage() {
     }
   };
 
-  // ส่งออกรายการคำร้องเป็นไฟล์ Excel (.xlsx) ตามตัวกรองปัจจุบัน
+  // ส่งออกรายการคำร้องเป็นไฟล์ Excel (.xlsx) ตามตัวกรองปัจจุบัน (รวมช่วงวันที่และกลุ่มสถานะ)
   const handleExportExcel = () => {
     try {
       setExportLoading(true);
@@ -558,6 +677,8 @@ export default function ClaimsListPage() {
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
       if (statusFilter !== 'ALL') params.set('status', statusFilter);
       if (slaFilter !== 'ALL') params.set('sla', slaFilter);
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
 
       window.open(`/api/claims/export?${params.toString()}`, '_blank');
       setTimeout(() => setExportLoading(false), 1500);
@@ -566,13 +687,23 @@ export default function ClaimsListPage() {
     }
   };
 
+  const isInProgressSelected =
+    statusFilter === 'GROUP_IN_PROGRESS' ||
+    ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_APPROVAL'].includes(statusFilter);
+  const isApprovedSelected =
+    statusFilter === 'GROUP_APPROVED' ||
+    ['APPROVED', 'INSURANCE_PROCESSING', 'DOC_REQUESTED'].includes(statusFilter);
+  const isPaidSelected =
+    statusFilter === 'GROUP_PAID' ||
+    ['PAID', 'SK_NOTIFIED'].includes(statusFilter);
+
   return (
     <div className="container" style={{ paddingTop: '28px', paddingBottom: '60px' }}>
       
       {/* Header & Scoping Notice */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
         <div>
-          <h1 style={{ fontSize: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h1 style={{ fontSize: '24px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span>รายการคำร้องเสนอขอรับสิทธิเงินค่าสินไหมทดแทน</span>
             {currentUser?.role === 'UNIT_OFFICER' ? (
               <span className="badge badge-amber" style={{ fontSize: '12px' }}>
@@ -619,7 +750,7 @@ export default function ClaimsListPage() {
             onClick={handleExportExcel}
             disabled={exportLoading}
             className="btn btn-secondary btn-sm"
-            title="ส่งออกรายการคำร้องเป็นไฟล์ Excel (.xlsx)"
+            title="ส่งออกรายการคำร้องเป็นไฟล์ Excel (.xlsx) ตามตัวกรองปัจจุบัน"
             style={{ gap: '6px', borderColor: 'rgba(212, 175, 55, 0.4)', color: 'var(--gold-light)' }}
           >
             <FileSpreadsheet size={14} color="var(--gold-primary)" />
@@ -633,21 +764,24 @@ export default function ClaimsListPage() {
         </div>
       </div>
 
-      {/* Summary Stat Pills (Clickable Quick Filters) */}
+      {/* Summary Stat Pills (Clickable Quick Filters - ซิงค์กับช่วงวันที่และแสดงครบตามยอดจำนวน) */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
         gap: '12px',
         marginBottom: '20px'
       }}>
-        <div 
+        <button
+          type="button"
           onClick={() => setStatusFilter('ALL')}
           style={{
             cursor: 'pointer',
+            textAlign: 'left',
             padding: '12px 16px',
             borderRadius: '10px',
-            background: statusFilter === 'ALL' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-            border: `1px solid ${statusFilter === 'ALL' ? '#3b82f6' : 'var(--border-glass)'}`,
+            background: statusFilter === 'ALL' ? 'rgba(59, 130, 246, 0.22)' : 'rgba(255, 255, 255, 0.03)',
+            border: `${statusFilter === 'ALL' ? '1.5px' : '1px'} solid ${statusFilter === 'ALL' ? '#60a5fa' : 'var(--border-glass)'}`,
+            boxShadow: statusFilter === 'ALL' ? '0 0 0 1px rgba(59, 130, 246, 0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -655,20 +789,25 @@ export default function ClaimsListPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>คำร้องทั้งหมด</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#fff' }}>{totalCount} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span></div>
+            <div style={{ fontSize: '11.5px', color: statusFilter === 'ALL' ? '#bfdbfe' : 'var(--text-dim)', fontWeight: 600 }}>คำร้องทั้งหมด</div>
+            <div style={{ fontSize: '21px', fontWeight: 800, color: '#fff' }}>
+              {totalCount.toLocaleString('th-TH')} <span style={{ fontSize: '12px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
+            </div>
           </div>
           <FileText size={22} color="#60a5fa" />
-        </div>
+        </button>
 
-        <div 
-          onClick={() => setStatusFilter('DRAFT')}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'DRAFT' ? 'ALL' : 'DRAFT')}
           style={{
             cursor: 'pointer',
+            textAlign: 'left',
             padding: '12px 16px',
             borderRadius: '10px',
-            background: statusFilter === 'DRAFT' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-            border: `1px solid ${statusFilter === 'DRAFT' ? '#f59e0b' : 'var(--border-glass)'}`,
+            background: statusFilter === 'DRAFT' ? 'rgba(245, 158, 11, 0.22)' : 'rgba(255, 255, 255, 0.03)',
+            border: `${statusFilter === 'DRAFT' ? '1.5px' : '1px'} solid ${statusFilter === 'DRAFT' ? '#fbbf24' : 'var(--border-glass)'}`,
+            boxShadow: statusFilter === 'DRAFT' ? '0 0 0 1px rgba(245, 158, 11, 0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -676,20 +815,25 @@ export default function ClaimsListPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: '#fbbf24' }}>📝 แบบร่าง (รอเอกสาร)</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#fbbf24' }}>{draftCount} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span></div>
+            <div style={{ fontSize: '11.5px', color: '#fbbf24', fontWeight: 600 }}>📝 แบบร่าง (รอเอกสาร)</div>
+            <div style={{ fontSize: '21px', fontWeight: 800, color: '#fbbf24' }}>
+              {draftCount.toLocaleString('th-TH')} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span>
+            </div>
           </div>
           <Edit3 size={22} color="#fbbf24" />
-        </div>
+        </button>
 
-        <div 
-          onClick={() => setStatusFilter('UNDER_REVIEW')}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'GROUP_IN_PROGRESS' ? 'ALL' : 'GROUP_IN_PROGRESS')}
           style={{
             cursor: 'pointer',
+            textAlign: 'left',
             padding: '12px 16px',
             borderRadius: '10px',
-            background: statusFilter === 'UNDER_REVIEW' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-            border: `1px solid ${statusFilter === 'UNDER_REVIEW' ? '#a855f7' : 'var(--border-glass)'}`,
+            background: isInProgressSelected ? 'rgba(168, 85, 247, 0.22)' : 'rgba(255, 255, 255, 0.03)',
+            border: `${isInProgressSelected ? '1.5px' : '1px'} solid ${isInProgressSelected ? '#c084fc' : 'var(--border-glass)'}`,
+            boxShadow: isInProgressSelected ? '0 0 0 1px rgba(168, 85, 247, 0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -697,20 +841,25 @@ export default function ClaimsListPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: '#c084fc' }}>⏳ กำลังดำเนินการ</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#c084fc' }}>{inProgressCount} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span></div>
+            <div style={{ fontSize: '11.5px', color: '#c084fc', fontWeight: 600 }}>⏳ กำลังดำเนินการ</div>
+            <div style={{ fontSize: '21px', fontWeight: 800, color: '#c084fc' }}>
+              {inProgressCount.toLocaleString('th-TH')} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span>
+            </div>
           </div>
           <Clock size={22} color="#c084fc" />
-        </div>
+        </button>
 
-        <div 
-          onClick={() => setStatusFilter('APPROVED')}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'GROUP_APPROVED' ? 'ALL' : 'GROUP_APPROVED')}
           style={{
             cursor: 'pointer',
+            textAlign: 'left',
             padding: '12px 16px',
             borderRadius: '10px',
-            background: statusFilter === 'APPROVED' ? 'rgba(6, 182, 212, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-            border: `1px solid ${statusFilter === 'APPROVED' ? '#06b6d4' : 'var(--border-glass)'}`,
+            background: isApprovedSelected ? 'rgba(6, 182, 212, 0.22)' : 'rgba(255, 255, 255, 0.03)',
+            border: `${isApprovedSelected ? '1.5px' : '1px'} solid ${isApprovedSelected ? '#22d3ee' : 'var(--border-glass)'}`,
+            boxShadow: isApprovedSelected ? '0 0 0 1px rgba(6, 182, 212, 0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -718,20 +867,25 @@ export default function ClaimsListPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: '#22d3ee' }}>🎖️ อนุมัติ จก.กพ.ทบ.</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#22d3ee' }}>{approvedCount} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span></div>
+            <div style={{ fontSize: '11.5px', color: '#22d3ee', fontWeight: 600 }}>🎖️ อนุมัติ จก.กพ.ทบ.</div>
+            <div style={{ fontSize: '21px', fontWeight: 800, color: '#22d3ee' }}>
+              {approvedCount.toLocaleString('th-TH')} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span>
+            </div>
           </div>
           <Shield size={22} color="#22d3ee" />
-        </div>
+        </button>
 
-        <div 
-          onClick={() => setStatusFilter('PAID')}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'GROUP_PAID' ? 'ALL' : 'GROUP_PAID')}
           style={{
             cursor: 'pointer',
+            textAlign: 'left',
             padding: '12px 16px',
             borderRadius: '10px',
-            background: statusFilter === 'PAID' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-            border: `1px solid ${statusFilter === 'PAID' ? '#10b981' : 'var(--border-glass)'}`,
+            background: isPaidSelected ? 'rgba(16, 185, 129, 0.22)' : 'rgba(255, 255, 255, 0.03)',
+            border: `${isPaidSelected ? '1.5px' : '1px'} solid ${isPaidSelected ? '#34d399' : 'var(--border-glass)'}`,
+            boxShadow: isPaidSelected ? '0 0 0 1px rgba(16, 185, 129, 0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -739,52 +893,83 @@ export default function ClaimsListPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: '#34d399' }}>💳 จ่ายโอนเงินแล้ว</div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#34d399' }}>{paidCount} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span></div>
+            <div style={{ fontSize: '11.5px', color: '#34d399', fontWeight: 600 }}>💳 จ่ายโอนเงินแล้ว</div>
+            <div style={{ fontSize: '21px', fontWeight: 800, color: '#34d399' }}>
+              {paidCount.toLocaleString('th-TH')} <span style={{ fontSize: '12px', fontWeight: 400 }}>เรื่อง</span>
+            </div>
           </div>
           <CheckCircle2 size={22} color="#34d399" />
-        </div>
+        </button>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Filter, Custom Date Range and Search Bar */}
+      <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {/* Row 1: Search, Status, SLA */}
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
           
           {/* Search Box */}
           <div style={{ flex: '1 1 260px', position: 'relative' }}>
-            <Search size={16} color="var(--text-dim)" style={{ position: 'absolute', top: '14px', left: '12px' }} />
+            <Search size={16} color="var(--text-dim)" style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: '12px' }} />
             <input 
               type="text"
               className="form-input"
-              style={{ paddingLeft: '38px' }}
-              placeholder="ค้นหา: เลขที่เรื่อง, ชื่อผู้สูญเสีย, เลข ปชช., หน่วย..."
+              style={{ paddingLeft: '38px', paddingRight: searchQuery ? '34px' : '12px' }}
+              placeholder="ค้นหา: เลขที่เรื่อง, ชื่อผู้สูญเสีย, เลข ปชช., หน่วย, สาเหตุ..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-dim)',
+                  cursor: 'pointer',
+                  padding: '2px'
+                }}
+                title="ล้างคำค้นหา"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           {/* Workflow Status Filter */}
-          <div style={{ minWidth: '220px' }}>
+          <div style={{ minWidth: '240px', flex: '0 1 280px' }}>
             <select 
               className="form-select"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               <option value="ALL">สถานะทั้งหมด</option>
-              <option value="DRAFT">📝 ร่างคำร้อง (รอแนบเอกสาร)</option>
-              <option value="SUBMITTED">1. เสนอเรื่องใหม่</option>
-              <option value="UNDER_REVIEW">2. กสพ. กำลังตรวจเอกสาร</option>
-              <option value="REJECTED_BY_KSP">ตีกลับให้หน่วยแก้ไข</option>
-              <option value="PENDING_APPROVAL">3. รอ จก.กพ.ทบ. อนุมัติ</option>
-              <option value="APPROVED">อนุมัติแล้ว</option>
-              <option value="INSURANCE_PROCESSING">4. บ.ประกันภัย กำลังตรวจ</option>
-              <option value="PAID">โอนเงินสินไหมแล้ว</option>
-              <option value="SK_NOTIFIED">5. สก.ทบ. รับทราบยอด (ปิดเรื่อง)</option>
+              <optgroup label="กลุ่มสถานะหลัก (ตามการ์ดสรุป)">
+                <option value="GROUP_IN_PROGRESS">⏳ กำลังดำเนินการทั้งหมด ({inProgressCount.toLocaleString('th-TH')} เรื่อง)</option>
+                <option value="GROUP_APPROVED">🎖️ อนุมัติ จก.กพ.ทบ. ทั้งหมด ({approvedCount.toLocaleString('th-TH')} เรื่อง)</option>
+                <option value="GROUP_PAID">💳 จ่ายโอนเงินแล้วทั้งหมด ({paidCount.toLocaleString('th-TH')} เรื่อง)</option>
+              </optgroup>
+              <optgroup label="แยกตามขั้นตอนรายสถานะ">
+                <option value="DRAFT">📝 ร่างคำร้อง (รอแนบเอกสาร)</option>
+                <option value="SUBMITTED">1. เสนอเรื่องใหม่</option>
+                <option value="UNDER_REVIEW">2. กสพ. กำลังตรวจเอกสาร</option>
+                <option value="REJECTED_BY_KSP">ตีกลับให้หน่วยแก้ไข</option>
+                <option value="PENDING_APPROVAL">3. รอ จก.กพ.ทบ. อนุมัติ</option>
+                <option value="APPROVED">อนุมัติแล้ว</option>
+                <option value="INSURANCE_PROCESSING">4. บ.ประกันภัย กำลังตรวจ</option>
+                <option value="DOC_REQUESTED">บ.ประกันภัย ขอเอกสารเพิ่ม</option>
+                <option value="PAID">โอนเงินสินไหมแล้ว</option>
+                <option value="SK_NOTIFIED">5. สก.ทบ. รับทราบยอด (ปิดเรื่อง)</option>
+              </optgroup>
             </select>
           </div>
 
           {/* SLA Filter */}
-          <div style={{ minWidth: '180px' }}>
+          <div style={{ minWidth: '185px' }}>
             <select 
               className="form-select"
               value={slaFilter}
@@ -798,6 +983,130 @@ export default function ClaimsListPage() {
           </div>
 
         </div>
+
+        {/* Row 2: Custom Date Range Selector (เลือกช่วงวันที่เริ่มต้น - วันที่สิ้นสุด ตามห้วงกำหนดเอง) */}
+        <div style={{
+          paddingTop: '12px',
+          borderTop: '1px solid var(--border-glass)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--gold-light)', fontSize: '13px', fontWeight: 600, paddingBottom: '10px' }}>
+              <Calendar size={16} color="var(--gold-primary)" />
+              <span>เลือกช่วงวันที่ดูข้อมูล:</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '165px' }}>
+              <label htmlFor="claims-start-date" style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                วันที่เริ่มต้น {startDate && <strong style={{ color: 'var(--gold-light)' }}>({formatThaiDate(startDate, true)})</strong>}
+              </label>
+              <input
+                id="claims-start-date"
+                type="date"
+                className="form-input"
+                value={startDate}
+                max={endDate || undefined}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{ padding: '7px 10px', fontSize: '13px', colorScheme: 'dark' }}
+              />
+            </div>
+
+            <div style={{ color: 'var(--text-dim)', fontSize: '13px', paddingBottom: '10px', fontWeight: 600 }}>ถึง</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '165px' }}>
+              <label htmlFor="claims-end-date" style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                วันที่สิ้นสุด {endDate && <strong style={{ color: 'var(--gold-light)' }}>({formatThaiDate(endDate, true)})</strong>}
+              </label>
+              <input
+                id="claims-end-date"
+                type="date"
+                className="form-input"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{ padding: '7px 10px', fontSize: '13px', colorScheme: 'dark' }}
+              />
+            </div>
+
+            {/* Quick Date Presets */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', paddingBottom: '2px' }}>
+              {[
+                { key: 'TODAY', label: 'วันนี้' },
+                { key: 'LAST_7', label: '7 วันล่าสุด' },
+                { key: 'LAST_30', label: '30 วันล่าสุด' },
+                { key: 'THIS_MONTH', label: 'เดือนนี้' },
+                { key: 'THIS_YEAR', label: 'ปีนี้' }
+              ].map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  onClick={() => applyDatePreset(preset.key)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '5px 10px', fontSize: '11.5px', borderRadius: '6px' }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              {(startDate || endDate) && (
+                <button
+                  type="button"
+                  onClick={() => applyDatePreset('CLEAR')}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '5px 10px', fontSize: '11.5px', borderRadius: '6px', color: '#fca5a5', borderColor: 'rgba(239, 68, 68, 0.35)' }}
+                >
+                  <X size={12} /> ล้างวันที่
+                </button>
+              )}
+            </div>
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="btn btn-secondary btn-sm"
+              style={{ gap: '5px', fontSize: '12px', color: 'var(--gold-light)', borderColor: 'rgba(212, 175, 55, 0.4)' }}
+            >
+              <RotateCcw size={13} />
+              <span>ล้างตัวกรองทั้งหมด</span>
+            </button>
+          )}
+        </div>
+
+        {/* Active Filter Summary Banner */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          background: 'rgba(255, 255, 255, 0.025)',
+          border: '1px solid var(--border-glass)',
+          fontSize: '12.5px',
+          color: 'var(--text-muted)'
+        }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
+            <span>
+              แสดงผล <strong style={{ color: '#fff' }}>{totalClaimsCount.toLocaleString('th-TH')}</strong> เรื่อง
+              {hasActiveFilters && <> (จากข้อมูลทั้งหมด {claims.length.toLocaleString('th-TH')} เรื่อง)</>}
+            </span>
+            <span>•</span>
+            <span>
+              วงเงินรวมที่แสดง: <strong style={{ color: 'var(--gold-light)' }}>{filteredCompensationTotal.toLocaleString('th-TH')} บาท</strong>
+            </span>
+          </div>
+          {(startDate || endDate) && (
+            <span className="badge badge-amber" style={{ fontSize: '11.5px' }}>
+              ห้วงวันที่: {startDate ? formatThaiDate(startDate, true) : 'เริ่มต้น'} – {endDate ? formatThaiDate(endDate, true) : 'ปัจจุบัน'}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Claims List Table */}
@@ -808,6 +1117,17 @@ export default function ClaimsListPage() {
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
             <FileText size={42} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
             <div>ไม่พบข้อมูลคำร้องตามเงื่อนไขที่ค้นหา</div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetAllFilters}
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: '12px', gap: '6px' }}
+              >
+                <RotateCcw size={13} />
+                <span>ล้างตัวกรองเพื่อดูข้อมูลทั้งหมด</span>
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -827,7 +1147,7 @@ export default function ClaimsListPage() {
               </thead>
               <tbody>
                 {paginatedClaims.map((claim) => {
-                  const daysDiff = Math.floor((new Date() - new Date(claim.createdAt)) / (1000 * 60 * 60 * 24));
+                  const daysDiff = Math.floor((new Date() - new Date(claim.reportDate || claim.createdAt)) / (1000 * 60 * 60 * 24));
                   const remaining = 30 - daysDiff;
                   const isOverdue = remaining <= 0;
                   const isWarning = remaining > 0 && remaining <= 7;
@@ -846,8 +1166,8 @@ export default function ClaimsListPage() {
                       </td>
 
                       {/* Report Date */}
-                      <td style={{ padding: '14px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                        {formatThaiDate(claim.createdAt, true)}
+                      <td style={{ padding: '14px', color: 'var(--text-muted)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        {formatThaiDate(claim.reportDate || claim.createdAt, true)}
                       </td>
 
                       {/* Unit */}
