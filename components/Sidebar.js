@@ -135,7 +135,8 @@ export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser, isMo
       label: 'สถิติ / รายงาน', 
       href: '/reports', 
       icon: PieChart, 
-      allowedRoles: ['ADMIN', 'KSP_OFFICER', 'COMMANDER', 'SK_OFFICER', 'UNIT_OFFICER'] 
+      allowedRoles: ['ADMIN', 'KSP_OFFICER', 'COMMANDER', 'INSURANCE_REP', 'SK_OFFICER'],
+      excludedRoles: ['UNIT_OFFICER']
     },
     { 
       label: 'ตั้งค่า Telegram / SLA', 
@@ -148,7 +149,10 @@ export default function Sidebar({ isOpen, setIsOpen, currentUser: propUser, isMo
 
   // กรองเมนูตามบทบาทสิทธิ์ (RBAC Filtering) - ผู้ดูแลระบบ (ADMIN) มีสิทธิ์เห็นและเข้าถึงทุกเมนู
   const visibleNavItems = navItems.filter(
-    (item) => userRole === 'ADMIN' || !item.allowedRoles || item.allowedRoles.includes(userRole)
+    (item) =>
+      userRole === 'ADMIN' ||
+      ((!item.excludedRoles || !item.excludedRoles.includes(userRole)) &&
+        (!item.allowedRoles || item.allowedRoles.includes(userRole)))
   );
 
   // คำอธิบายบทบาทสิทธิ์ภาษาไทย

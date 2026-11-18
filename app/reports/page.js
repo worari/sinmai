@@ -23,7 +23,8 @@ import {
   FileText,
   Search,
   X,
-  Eye
+  Eye,
+  Shield
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getPolicyYear } from '@/lib/thai-utils';
@@ -91,6 +92,7 @@ export default function ReportsPage() {
 
   const [stats, setStats] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // รอบปีหลัก (1 เม.ย. ปีก่อน - 31 มี.ค. ปีถัดไป) และปีเทียบย้อนหลังได้สูงสุด 3 ปี
@@ -134,6 +136,7 @@ export default function ReportsPage() {
         setCurrentUser(JSON.parse(saved));
       } catch (e) {}
     }
+    setAuthChecked(true);
 
     const handleAuth = () => {
       let userObj = null;
@@ -144,14 +147,20 @@ export default function ReportsPage() {
         } catch (e) {}
       }
       setCurrentUser(userObj);
+      setAuthChecked(true);
     };
     window.addEventListener('rta_auth_change', handleAuth);
     return () => window.removeEventListener('rta_auth_change', handleAuth);
   }, []);
 
   useEffect(() => {
+    if (!authChecked) return;
+    if (!currentUser || currentUser.role === 'UNIT_OFFICER') {
+      setLoading(false);
+      return;
+    }
     loadReportsData(selectedPolicyYear, compareYears);
-  }, [selectedPolicyYear, compareYears]);
+  }, [authChecked, currentUser, selectedPolicyYear, compareYears]);
 
   const loadReportsData = async (baseYear, compYears) => {
     setLoading(true);
@@ -328,6 +337,48 @@ export default function ReportsPage() {
   const personnelReport = stats?.personnelReport || [];
   const topUnitsList = topUnitsScope === 'combined' ? (stats?.topUnitsCombined || []) : (stats?.topUnits || []);
   const primaryCompareYear = activeCompareYears[0];
+
+  if (!authChecked) {
+    return null;
+  }
+
+  // ตรวจสอบสิทธิ์การเข้าถึง: ซ่อนและจำกัดสิทธิ์ไม่ให้ 1. จนท.หน่วย (UNIT_OFFICER) เข้าถึงเมนู สถิติ / รายงาน
+  if (!currentUser || currentUser.role === 'UNIT_OFFICER') {
+    return (
+      <div className="container" style={{ paddingTop: '60px', paddingBottom: '60px', maxWidth: '680px', margin: '0 auto', textAlign: 'center' }}>
+        <div className="glass-panel" style={{ padding: '44px 32px', border: '1px solid rgba(239, 68, 68, 0.35)', boxShadow: '0 8px 32px rgba(239, 68, 68, 0.15)' }}>
+          <div style={{
+            width: '72px',
+            height: '72px',
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px',
+            color: '#ef4444'
+          }}>
+            <Shield size={38} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#fff', marginBottom: '12px' }}>
+            จำกัดสิทธิ์การเข้าถึงเมนู สถิติ / รายงาน
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '15px', lineHeight: '1.7', marginBottom: '28px' }}>
+            เมนู <strong>&quot;สถิติ / รายงาน&quot;</strong> ไม่เปิดให้เข้าถึงสำหรับบทบาท <strong>1. เจ้าหน้าที่หน่วย (จนท.หน่วย)</strong><br />
+            สงวนสิทธิ์สำหรับผู้ดูแลระบบ (Admin), กพ.ทบ. (กสพ.ฯ), ผู้บังคับบัญชา, บริษัทประกันภัย และ สก.ทบ. เท่านั้น
+          </p>
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => window.location.href = '/dashboard'} className="btn btn-primary" style={{ minWidth: '160px' }}>
+              กลับสู่หน้า Dashboard
+            </button>
+            <button onClick={() => window.location.href = '/claims'} className="btn btn-secondary" style={{ minWidth: '160px' }}>
+              ดูรายการคำร้อง
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container" style={{ paddingTop: '28px', paddingBottom: '60px' }}>
