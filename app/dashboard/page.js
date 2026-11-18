@@ -1,8 +1,9 @@
 // app/dashboard/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import { getSocketClient } from '@/lib/socket-client';
 import { 
   Users, 
@@ -31,9 +32,14 @@ import {
   Shield,
   FileCheck,
   X,
-  Search
+  Search,
+  Download,
+  ChevronRight,
+  Check,
+  RotateCcw
 } from 'lucide-react';
-import { formatThaiDate } from '@/lib/thai-utils';
+import { formatThaiDate, getFiscalYear } from '@/lib/thai-utils';
+import { CLAIM_STATUS } from '@/lib/constants';
 import PaginationBar from '@/components/PaginationBar';
 
 const DASHBOARD_CARD_STYLE = {
@@ -46,7 +52,130 @@ const DASHBOARD_CARD_STYLE = {
 };
 
 const CLAIMS_PER_PAGE = 5;
+const WORKFLOW_CLAIMS_PER_PAGE = 10;
 const STATS_PREVIEW_LIMIT = 5;
+
+const WORKFLOW_STAGES = [
+  {
+    key: 'ALL_SUBMITTED',
+    title: 'เสนอขอรับสินไหม',
+    stepBadge: 'ขั้นตอนที่ 1',
+    badgeClass: 'badge-blue',
+    accentColor: '#3b82f6',
+    titleColor: '#93c5fd',
+    subTextColor: '#bfdbfe',
+    numberColor: '#fff',
+    bgGradient: 'linear-gradient(135deg, rgba(59, 130, 246, 0.14) 0%, rgba(30, 58, 138, 0.08) 100%)',
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    activeBorder: '#60a5fa',
+    activeShadow: '0 0 0 2px rgba(59, 130, 246, 0.45), 0 12px 28px rgba(59, 130, 246, 0.22)',
+    footerNote: 'ยื่นเสนอโดยหน่วยต้นสังกัดทั่วประเทศ',
+    statKey: 'totalClaims',
+    matcher: (c) => c.status !== 'DRAFT',
+    subFilters: [
+      { key: 'ALL', label: 'ทั้งหมด' },
+      { key: 'SUBMITTED', label: 'รอ กสพ. รับเรื่อง', matcher: (c) => c.status === 'SUBMITTED' },
+      { key: 'UNDER_REVIEW', label: 'กสพ. ตรวจเอกสาร', matcher: (c) => c.status === 'UNDER_REVIEW' },
+      { key: 'PENDING_APPROVAL', label: 'รอ จก.กพ.ทบ. อนุมัติ', matcher: (c) => c.status === 'PENDING_APPROVAL' },
+      { key: 'PAID_GROUP', label: 'จ่ายโอนเงินแล้ว', matcher: (c) => c.status === 'PAID' || c.status === 'SK_NOTIFIED' },
+      { key: 'REJECTED_BY_KSP', label: 'ตีกลับแก้ไข', matcher: (c) => c.status === 'REJECTED_BY_KSP' }
+    ]
+  },
+  {
+    key: 'IN_PROGRESS',
+    title: 'กำลังดำเนินการ',
+    stepBadge: 'ขั้นตอนที่ 2-4',
+    badgeClass: 'badge-amber',
+    accentColor: '#f59e0b',
+    titleColor: '#fcd34d',
+    subTextColor: '#fde68a',
+    numberColor: '#fff',
+    bgGradient: 'linear-gradient(135deg, rgba(245, 158, 11, 0.14) 0%, rgba(180, 83, 9, 0.08) 100%)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    activeBorder: '#fbbf24',
+    activeShadow: '0 0 0 2px rgba(245, 158, 11, 0.45), 0 12px 28px rgba(245, 158, 11, 0.22)',
+    footerNote: 'อยู่ระหว่างตรวจหลักฐาน 10 รายการและดำเนินการ',
+    statKey: 'inProgressCount',
+    matcher: (c) => ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_APPROVAL', 'APPROVED', 'INSURANCE_PROCESSING', 'DOC_REQUESTED'].includes(c.status),
+    subFilters: [
+      { key: 'ALL', label: 'ทั้งหมด' },
+      { key: 'SUBMITTED', label: '1. เสนอเรื่องใหม่', matcher: (c) => c.status === 'SUBMITTED' },
+      { key: 'UNDER_REVIEW', label: '2. กสพ. ตรวจเอกสาร', matcher: (c) => c.status === 'UNDER_REVIEW' },
+      { key: 'PENDING_APPROVAL', label: '3. รอ จก.กพ.ทบ. อนุมัติ', matcher: (c) => c.status === 'PENDING_APPROVAL' },
+      { key: 'APPROVED_INS', label: '4. อนุมัติ/บ.ประกันภัยดำเนินการ', matcher: (c) => ['APPROVED', 'INSURANCE_PROCESSING', 'DOC_REQUESTED'].includes(c.status) }
+    ]
+  },
+  {
+    key: 'COMMANDER_APPROVED',
+    title: 'อนุมัติ จก.กพ.ทบ.',
+    stepBadge: 'ขั้นตอนที่ 3',
+    badgeClass: 'badge-purple',
+    accentColor: '#a855f7',
+    titleColor: '#d8b4fe',
+    subTextColor: '#e9d5ff',
+    numberColor: '#fff',
+    bgGradient: 'linear-gradient(135deg, rgba(168, 85, 247, 0.14) 0%, rgba(107, 33, 168, 0.08) 100%)',
+    borderColor: 'rgba(168, 85, 247, 0.35)',
+    activeBorder: '#c084fc',
+    activeShadow: '0 0 0 2px rgba(168, 85, 247, 0.45), 0 12px 28px rgba(168, 85, 247, 0.22)',
+    footerNote: 'แนบเอกสารตัวเรื่องส่งให้ บ.ประกันภัย แล้ว',
+    statKey: 'commanderApprovedCount',
+    matcher: (c) => ['APPROVED', 'INSURANCE_PROCESSING', 'PAID', 'SK_NOTIFIED'].includes(c.status),
+    subFilters: [
+      { key: 'ALL', label: 'ทั้งหมด' },
+      { key: 'AWAITING_PAY', label: 'รอ บ.ประกันภัยโอนเงิน', matcher: (c) => c.status === 'APPROVED' || c.status === 'INSURANCE_PROCESSING' },
+      { key: 'PAID_GROUP', label: 'จ่ายโอนเงินแล้ว', matcher: (c) => c.status === 'PAID' || c.status === 'SK_NOTIFIED' }
+    ]
+  },
+  {
+    key: 'PAID',
+    title: 'จ่ายโอนเงินแล้ว',
+    stepBadge: 'ขั้นตอนที่ 4-5',
+    badgeClass: 'badge-emerald',
+    accentColor: '#10b981',
+    titleColor: '#6ee7b7',
+    subTextColor: '#a7f3d0',
+    numberColor: '#34d399',
+    bgGradient: 'linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(4, 120, 87, 0.08) 100%)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    activeBorder: '#34d399',
+    activeShadow: '0 0 0 2px rgba(16, 185, 129, 0.45), 0 12px 28px rgba(16, 185, 129, 0.22)',
+    footerNote: 'โอนเข้าบัญชีทายาทพร้อมหลักฐาน e-Slip',
+    statKey: 'paidClaimsCount',
+    matcher: (c) => c.status === 'PAID' || c.status === 'SK_NOTIFIED',
+    subFilters: [
+      { key: 'ALL', label: 'ทั้งหมด' },
+      { key: 'PAID', label: 'โอนเงินสินไหมแล้ว', matcher: (c) => c.status === 'PAID' },
+      { key: 'SK_NOTIFIED', label: 'สก.ทบ. รับทราบยอด (เสร็จสมบูรณ์)', matcher: (c) => c.status === 'SK_NOTIFIED' }
+    ]
+  },
+  {
+    key: 'REJECTED',
+    title: 'ไม่อนุมัติ / ส่งกลับแก้ไข',
+    stepBadge: 'ตีกลับ',
+    badgeClass: 'badge-red',
+    accentColor: '#ef4444',
+    titleColor: '#fca5a5',
+    subTextColor: '#fecaca',
+    numberColor: '#f87171',
+    bgGradient: 'linear-gradient(135deg, rgba(239, 68, 68, 0.14) 0%, rgba(185, 28, 28, 0.08) 100%)',
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    activeBorder: '#f87171',
+    activeShadow: '0 0 0 2px rgba(239, 68, 68, 0.45), 0 12px 28px rgba(239, 68, 68, 0.22)',
+    footerNote: 'รอหน่วยต้นสังกัดปรับปรุงเอกสารส่งใหม่',
+    statKey: 'rejectedClaimsCount',
+    matcher: (c) => c.status === 'REJECTED_BY_KSP',
+    subFilters: []
+  }
+];
+
+const renderWorkflowStatusBadge = (status) => {
+  const info = CLAIM_STATUS[status];
+  if (!info) {
+    return <span className="badge badge-slate">{status || '-'}</span>;
+  }
+  return <span className={`badge badge-${info.badge}`}>{info.label}</span>;
+};
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
@@ -58,6 +187,19 @@ export default function DashboardPage() {
   const [claimsPage, setClaimsPage] = useState(1);
   const [statModalType, setStatModalType] = useState(null); // null | 'cause' | 'personnel'
   const [statModalSearch, setStatModalSearch] = useState('');
+
+  // สถานะสำหรับ Interactive Drill-Down ของแผง Workflow Lifecycle Statuses
+  const [selectedWorkflowKey, setSelectedWorkflowKey] = useState(null);
+  const [workflowSubStatus, setWorkflowSubStatus] = useState('ALL');
+  const [workflowSearch, setWorkflowSearch] = useState('');
+  const [workflowPage, setWorkflowPage] = useState(1);
+
+  const selectedFiscalYearRef = useRef('ALL');
+  const workflowPanelRef = useRef(null);
+
+  useEffect(() => {
+    selectedFiscalYearRef.current = selectedFiscalYear;
+  }, [selectedFiscalYear]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -79,7 +221,7 @@ export default function DashboardPage() {
       } catch (e) {}
     }
 
-    loadDashboardData(user, selectedFiscalYear);
+    loadDashboardData(user, selectedFiscalYearRef.current);
 
     const handleAuth = () => {
       let u = null;
@@ -88,7 +230,7 @@ export default function DashboardPage() {
         try { u = JSON.parse(s); } catch (e) {}
       }
       setCurrentUser(u);
-      loadDashboardData(u, selectedFiscalYear);
+      loadDashboardData(u, selectedFiscalYearRef.current);
     };
     window.addEventListener('rta_auth_change', handleAuth);
 
@@ -97,13 +239,35 @@ export default function DashboardPage() {
 
     const onConnect = () => setSocketConnected(true);
     const onDisconnect = () => setSocketConnected(false);
-    const onStatsUpdated = (newStats) => {
-      setStats(newStats);
+    const onStatsUpdated = async (newStats) => {
+      const fy = selectedFiscalYearRef.current;
+      if (fy && fy !== 'ALL') {
+        try {
+          const res = await fetch(`/api/stats?fiscalYear=${fy}`, { cache: 'no-store' }).then((r) => r.json());
+          if (res.success && res.stats) {
+            setStats(res.stats);
+          }
+        } catch (e) {
+          setStats(newStats);
+        }
+      } else {
+        try {
+          const res = await fetch('/api/stats?fiscalYear=ALL', { cache: 'no-store' }).then((r) => r.json());
+          if (res.success && res.stats) {
+            setStats(res.stats);
+          } else {
+            setStats(newStats);
+          }
+        } catch (e) {
+          setStats(newStats);
+        }
+      }
       setLastEvent('อัปเดตสถิติสดล่าสุด ' + new Date().toLocaleTimeString('th-TH'));
     };
     const onClaimCreated = (claim) => {
       setRecentClaims((prev) => [claim, ...prev.filter((c) => c.id !== claim.id)]);
       setClaimsPage(1);
+      setWorkflowPage(1);
       setLastEvent(`มีเรื่องเสนอใหม่: ${claim.trackingCode}`);
     };
     const onClaimUpdated = ({ id, claim }) => {
@@ -151,6 +315,7 @@ export default function DashboardPage() {
       if (resClaims.success) {
         setRecentClaims(resClaims.claims || []);
         setClaimsPage(1);
+        setWorkflowPage(1);
       }
     } catch (e) {
       console.error('Error fetching dashboard', e);
@@ -159,21 +324,166 @@ export default function DashboardPage() {
 
   const handleFiscalYearChange = (fy) => {
     setSelectedFiscalYear(fy);
+    setWorkflowPage(1);
+    setClaimsPage(1);
     loadDashboardData(currentUser, fy);
   };
 
+  const handleSelectWorkflowCard = (stageKey) => {
+    if (selectedWorkflowKey === stageKey) {
+      setSelectedWorkflowKey(null);
+      setWorkflowSubStatus('ALL');
+      setWorkflowSearch('');
+      setWorkflowPage(1);
+      setClaimsPage(1);
+      return;
+    }
+    setSelectedWorkflowKey(stageKey);
+    setWorkflowSubStatus('ALL');
+    setWorkflowSearch('');
+    setWorkflowPage(1);
+    setClaimsPage(1);
+    setTimeout(() => {
+      workflowPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 60);
+  };
+
   const availableYears = stats?.availableFiscalYears || [2570, 2569, 2568, 2567];
+
+  // กรองรายการคำร้องตามปีงบประมาณที่เลือก และไม่นับ DRAFT (ตรงตามเงื่อนไขการคำนวณของ getStatistics)
+  const fiscalScopedClaims = useMemo(() => {
+    return recentClaims.filter((c) => {
+      if (c.status === 'DRAFT') return false;
+      if (selectedFiscalYear === 'ALL') return true;
+      return getFiscalYear(c.reportDate || c.createdAt) === Number(selectedFiscalYear);
+    });
+  }, [recentClaims, selectedFiscalYear]);
+
+  // ข้อมูล Workflow Stage ที่ถูกคลิกเลือก
+  const activeWorkflowStage = useMemo(
+    () => WORKFLOW_STAGES.find((s) => s.key === selectedWorkflowKey) || null,
+    [selectedWorkflowKey]
+  );
+
+  // รายการคำร้องทั้งหมดใน Workflow Stage ที่เลือก
+  const workflowStageClaims = useMemo(() => {
+    if (!activeWorkflowStage) return [];
+    return fiscalScopedClaims.filter((c) => activeWorkflowStage.matcher(c));
+  }, [fiscalScopedClaims, activeWorkflowStage]);
+
+  // กรองเพิ่มเติมด้วย Sub-status และคำค้นหาภายในแผง Workflow
+  const filteredWorkflowClaims = useMemo(() => {
+    if (!activeWorkflowStage) return [];
+    let list = workflowStageClaims;
+
+    if (workflowSubStatus && workflowSubStatus !== 'ALL') {
+      const subDef = activeWorkflowStage.subFilters.find((sf) => sf.key === workflowSubStatus);
+      if (subDef?.matcher) {
+        list = list.filter((c) => subDef.matcher(c));
+      }
+    }
+
+    const q = workflowSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter((c) => {
+        const fullName = `${c.casualtyRank || ''} ${c.casualtyFirstName || ''} ${c.casualtyLastName || ''}`.toLowerCase();
+        const cause = `${c.causeOfLoss || ''} ${c.lossSpecificCause || ''} ${c.deathCertificateCause || ''} ${c.disabledOrganDetail || ''}`.toLowerCase();
+        const statusLabel = (CLAIM_STATUS[c.status]?.label || c.status || '').toLowerCase();
+        return (
+          (c.trackingCode || '').toLowerCase().includes(q) ||
+          fullName.includes(q) ||
+          (c.unitName || '').toLowerCase().includes(q) ||
+          (c.personnelType || '').toLowerCase().includes(q) ||
+          cause.includes(q) ||
+          statusLabel.includes(q)
+        );
+      });
+    }
+
+    return list;
+  }, [activeWorkflowStage, workflowStageClaims, workflowSubStatus, workflowSearch]);
+
+  const workflowTotalPages = Math.max(1, Math.ceil(filteredWorkflowClaims.length / WORKFLOW_CLAIMS_PER_PAGE));
+  const safeWorkflowPage = Math.min(Math.max(1, workflowPage), workflowTotalPages);
+  const paginatedWorkflowClaims = filteredWorkflowClaims.slice(
+    (safeWorkflowPage - 1) * WORKFLOW_CLAIMS_PER_PAGE,
+    safeWorkflowPage * WORKFLOW_CLAIMS_PER_PAGE
+  );
+
+  const workflowTotalAmount = useMemo(() => {
+    return filteredWorkflowClaims.reduce(
+      (sum, c) => sum + Number(c.compensationAmount || (c.claimType === 'HIGH_RISK' ? 300000 : 60000)),
+      0
+    );
+  }, [filteredWorkflowClaims]);
+
+  const handleExportWorkflowExcel = () => {
+    if (!activeWorkflowStage || filteredWorkflowClaims.length === 0) return;
+    try {
+      const headers = [
+        'ลำดับ',
+        'เลขที่คำร้อง',
+        'วันที่รายงาน',
+        'หน่วยเสนอเรื่อง',
+        'ยศ-ชื่อ-สกุล ผู้สูญเสีย',
+        'ประเภทการสูญเสีย',
+        'ประเภทกำลังพล',
+        'สาเหตุการสูญเสีย',
+        'ประเภทสินไหม',
+        'วงเงินสินไหม (บาท)',
+        'สถานะ Workflow'
+      ];
+      const rows = filteredWorkflowClaims.map((c, idx) => {
+        const amount = Number(c.compensationAmount || (c.claimType === 'HIGH_RISK' ? 300000 : 60000));
+        return [
+          idx + 1,
+          c.trackingCode || '-',
+          formatThaiDate(c.reportDate || c.createdAt, true),
+          c.unitName || '-',
+          `${c.casualtyRank || ''} ${c.casualtyFirstName || ''} ${c.casualtyLastName || ''}`.trim(),
+          c.lossType === 'DECEASED' ? 'เสียชีวิต' : 'พิการทุพพลภาพ',
+          c.personnelType || '-',
+          c.causeOfLoss || c.lossSpecificCause || '-',
+          c.claimType === 'HIGH_RISK' ? 'ปฏิบัติหน้าที่สำคัญ/เสี่ยงภัย' : 'ยามปกติ',
+          amount,
+          CLAIM_STATUS[c.status]?.label || c.status || '-'
+        ];
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [
+        { wch: 8 },
+        { wch: 22 },
+        { wch: 15 },
+        { wch: 28 },
+        { wch: 28 },
+        { wch: 16 },
+        { wch: 22 },
+        { wch: 36 },
+        { wch: 24 },
+        { wch: 18 },
+        { wch: 34 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'รายการตาม Workflow');
+      const fyTag = selectedFiscalYear === 'ALL' ? 'ทุกปีงบประมาณ' : `ปีงบ_${selectedFiscalYear}`;
+      XLSX.writeFile(wb, `รายการคำร้อง_${activeWorkflowStage.title.replace(/[\\/:*?"<>|\s]+/g, '_')}_${fyTag}.xlsx`);
+    } catch (err) {
+      console.error('Export workflow Excel error:', err);
+    }
+  };
 
   // เตรียมข้อมูลสถิติแบบเรียงลำดับจากมากไปน้อย สำหรับการ์ดความสูงเท่ากันและ Popup Modal
   const causeEntries = Object.entries(stats?.causeStats || {}).sort((a, b) => b[1] - a[1]);
   const personnelEntries = Object.entries(stats?.personnelStats || {}).sort((a, b) => b[1] - a[1]);
   const totalStatsDenominator = stats?.totalClaims || 1;
 
-  // คำนวณ Pagination สำหรับตารางคำร้องเสนอล่าสุด & SLA 30 วัน (แสดงหน้าละ 5 แถว)
-  const totalClaimsCount = recentClaims.length;
+  // คำนวณ Pagination สำหรับตารางคำร้องเสนอล่าสุด & SLA 30 วัน (แสดงหน้าละ 5 แถว และซิงค์กับปีงบประมาณ + สถานะ Workflow ที่เลือก)
+  const tableSourceClaims = activeWorkflowStage ? workflowStageClaims : fiscalScopedClaims;
+  const totalClaimsCount = tableSourceClaims.length;
   const totalClaimsPages = Math.max(1, Math.ceil(totalClaimsCount / CLAIMS_PER_PAGE));
   const safeClaimsPage = Math.min(Math.max(1, claimsPage), totalClaimsPages);
-  const paginatedClaims = recentClaims.slice(
+  const paginatedClaims = tableSourceClaims.slice(
     (safeClaimsPage - 1) * CLAIMS_PER_PAGE,
     safeClaimsPage * CLAIMS_PER_PAGE
   );
@@ -546,7 +856,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 2 (NEW!): แผงรายงานสถานะคำร้องตาม Workflow 5 ขั้นตอนสำคัญ */}
+      {/* SECTION 2 (NEW!): แผงรายงานสถานะคำร้องตาม Workflow 5 ขั้นตอนสำคัญ (Interactive Drill-Down) */}
       {/* เสนอขอรับกี่เรื่อง / กำลังดำเนินการกี่เรื่อง / อนุมัติ จก.กพ.ทบ. / โอนแล้ว / ไม่อนุมัติ */}
       {/* ========================================================================= */}
       <div className="glass-panel" style={{ padding: '24px', marginBottom: '28px', borderTop: '3px solid var(--gold-primary)' }}>
@@ -557,139 +867,419 @@ export default function DashboardPage() {
               <span>สรุปสถานะกระบวนการคำร้องตาม Workflow (Workflow Lifecycle Statuses)</span>
             </h2>
             <p style={{ fontSize: '13px', color: 'var(--text-dim)', marginTop: '3px', margin: '3px 0 0' }}>
-              รายงานยอดสถิติคำร้องในแต่ละขั้นตอนการพิจารณา ({selectedFiscalYear === 'ALL' ? 'ข้อมูลสะสมทุกปีงบประมาณ' : `ปีงบประมาณ ${selectedFiscalYear}`})
+              คลิกที่การ์ดสถานะแต่ละขั้นตอนเพื่อดูรายละเอียดรายการคำร้องทั้งหมดในกลุ่มนั้นทันที ({selectedFiscalYear === 'ALL' ? 'ข้อมูลสะสมทุกปีงบประมาณ' : `ปีงบประมาณ ${selectedFiscalYear}`})
             </p>
           </div>
 
-          <span className="badge badge-amber" style={{ fontSize: '12px' }}>
-            รวมคำร้องทั้งหมด: {stats?.totalClaims ?? 0} เรื่อง
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {activeWorkflowStage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedWorkflowKey(null);
+                  setWorkflowSubStatus('ALL');
+                  setWorkflowSearch('');
+                  setWorkflowPage(1);
+                  setClaimsPage(1);
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              >
+                <RotateCcw size={13} />
+                <span>ล้างตัวกรองสถานะ</span>
+              </button>
+            )}
+            <span className="badge badge-amber" style={{ fontSize: '12px' }}>
+              รวมคำร้องทั้งหมด: {stats?.totalClaims ?? 0} เรื่อง
+            </span>
+          </div>
         </div>
 
-        {/* 5 Status Cards Grid */}
+        {/* 5 Interactive Status Cards Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '14px' }}>
-          
-          {/* 1. เสนอขอรับสินไหม */}
-          <div style={{
-            padding: '18px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(30, 58, 138, 0.08) 100%)',
-            border: '1.5px solid rgba(59, 130, 246, 0.35)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', color: '#93c5fd', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Inbox size={16} /> เสนอขอรับสินไหม
-              </span>
-              <span className="badge badge-blue" style={{ fontSize: '10.5px' }}>ขั้นตอนที่ 1</span>
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#fff' }}>
-              {stats?.totalClaims ?? 0} <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
-            </div>
-            <div style={{ fontSize: '12px', color: '#bfdbfe', marginTop: '6px' }}>
-              • เรื่องใหม่รอ กสพ. รับเรื่อง: <strong>{stats?.submittedCount ?? 0} เรื่อง</strong>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
-              ยื่นเสนอโดยหน่วยต้นสังกัดทั่วประเทศ
-            </div>
-          </div>
+          {WORKFLOW_STAGES.map((stage) => {
+            const isActive = selectedWorkflowKey === stage.key;
+            const statValue = stats?.[stage.statKey] ?? 0;
 
-          {/* 2. กำลังดำเนินการ */}
-          <div style={{
-            padding: '18px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(180, 83, 9, 0.08) 100%)',
-            border: '1.5px solid rgba(245, 158, 11, 0.35)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', color: '#fcd34d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Clock size={16} /> กำลังดำเนินการ
-              </span>
-              <span className="badge badge-amber" style={{ fontSize: '10.5px' }}>ขั้นตอนที่ 2-4</span>
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#fff' }}>
-              {stats?.inProgressCount ?? 0} <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
-            </div>
-            <div style={{ fontSize: '12px', color: '#fde68a', marginTop: '6px' }}>
-              • กสพ. กำลังตรวจเอกสาร: <strong>{stats?.underReviewCount ?? 0} เรื่อง</strong>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
-              อยู่ระหว่างตรวจหลักฐาน 10 รายการ
-            </div>
-          </div>
+            const StageIcon =
+              stage.key === 'ALL_SUBMITTED'
+                ? Inbox
+                : stage.key === 'IN_PROGRESS'
+                  ? Clock
+                  : stage.key === 'COMMANDER_APPROVED'
+                    ? ShieldCheck
+                    : stage.key === 'PAID'
+                      ? CreditCard
+                      : XCircle;
 
-          {/* 3. อนุมัติ จก.กพ.ทบ. */}
-          <div style={{
-            padding: '18px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(107, 33, 168, 0.08) 100%)',
-            border: '1.5px solid rgba(168, 85, 247, 0.35)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', color: '#d8b4fe', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <ShieldCheck size={16} /> อนุมัติ จก.กพ.ทบ.
-              </span>
-              <span className="badge" style={{ fontSize: '10.5px', background: 'rgba(168, 85, 247, 0.25)', color: '#d8b4fe' }}>ขั้นตอนที่ 3</span>
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#fff' }}>
-              {stats?.commanderApprovedCount ?? 0} <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
-            </div>
-            <div style={{ fontSize: '12px', color: '#e9d5ff', marginTop: '6px' }}>
-              • ผ่านการลงนามอนุมัติ: <strong>{stats?.commanderApprovedCount ?? 0} เรื่อง</strong>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
-              แนบเอกสารตัวเรื่องส่งให้ บ.ประกันภัย แล้ว
-            </div>
-          </div>
+            const subMetricLine =
+              stage.key === 'ALL_SUBMITTED'
+                ? <>• เรื่องใหม่รอ กสพ. รับเรื่อง: <strong>{stats?.submittedCount ?? 0} เรื่อง</strong></>
+                : stage.key === 'IN_PROGRESS'
+                  ? <>• กสพ. กำลังตรวจเอกสาร: <strong>{stats?.underReviewCount ?? 0} เรื่อง</strong></>
+                  : stage.key === 'COMMANDER_APPROVED'
+                    ? <>• ผ่านการลงนามอนุมัติ: <strong>{stats?.commanderApprovedCount ?? 0} เรื่อง</strong></>
+                    : stage.key === 'PAID'
+                      ? <>• ยอดเงินโอนรวม: <strong>{stats ? stats.totalPaidAmount?.toLocaleString('th-TH') : 0} บ.</strong></>
+                      : <>• ตีกลับเอกสารให้หน่วยแก้ไข: <strong>{stats?.rejectedClaimsCount ?? 0} เรื่อง</strong></>;
 
-          {/* 4. จ่ายโอนเงินแล้ว */}
-          <div style={{
-            padding: '18px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(4, 120, 87, 0.08) 100%)',
-            border: '1.5px solid rgba(16, 185, 129, 0.35)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', color: '#6ee7b7', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <CreditCard size={16} /> จ่ายโอนเงินแล้ว
-              </span>
-              <span className="badge badge-emerald" style={{ fontSize: '10.5px' }}>ขั้นตอนที่ 4-5</span>
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#34d399' }}>
-              {stats?.paidClaimsCount ?? 0} <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
-            </div>
-            <div style={{ fontSize: '12px', color: '#a7f3d0', marginTop: '6px' }}>
-              • ยอดเงินโอนรวม: <strong>{stats ? stats.totalPaidAmount?.toLocaleString('th-TH') : 0} บ.</strong>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
-              โอนเข้าบัญชีทายาทพร้อมหลักฐาน e-Slip
-            </div>
-          </div>
+            return (
+              <button
+                key={stage.key}
+                type="button"
+                onClick={() => handleSelectWorkflowCard(stage.key)}
+                aria-pressed={isActive}
+                style={{
+                  textAlign: 'left',
+                  width: '100%',
+                  padding: '18px',
+                  borderRadius: '10px',
+                  background: stage.bgGradient,
+                  border: isActive ? `2px solid ${stage.activeBorder}` : `1.5px solid ${stage.borderColor}`,
+                  boxShadow: isActive ? stage.activeShadow : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  transform: isActive ? 'translateY(-2px)' : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  position: 'relative'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', color: stage.titleColor, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <StageIcon size={16} /> {stage.title}
+                    </span>
+                    <span className={`badge ${stage.badgeClass}`} style={{ fontSize: '10.5px', whiteSpace: 'nowrap' }}>
+                      {stage.stepBadge}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '28px', fontWeight: 800, color: stage.numberColor }}>
+                    {statValue.toLocaleString('th-TH')} <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: stage.subTextColor, marginTop: '6px' }}>
+                    {subMetricLine}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
+                    {stage.footerNote}
+                  </div>
+                </div>
 
-          {/* 5. ไม่อนุมัติ / ตีกลับแก้ไข */}
-          <div style={{
-            padding: '18px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(185, 28, 28, 0.08) 100%)',
-            border: '1.5px solid rgba(239, 68, 68, 0.35)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', color: '#fca5a5', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <XCircle size={16} /> ไม่อนุมัติ / ส่งกลับแก้ไข
-              </span>
-              <span className="badge badge-red" style={{ fontSize: '10.5px' }}>ตีกลับ</span>
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#f87171' }}>
-              {stats?.rejectedClaimsCount ?? 0} <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text-dim)' }}>เรื่อง</span>
-            </div>
-            <div style={{ fontSize: '12px', color: '#fecaca', marginTop: '6px' }}>
-              • ตีกลับเอกสารให้หน่วยแก้ไข: <strong>{stats?.rejectedClaimsCount ?? 0} เรื่อง</strong>
-            </div>
-            <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
-              รอหน่วยต้นสังกัดปรับปรุงเอกสารส่งใหม่
-            </div>
-          </div>
-
+                <div style={{
+                  marginTop: '12px',
+                  paddingTop: '8px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  color: isActive ? '#fff' : stage.titleColor
+                }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    {isActive ? (
+                      <>
+                        <Check size={13} /> กำลังแสดงรายการด้านล่าง
+                      </>
+                    ) : (
+                      <>คลิกดูรายการ ({statValue.toLocaleString('th-TH')} เรื่อง)</>
+                    )}
+                  </span>
+                  <ChevronRight
+                    size={14}
+                    style={{
+                      transform: isActive ? 'rotate(90deg)' : 'none',
+                      transition: 'transform 0.2s ease'
+                    }}
+                  />
+                </div>
+              </button>
+            );
+          })}
         </div>
+
+        {/* ===================================================================== */}
+        {/* INTERACTIVE DRILL-DOWN PANEL: แสดงรายการคำร้องตามสถานะ Workflow ที่กดเลือก */}
+        {/* ===================================================================== */}
+        {activeWorkflowStage && (
+          <div
+            ref={workflowPanelRef}
+            style={{
+              marginTop: '20px',
+              padding: '20px',
+              borderRadius: '12px',
+              background: 'rgba(3, 15, 20, 0.88)',
+              border: `1.5px solid ${activeWorkflowStage.activeBorder}`,
+              boxShadow: '0 14px 36px rgba(0, 0, 0, 0.45)'
+            }}
+          >
+            {/* Drill-Down Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              flexWrap: 'wrap',
+              gap: '12px',
+              paddingBottom: '14px',
+              borderBottom: '1px solid var(--border-glass)'
+            }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <span className={`badge ${activeWorkflowStage.badgeClass}`} style={{ fontSize: '11.5px' }}>
+                    {activeWorkflowStage.stepBadge}
+                  </span>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#fff' }}>
+                    รายการคำร้อง: {activeWorkflowStage.title}
+                  </h3>
+                  <span className="badge badge-amber" style={{ fontSize: '12px' }}>
+                    พบ {filteredWorkflowClaims.length.toLocaleString('th-TH')} เรื่อง
+                  </span>
+                </div>
+                <div style={{ fontSize: '12.5px', color: 'var(--text-dim)', marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                  <span>
+                    ห้วงเวลา: <strong style={{ color: '#e2e8f0' }}>{selectedFiscalYear === 'ALL' ? 'ทุกปีงบประมาณ (สะสมทั้งหมด)' : `ปีงบประมาณ ${selectedFiscalYear}`}</strong>
+                  </span>
+                  <span>
+                    • วงเงินสินไหมรวมในรายการนี้: <strong style={{ color: 'var(--gold-light)' }}>{workflowTotalAmount.toLocaleString('th-TH')} บาท</strong>
+                  </span>
+                </div>
+
+                {currentUser?.role === 'UNIT_OFFICER' && workflowStageClaims.length !== (stats?.[activeWorkflowStage.statKey] ?? 0) && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    fontSize: '12px',
+                    color: '#bfdbfe'
+                  }}>
+                    หมายเหตุ: ระบบแสดงเฉพาะรายการคำร้องภายในสังกัดหน่วยของท่าน ({workflowStageClaims.length.toLocaleString('th-TH')} เรื่อง) จากยอดรวมทั้ง ทบ. ({(stats?.[activeWorkflowStage.statKey] ?? 0).toLocaleString('th-TH')} เรื่อง) ตามสิทธิ์การเข้าถึงข้อมูล
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {filteredWorkflowClaims.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleExportWorkflowExcel}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px' }}
+                  >
+                    <Download size={14} />
+                    <span>ส่งออก Excel</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedWorkflowKey(null);
+                    setWorkflowSubStatus('ALL');
+                    setWorkflowSearch('');
+                    setWorkflowPage(1);
+                    setClaimsPage(1);
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12.5px' }}
+                  title="ปิดรายการรายละเอียด"
+                >
+                  <X size={15} />
+                  <span>ปิด</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-status Filter Pills & Search Input */}
+            <div style={{
+              marginTop: '14px',
+              marginBottom: '14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
+              {activeWorkflowStage.subFilters.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {activeWorkflowStage.subFilters.map((sf) => {
+                    const sfCount = sf.key === 'ALL'
+                      ? workflowStageClaims.length
+                      : workflowStageClaims.filter((c) => sf.matcher(c)).length;
+                    const isSubActive = workflowSubStatus === sf.key;
+                    return (
+                      <button
+                        key={sf.key}
+                        type="button"
+                        onClick={() => {
+                          setWorkflowSubStatus(sf.key);
+                          setWorkflowPage(1);
+                        }}
+                        style={{
+                          padding: '5px 11px',
+                          borderRadius: '999px',
+                          fontSize: '12px',
+                          fontWeight: isSubActive ? 700 : 500,
+                          cursor: 'pointer',
+                          border: isSubActive ? `1px solid ${activeWorkflowStage.activeBorder}` : '1px solid var(--border-glass)',
+                          background: isSubActive ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.04)',
+                          color: isSubActive ? '#fff' : 'var(--text-muted)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {sf.label} ({sfCount.toLocaleString('th-TH')})
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: '12.5px', color: 'var(--text-dim)' }}>
+                  แสดงรายการคำร้องทั้งหมดในกลุ่มสถานะนี้
+                </div>
+              )}
+
+              <div style={{ position: 'relative', minWidth: '250px', flex: '0 1 320px' }}>
+                <Search size={14} style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)' }} />
+                <input
+                  type="text"
+                  className="form-input"
+                  value={workflowSearch}
+                  onChange={(e) => {
+                    setWorkflowSearch(e.target.value);
+                    setWorkflowPage(1);
+                  }}
+                  placeholder="ค้นหาเลขที่คำร้อง, ชื่อ-สกุล, หน่วย, สาเหตุ..."
+                  style={{ paddingLeft: '34px', paddingRight: workflowSearch ? '30px' : '12px', fontSize: '13px', height: '36px' }}
+                />
+                {workflowSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWorkflowSearch('');
+                      setWorkflowPage(1);
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-dim)',
+                      cursor: 'pointer',
+                      padding: '2px'
+                    }}
+                    title="ล้างคำค้นหา"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Drill-Down Claims Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                    <th style={{ padding: '10px 12px', width: '52px' }}>#</th>
+                    <th style={{ padding: '10px 12px' }}>เลขที่คำร้อง / วันที่รายงาน</th>
+                    <th style={{ padding: '10px 12px' }}>หน่วยเสนอเรื่อง</th>
+                    <th style={{ padding: '10px 12px' }}>กำลังพลผู้สูญเสีย / สาเหตุ</th>
+                    <th style={{ padding: '10px 12px' }}>ประเภทสินไหม</th>
+                    <th style={{ padding: '10px 12px' }}>สถานะ Workflow</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'right' }}>รายละเอียด</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedWorkflowClaims.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-dim)' }}>
+                        {workflowSearch.trim()
+                          ? `ไม่พบรายการคำร้องที่ตรงกับคำค้นหา "${workflowSearch}" ในสถานะ ${activeWorkflowStage.title}`
+                          : `ไม่มีรายการคำร้องในสถานะ "${activeWorkflowStage.title}" สำหรับห้วงเวลาที่เลือก`}
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedWorkflowClaims.map((claim, idx) => {
+                      const rowNum = (safeWorkflowPage - 1) * WORKFLOW_CLAIMS_PER_PAGE + idx + 1;
+                      const causeSummary = claim.causeOfLoss || claim.lossSpecificCause || claim.deathCertificateCause || claim.disabledOrganDetail || '-';
+                      return (
+                        <tr key={claim.id} style={{ borderBottom: '1px solid var(--border-glass)' }}>
+                          <td style={{ padding: '12px', color: 'var(--text-dim)', fontWeight: 600 }}>
+                            {rowNum}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--gold-primary)', whiteSpace: 'nowrap' }}>
+                              {claim.trackingCode}
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              {formatThaiDate(claim.reportDate || claim.createdAt, true)}
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px', color: 'var(--text-main)' }}>
+                            {claim.unitName || '-'}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: 600, color: '#fff' }}>
+                              {claim.casualtyRank} {claim.casualtyFirstName} {claim.casualtyLastName}
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              {claim.lossType === 'DECEASED' ? 'เสียชีวิต' : 'พิการทุพพลภาพ'} • {claim.personnelType || '-'}
+                            </div>
+                            <div
+                              title={causeSummary}
+                              style={{
+                                fontSize: '11.5px',
+                                color: '#94a3b8',
+                                marginTop: '2px',
+                                maxWidth: '280px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}
+                            >
+                              สาเหตุ: {causeSummary}
+                            </div>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <span className={`badge ${claim.claimType === 'HIGH_RISK' ? 'badge-amber' : 'badge-blue'}`}>
+                              {claim.claimType === 'HIGH_RISK' ? 'เสี่ยงภัย 300,000 บ.' : 'ยามปกติ 60,000 บ.'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {renderWorkflowStatusBadge(claim.status)}
+                            {claim.status === 'REJECTED_BY_KSP' && claim.rejectionReason && (
+                              <div style={{ fontSize: '11.5px', color: '#fca5a5', marginTop: '4px', maxWidth: '240px' }}>
+                                เหตุผล: {claim.rejectionReason}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <Link href={`/claims/${claim.id}`} className="btn btn-secondary btn-sm">
+                              เปิดดู / ตรวจเรื่อง
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredWorkflowClaims.length > 0 && (
+              <PaginationBar
+                currentPage={safeWorkflowPage}
+                totalItems={filteredWorkflowClaims.length}
+                itemsPerPage={WORKFLOW_CLAIMS_PER_PAGE}
+                onPageChange={setWorkflowPage}
+                nextLabel="หน้าต่อไป"
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}
@@ -905,17 +1495,43 @@ export default function DashboardPage() {
       <div className="glass-panel" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h2 style={{ fontSize: '18px', margin: 0, fontWeight: 700 }}>
-              รายการคำร้องเสนอล่าสุด & สถานะกรอบเวลา (SLA 30 วัน)
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <h2 style={{ fontSize: '18px', margin: 0, fontWeight: 700 }}>
+                {activeWorkflowStage
+                  ? `รายการคำร้อง: ${activeWorkflowStage.title} & สถานะกรอบเวลา (SLA 30 วัน)`
+                  : 'รายการคำร้องเสนอล่าสุด & สถานะกรอบเวลา (SLA 30 วัน)'}
+              </h2>
+              <span className={`badge ${activeWorkflowStage ? activeWorkflowStage.badgeClass : 'badge-amber'}`} style={{ fontSize: '11.5px' }}>
+                {totalClaimsCount.toLocaleString('th-TH')} เรื่อง
+              </span>
+            </div>
             <p style={{ fontSize: '13px', color: 'var(--text-dim)', marginTop: '4px', margin: '4px 0 0' }}>
-              ติดตามสถานะความคืบหน้ารายเรื่องตามขั้นตอน Workflows 5 ระดับ • แสดงหน้าละ {CLAIMS_PER_PAGE} แถว
+              {selectedFiscalYear === 'ALL' ? 'ทุกปีงบประมาณ' : `ปีงบประมาณ ${selectedFiscalYear}`} • ติดตามสถานะความคืบหน้ารายเรื่องตามขั้นตอน Workflows 5 ระดับ • แสดงหน้าละ {CLAIMS_PER_PAGE} แถว
             </p>
           </div>
-          <Link href="/claims" className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>ดูรายการทั้งหมดในระบบ</span>
-            <ArrowUpRight size={14} />
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {activeWorkflowStage && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedWorkflowKey(null);
+                  setWorkflowSubStatus('ALL');
+                  setWorkflowSearch('');
+                  setWorkflowPage(1);
+                  setClaimsPage(1);
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              >
+                <RotateCcw size={13} />
+                <span>แสดงทุกสถานะ</span>
+              </button>
+            )}
+            <Link href="/claims" className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>ดูรายการทั้งหมดในระบบ</span>
+              <ArrowUpRight size={14} />
+            </Link>
+          </div>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
@@ -935,7 +1551,9 @@ export default function DashboardPage() {
               {paginatedClaims.length === 0 ? (
                 <tr>
                   <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-dim)' }}>
-                    ยังไม่มีรายการคำร้อง
+                    {activeWorkflowStage
+                      ? `ไม่มีรายการคำร้องในสถานะ "${activeWorkflowStage.title}" สำหรับห้วงเวลาที่เลือก`
+                      : 'ยังไม่มีรายการคำร้อง'}
                   </td>
                 </tr>
               ) : (
@@ -948,7 +1566,10 @@ export default function DashboardPage() {
                   return (
                     <tr key={claim.id} style={{ borderBottom: '1px solid var(--border-glass)' }}>
                       <td style={{ padding: '14px', fontWeight: 600, color: 'var(--gold-primary)' }}>
-                        {claim.trackingCode}
+                        <div>{claim.trackingCode}</div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', fontWeight: 400, marginTop: '2px' }}>
+                          {formatThaiDate(claim.reportDate || claim.createdAt, true)}
+                        </div>
                       </td>
                       <td style={{ padding: '14px', color: 'var(--text-main)' }}>
                         {claim.unitName}
@@ -965,9 +1586,7 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td style={{ padding: '14px' }}>
-                        <span className="badge badge-emerald">
-                          {claim.status}
-                        </span>
+                        {renderWorkflowStatusBadge(claim.status)}
                       </td>
                       <td style={{ padding: '14px' }}>
                         {claim.status === 'PAID' || claim.status === 'SK_NOTIFIED' ? (
