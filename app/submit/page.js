@@ -103,10 +103,19 @@ export default function SubmitClaimPage() {
       district: 'เมืองกาญจนบุรี',
       province: 'กาญจนบุรี',
       fullAddress: 'ถ.แสงชูโต ต.ลาดหญ้า อ.เมืองกาญจนบุรี จ.กาญจนบุรี'
-    }
+    },
+    // ข้อมูลทายาท / ผู้รับเงินค่าสินไหม (เอกสารข้อ 11)
+    heirName: '',
+    heirBank: '',
+    heirBankAccount: '',
+    heirAddress: '',
+    heirPhone: '',
+    heirEmail: '',
+    // รายงานสาเหตุความล่าช้า กรณีเสนอเรื่องเกิน 30 วัน (เอกสารข้อ 12)
+    delayReason: ''
   });
 
-  // State เก็บรายการเอกสารแนบ 10 รายการ
+  // State เก็บรายการเอกสารแนบ 12 รายการ ตามระเบียบ ทบ.
   const [attachedDocs, setAttachedDocs] = useState(
     REQUIRED_DOCUMENTS.map((doc) => ({
       index: doc.index,
@@ -118,6 +127,18 @@ export default function SubmitClaimPage() {
       note: doc.note || ''
     }))
   );
+
+  // คำนวณจำนวนวันที่เสนอเรื่องนับจากวันสูญเสีย (กรณีเกิน 30 วัน)
+  const calculateDaysOverdue = useCallback(() => {
+    if (!formData.lossDate) return 0;
+    const lossTime = new Date(formData.lossDate).getTime();
+    const reportTime = formData.reportDate ? new Date(formData.reportDate).getTime() : Date.now();
+    const diff = Math.floor((reportTime - lossTime) / (1000 * 60 * 60 * 24));
+    return Math.max(0, diff);
+  }, [formData.lossDate, formData.reportDate]);
+
+  const daysOverdue = calculateDaysOverdue();
+  const isOverdue30Days = daysOverdue > 30;
 
   // Auto-complete rank filter state
   const [rankInput, setRankInput] = useState('ส.อ.');
@@ -299,7 +320,14 @@ export default function SubmitClaimPage() {
         deathCertificateCause: c.deathCertificateCause || '',
         disabledOrganDetail: c.disabledOrganDetail || '',
         lossSpecificCause: c.lossSpecificCause || '',
-        locationOfLoss: c.locationOfLoss || prev.locationOfLoss
+        locationOfLoss: c.locationOfLoss || prev.locationOfLoss,
+        heirName: c.heirName || prev.heirName || '',
+        heirBank: c.heirBank || prev.heirBank || '',
+        heirBankAccount: c.heirBankAccount || prev.heirBankAccount || '',
+        heirAddress: c.heirAddress || prev.heirAddress || '',
+        heirPhone: c.heirPhone || prev.heirPhone || '',
+        heirEmail: c.heirEmail || prev.heirEmail || '',
+        delayReason: c.delayReason || prev.delayReason || ''
       }));
 
       if (c.casualtyRank) {
@@ -892,22 +920,79 @@ export default function SubmitClaimPage() {
       return;
     }
 
-    // ตรวจสอบเอกสารบังคับ
+    // ตรวจสอบเอกสารบังคับตามระเบียบ 12 รายการ
     const missingDocs = [];
-    if (!attachedDocs.find((d) => d.index === 1)?.uploaded) missingDocs.push('1. รายงาน กพ.4');
-    if (formData.lossType === 'DECEASED' && !attachedDocs.find((d) => d.index === 2)?.uploaded) {
-      missingDocs.push('2. ใบมรณบัตร (กรณีผู้เสียชีวิต)');
+
+    // ข้อ 1: หนังสือราชการของหน่วย
+    if (!attachedDocs.find((d) => d.index === 1)?.uploaded) {
+      missingDocs.push('1. หนังสือราชการของหน่วย ขอรับเงินค่าสินไหมทดแทน');
     }
-    if (formData.lossType === 'DISABLED' && !attachedDocs.find((d) => d.index === 7)?.uploaded) {
-      missingDocs.push('7. คำสั่งปลดพ้นหรือปลดออกจากราชการ (กรณีทุพพลภาพ)');
+
+    // ข้อ 2: รายงานการสูญเสีย (กพ.3 หรือ กพ.4)
+    if (!attachedDocs.find((d) => d.index === 2)?.uploaded) {
+      missingDocs.push(formData.lossType === 'DISABLED' ? '2. รายงานการสูญเสีย (กพ.3)' : '2. รายงานการสูญเสีย (กพ.4)');
     }
-    // กรณีปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท) ต้องแนบรูปถ่าย 4x6 นิ้ว แต่ถ้ารับเงิน 60,000 บาท ไม่ต้องแนบ
+
+    // ข้อ 3: รายงานการสอบสวนเกี่ยวกับสาเหตุแห่งการเสียชีวิตของหน่วย (ยกเว้นป่วยเจ็บ หรือพิการ)
+    const isExemptDoc3 = formData.incidentType === 'ILLNESS' || formData.lossType === 'DISABLED';
+    if (!isExemptDoc3 && !attachedDocs.find((d) => d.index === 3)?.uploaded) {
+      missingDocs.push('3. รายงานการสอบสวนของหน่วย (ยกเว้นกรณีป่วยเจ็บ)');
+    }
+
+    // ข้อ 4: เอกสารผู้เสียชีวิต (สำเนาใบมรณบัตร และ สำเนาทะเบียนบ้านประทับตรา "ตาย")
+    if (formData.lossType === 'DECEASED' && !attachedDocs.find((d) => d.index === 4)?.uploaded) {
+      missingDocs.push('4. เอกสารผู้เสียชีวิต (ใบมรณบัตร และ ทะเบียนบ้านประทับตรา "ตาย")');
+    }
+
+    // ข้อ 5: หนังสือแสดงเจตนาระบุผู้รับประโยชน์ / คำสั่ง / ป.ค.14
+    if (!attachedDocs.find((d) => d.index === 5)?.uploaded) {
+      missingDocs.push('5. หนังสือแสดงเจตนาระบุผู้รับประโยชน์ หรือ ป.ค.14');
+    }
+
+    // ข้อ 6: เอกสารผู้รับเงินสินไหม (บัตร ปปช. + ทะเบียนบ้าน + ยินยอม)
+    if (!attachedDocs.find((d) => d.index === 6)?.uploaded) {
+      missingDocs.push('6. เอกสารผู้รับเงินสินไหม (บัตร ปปช., ทะเบียนบ้าน, หนังสือยินยอม)');
+    }
+
+    // ข้อ 7: หนังสือเรียกร้องค่าสินไหมมรณกรรม (ปช.11)
+    if (!attachedDocs.find((d) => d.index === 7)?.uploaded) {
+      missingDocs.push('7. หนังสือเรียกร้องค่าสินไหมมรณกรรม (ปช.11)');
+    }
+
+    // ข้อ 8: หลักฐานพิสูจน์ระดับสารเสพติดและแอลกอฮอล์ในเลือด (กรณีอุบัติเหตุและเป็นผู้ขับขี่)
+    if (formData.incidentType === 'ACCIDENT' && formData.isDriver === 'YES' && !attachedDocs.find((d) => d.index === 8)?.uploaded) {
+      missingDocs.push('8. หลักฐานพิสูจน์ระดับสารเสพติดและแอลกอฮอล์ในเลือด (กรณีขับขี่)');
+    }
+
+    // ข้อ 10: รูปถ่าย 4x6 นิ้ว (กรณีรับเงินเกิน 100,000 บาท)
     if (formData.claimType === 'HIGH_RISK' && !attachedDocs.find((d) => d.index === 10)?.uploaded) {
-      missingDocs.push('10. รูปถ่ายขนาด 4x6 นิ้ว (จำเป็นสำหรับกรณีปฏิบัติหน้าที่สำคัญ รับเงิน 300,000 บาท)');
+      missingDocs.push('10. รูปถ่ายขนาด 4x6 นิ้ว (จำเป็นสำหรับกรณีรับเงินเกิน 100,000 บาท)');
+    }
+
+    // ข้อ 11: สำเนาสมุดบัญชีเงินฝากทายาท
+    if (!attachedDocs.find((d) => d.index === 11)?.uploaded) {
+      missingDocs.push('11. สำเนาสมุดบัญชีเงินฝากของทายาท');
+    }
+
+    // ข้อ 12: รายงานสาเหตุความล่าช้า (กรณีเสนอเรื่องเกินกว่า 30 วันหลังจากกำลังพลเสียชีวิต)
+    if (isOverdue30Days && !attachedDocs.find((d) => d.index === 12)?.uploaded) {
+      missingDocs.push(`12. รายงานสาเหตุความล่าช้า (เนื่องจากเสนอเรื่องเกิน 30 วัน: ${daysOverdue} วัน)`);
     }
 
     if (missingDocs.length > 0) {
       setErrorMsg(`กรุณาแนบเอกสารสำคัญให้ครบถ้วนก่อนส่งเรื่อง: ${missingDocs.join(', ')} (หากเอกสารยังไม่ครบ สามารถกดปุ่ม "บันทึกร่าง" เพื่อรอเอกสารได้)`);
+      return;
+    }
+
+    // ตรวจสอบข้อมูลทายาทในข้อ 11
+    if (!formData.heirName || formData.heirName.trim().length < 2) {
+      setErrorMsg('กรุณาระบุชื่อ-นามสกุล ของทายาทผู้รับประโยชน์เงินสินไหมในเอกสารข้อ 11 ให้ถูกต้อง');
+      return;
+    }
+
+    // ตรวจสอบรายงานความล่าช้าในข้อ 12 กรณีเกิน 30 วัน
+    if (isOverdue30Days && (!formData.delayReason || formData.delayReason.trim().length < 5)) {
+      setErrorMsg(`เนื่องจากเสนอเรื่องเกิน 30 วันหลังจากวันสูญเสีย (${daysOverdue} วัน) กรุณาระบุ "บันทึกชี้แจงรายงานสาเหตุความล่าช้า" ในเอกสารข้อ 12 อย่างน้อย 5 ตัวอักษร`);
       return;
     }
 
@@ -1857,21 +1942,16 @@ export default function SubmitClaimPage() {
           />
         </div>
 
-        {/* Section 4: รายการเอกสารหลักฐานแนบ 10 รายการ */}
+        {/* Section 4: รายการเอกสารหลักฐานแนบ 12 รายการ ตามระเบียบ ทบ. */}
         <div className="glass-panel" style={{ padding: '24px', marginBottom: '28px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
               <h2 style={{ fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--gold-light)' }}>
                 <Paperclip size={18} />
-                <span>4. เอกสารหลักฐานประกอบแนบไฟล์ 10 รายการ</span>
+                <span>4. เอกสารหลักฐานประกอบแนบไฟล์ 12 รายการ (ตามระเบียบ ทบ.)</span>
               </h2>
               <p style={{ fontSize: '12.5px', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>
-                {formData.lossType === 'DISABLED' 
-                  ? 'กรณีพิการทุพพลภาพ: เอกสารข้อ 2 (ใบมรณบัตร) ได้รับการยกเว้นไม่ต้องแนบ (ต้องแนบข้อ 7 คำสั่งปลดฯ)' 
-                  : 'กรณีผู้เสียชีวิต: บังคับแนบเอกสารข้อ 2 (ใบมรณบัตร)'}
-                {formData.claimType === 'HIGH_RISK' 
-                  ? ' • กรณีหน้าที่สำคัญ (300,000 บาท) บังคับแนบข้อ 10 (รูปถ่าย 4x6 นิ้ว)' 
-                  : ' • กรณีรับเงิน 60,000 บาท ยกเว้นข้อ 10 (ไม่ต้องแนบ)'}
+                หลักเกณฑ์และเอกสารประกอบตามระเบียบกองทัพบก ว่าด้วยการประกันชีวิตกำลังพล ทบ. • หากเอกสารยังไม่ครบถ้วน สามารถกด &quot;บันทึกร่าง&quot; ไว้ก่อนได้
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -1884,48 +1964,164 @@ export default function SubmitClaimPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* ป้ายเตือนกรณีเสนอเรื่องเกินกว่า 30 วันหลังจากวันสูญเสีย */}
+          {isOverdue30Days && (
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              color: '#fca5a5',
+              fontSize: '13px'
+            }}>
+              <AlertCircle size={20} color="var(--ruby-danger)" style={{ flexShrink: 0 }} />
+              <div>
+                <strong>⚠️ เสนอเรื่องเกินกว่า 30 วันหลังจากวันสูญเสีย ({daysOverdue} วัน)</strong>
+                <span style={{ display: 'block', fontSize: '12px', color: '#fecaca', marginTop: '2px' }}>
+                  ตามระเบียบ ทบ. กำหนดให้เสนอเรื่องภายใน 30 วันหลังเกิดเหตุ ในกรณีนี้จึง<strong>บังคับแนบเอกสารข้อ 12 (รายงานสาเหตุความล่าช้า)</strong> พร้อมระบุชี้แจงเหตุผลความจำเป็นในแบบฟอร์มด้านล่าง
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {attachedDocs.map((doc) => {
               const isHighRisk = formData.claimType === 'HIGH_RISK';
-              const isDoc10 = doc.index === 10;
-              const isDoc2 = doc.index === 2;
-              const isDoc7 = doc.index === 7;
               const isDeceased = formData.lossType === 'DECEASED';
               const isDisabled = formData.lossType === 'DISABLED';
+              const isIllness = formData.incidentType === 'ILLNESS';
+              const isAccident = formData.incidentType === 'ACCIDENT';
+              const isDriver = isAccident && formData.isDriver === 'YES';
 
-              const isMandatory = 
-                doc.index === 1 || 
-                (isDoc2 && isDeceased) ||
-                (isDoc7 && isDisabled) ||
-                (isDoc10 && isHighRisk) ||
-                doc.index === 3 || doc.index === 4 || doc.index === 5 || doc.index === 6 || doc.index === 8;
+              // กำหนดเงื่อนไขบังคับและข้อยกเว้นของแต่ละเอกสาร
+              let isMandatory = false;
+              let isExempt = false;
+              let badgeText = '';
+              let badgeType = 'default'; // 'mandatory' | 'exempt' | 'info'
+              let displayNote = doc.note || '';
 
-              const isExempt = 
-                (isDoc10 && !isHighRisk) || 
-                (isDoc2 && isDisabled) || 
-                (isDoc7 && isDeceased);
-
-              // กำหนดหมายเหตุแสดงผลเฉพาะกรณี
-              let displayNote = doc.note;
-              if (isDoc10) {
-                displayNote = isHighRisk 
-                  ? 'บังคับแนบเฉพาะกรณีปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท)' 
-                  : 'กรณีรับเงิน 60,000 บาท ไม่ต้องแนบเอกสารนี้ (ยกเว้น)';
-              } else if (isDoc2) {
-                displayNote = isDeceased
-                  ? 'บังคับแนบเฉพาะกรณีผู้เสียชีวิต'
-                  : 'กรณีพิการทุพพลภาพ ไม่ต้องแนบใบมรณบัตร (ได้รับการยกเว้น)';
-              } else if (isDoc7) {
-                displayNote = isDisabled
-                  ? 'บังคับแนบเฉพาะกรณีทุพพลภาพ'
-                  : 'กรณีผู้เสียชีวิต ไม่ต้องแนบเอกสารนี้ (ยกเว้น)';
+              if (doc.index === 1) {
+                isMandatory = true;
+                badgeText = '★ บังคับแนบ (ทุกกรณี)';
+                badgeType = 'mandatory';
+                displayNote = 'หนังสือราชการของหน่วย เสนอขอรับเงินค่าสินไหมทดแทนในการประกันชีวิต';
+              } else if (doc.index === 2) {
+                isMandatory = true;
+                badgeText = isDeceased ? '★ บังคับแนบ (รายงาน กพ.4)' : '★ บังคับแนบ (รายงาน กพ.3)';
+                badgeType = 'mandatory';
+                displayNote = isDeceased ? 'กรณีเสียชีวิตแนบแบบรายงาน กพ.4' : 'กรณีทุพพลภาพแนบแบบรายงาน กพ.3';
+              } else if (doc.index === 3) {
+                // รายงานการสอบสวนของหน่วย (ยกเว้นป่วยเจ็บ)
+                if (isIllness || isDisabled) {
+                  isExempt = true;
+                  badgeText = '✓ ยกเว้นไม่ต้องแนบ (กรณีป่วยเจ็บ/ทุพพลภาพ)';
+                  badgeType = 'exempt';
+                  displayNote = 'ได้รับการยกเว้นไม่ต้องแนบรายงานการสอบสวน (ยกเว้นกรณีเสียชีวิตจากการป่วยเจ็บ)';
+                } else {
+                  isMandatory = true;
+                  badgeText = '★ บังคับแนบ (กรณีอุบัติเหตุ/การรบ/อื่นๆ)';
+                  badgeType = 'mandatory';
+                  displayNote = 'รายงานหรือบันทึกการสอบสวนเกี่ยวกับสาเหตุแห่งการเสียชีวิตของหน่วย';
+                }
+              } else if (doc.index === 4) {
+                // เอกสารผู้เสียชีวิต (มรณบัตร + ทะเบียนบ้านประทับตราตาย)
+                if (isDisabled) {
+                  isExempt = true;
+                  badgeText = '✓ ยกเว้นไม่ต้องแนบ (กรณีพิการทุพพลภาพ)';
+                  badgeType = 'exempt';
+                  displayNote = 'กรณีพิการทุพพลภาพได้รับการยกเว้นไม่ต้องแนบ';
+                } else {
+                  isMandatory = true;
+                  badgeText = '★ บังคับแนบ (มรณบัตร & ทะเบียนบ้านตาย)';
+                  badgeType = 'mandatory';
+                  displayNote = 'สำเนาใบมรณบัตร และ สำเนาทะเบียนบ้านประทับตรา "ตาย"';
+                }
+              } else if (doc.index === 5) {
+                isMandatory = true;
+                badgeText = '★ บังคับแนบ (หนังสือแสดงเจตนา/ป.ค.14)';
+                badgeType = 'mandatory';
+                displayNote = 'หนังสือแสดงเจตนาระบุผู้รับประโยชน์ หรือคำสั่งกำหนดให้เป็นผู้รับประโยชน์ หรือผลสอบสวนทายาท ป.ค.14';
+              } else if (doc.index === 6) {
+                isMandatory = true;
+                badgeText = '★ บังคับแนบ (บัตร ปปช. + ทะเบียนบ้าน + ยินยอม)';
+                badgeType = 'mandatory';
+                displayNote = 'สำเนาบัตร ปปช. ผู้รับเงินสินไหม, สำเนาทะเบียนบ้าน และ หนังสือแสดงความยินยอมเปิดเผยข้อมูลส่วนบุคคล';
+              } else if (doc.index === 7) {
+                isMandatory = true;
+                badgeText = '★ บังคับแนบ (แบบฟอร์ม ปช.11)';
+                badgeType = 'mandatory';
+                displayNote = 'หนังสือเรียกร้องค่าสินไหมมรณกรรม ของบริษัทประกันชีวิต (แบบ ปช.11)';
+              } else if (doc.index === 8) {
+                // หลักฐานสารเสพติด/แอลกอฮอล์ (กรณีอุบัติเหตุและเป็นผู้ขับขี่)
+                if (isAccident && isDriver) {
+                  isMandatory = true;
+                  badgeText = '★ บังคับแนบ (กรณีอุบัติเหตุและเป็นผู้ขับขี่)';
+                  badgeType = 'mandatory';
+                  displayNote = 'ผลตรวจวัดระดับสารเสพติดและแอลกอฮอล์ในเลือดของกำลังพลผู้ขับขี่';
+                } else {
+                  isExempt = true;
+                  badgeText = '✓ ยกเว้นไม่ต้องแนบ (มิใช่อุบัติเหตุที่เป็นผู้ขับขี่)';
+                  badgeType = 'exempt';
+                  displayNote = 'ยกเว้นไม่ต้องแนบสำหรับกรณีที่มิใช่อุบัติเหตุที่เป็นผู้ขับขี่';
+                }
+              } else if (doc.index === 9) {
+                // เอกสารสอบสวน ตร.
+                if (isIllness) {
+                  isExempt = true;
+                  badgeText = '✓ ยกเว้นไม่ต้องแนบ (กรณีป่วยเจ็บทั่วไป)';
+                  badgeType = 'exempt';
+                  displayNote = 'กรณีเสียชีวิตจากการป่วยเจ็บทั่วไป ไม่จำเป็นต้องแนบบันทึกประจำวัน ตร.';
+                } else if (isAccident) {
+                  badgeText = '★ ควรแนบ (กรณีเกิดอุบัติเหตุ/ผิดธรรมชาติ)';
+                  badgeType = 'info';
+                  displayNote = 'กรณีเสียชีวิตจากอุบัติเหตุหรือผิดธรรมชาติ ซึ่งการตายไม่แน่ชัด';
+                } else {
+                  badgeText = 'เอกสารประกอบเพิ่มเติม';
+                  badgeType = 'default';
+                  displayNote = 'เอกสารสอบสวนหรือบันทึกประจำวัน ตร. (ถ้ามี)';
+                }
+              } else if (doc.index === 10) {
+                // รูปถ่าย 4x6 นิ้ว (กรณีรับเงินเกิน 100,000 บ.)
+                if (isHighRisk) {
+                  isMandatory = true;
+                  badgeText = '★ บังคับแนบ (กรณีรับเงินเกิน 100,000 บาท)';
+                  badgeType = 'mandatory';
+                  displayNote = 'บังคับแนบรูปถ่ายขนาด 4x6 นิ้ว สำหรับกรณีรับเงินค่าสินไหม 300,000 บาท';
+                } else {
+                  isExempt = true;
+                  badgeText = '✓ ยกเว้นไม่ต้องแนบ (กรณีรับเงิน 60,000 บาท)';
+                  badgeType = 'exempt';
+                  displayNote = 'กรณีรับเงินค่าสินไหม 60,000 บาท ได้รับการยกเว้นไม่ต้องแนบ';
+                }
+              } else if (doc.index === 11) {
+                isMandatory = true;
+                badgeText = '★ บังคับแนบ (พร้อมกรอกที่อยู่ เบอร์โทร อีเมล)';
+                badgeType = 'mandatory';
+                displayNote = 'สำเนาสมุดบัญชีเงินฝาก (ไม่ระบุธนาคาร) ของทายาท พร้อมกรอกข้อมูลที่อยู่ เบอร์โทรศัพท์ และอีเมล';
+              } else if (doc.index === 12) {
+                // รายงานสาเหตุความล่าช้า (เกิน 30 วัน)
+                if (isOverdue30Days) {
+                  isMandatory = true;
+                  badgeText = `★ บังคับแนบ (เสนอเรื่องเกิน 30 วัน: ${daysOverdue} วัน)`;
+                  badgeType = 'mandatory';
+                  displayNote = 'กรณีเสนอเรื่องถึง กพ.ทบ. เกินกว่า 30 วันหลังจากกำลังพลเสียชีวิต ต้องแนบรายงานชี้แจงความล่าช้า';
+                } else {
+                  isExempt = true;
+                  badgeText = `✓ ยกเว้นไม่ต้องแนบ (เสนอเรื่องภายใน 30 วัน: ${daysOverdue} วัน)`;
+                  badgeType = 'exempt';
+                  displayNote = 'เสนอเรื่องภายในระยะเวลา 30 วันตามระเบียบ ได้รับการยกเว้นไม่ต้องแนบ';
+                }
               }
 
               return (
                 <div 
                   key={doc.index}
                   style={{
-                    padding: '12px 16px',
+                    padding: '14px 16px',
                     borderRadius: '8px',
                     background: doc.uploaded 
                       ? 'rgba(16, 185, 129, 0.08)' 
@@ -1934,195 +2130,328 @@ export default function SubmitClaimPage() {
                       ? '1px solid rgba(16, 185, 129, 0.3)' 
                       : (isExempt ? '1px dashed rgba(255, 255, 255, 0.08)' : '1px solid var(--border-glass)'),
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
+                    flexDirection: 'column',
                     gap: '12px',
                     opacity: (isExempt && !doc.uploaded) ? 0.75 : 1
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      background: doc.uploaded 
-                        ? 'var(--emerald-success)' 
-                        : (isExempt ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.1)'),
-                      color: doc.uploaded ? '#070d1e' : 'var(--text-dim)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 700,
-                      fontSize: '12px'
-                    }}>
-                      {doc.index}
-                    </div>
-
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '14px', color: doc.uploaded ? '#fff' : '#cbd5e1', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                        <span>{doc.name}</span>
-                        {isMandatory && <span style={{ color: 'var(--ruby-danger)' }}>*</span>}
-                        {isDoc2 && isDeceased && (
-                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                            ★ บังคับแนบ (กรณีผู้เสียชีวิต)
-                          </span>
-                        )}
-                        {isDoc2 && isDisabled && (
-                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-                            ✓ ยกเว้นไม่ต้องแนบ (กรณีพิการทุพพลภาพ)
-                          </span>
-                        )}
-                        {isDoc7 && isDisabled && (
-                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: 'var(--gold-primary)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
-                            ★ บังคับแนบ (กรณีทุพพลภาพ)
-                          </span>
-                        )}
-                        {isDoc7 && isDeceased && (
-                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-                            ✓ ยกเว้นไม่ต้องแนบ (กรณีผู้เสียชีวิต)
-                          </span>
-                        )}
-                        {isDoc10 && isHighRisk && (
-                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: 'var(--gold-primary)', border: '1px solid rgba(234, 179, 8, 0.3)' }}>
-                            ★ บังคับแนบ (รับเงิน 300,000 บาท)
-                          </span>
-                        )}
-                        {isDoc10 && !isHighRisk && (
-                          <span style={{ fontSize: '11px', padding: '1px 8px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.12)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.25)' }}>
-                            ✓ ยกเว้นไม่ต้องแนบ (รับเงิน 60,000 บาท)
-                          </span>
-                        )}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: doc.uploaded 
+                          ? 'var(--emerald-success)' 
+                          : (isExempt ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.1)'),
+                        color: doc.uploaded ? '#070d1e' : 'var(--text-dim)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        flexShrink: 0
+                      }}>
+                        {doc.index}
                       </div>
-                      <div style={{ fontSize: '12px', color: (isDoc10 && isHighRisk) || (isDoc2 && isDeceased) || (isDoc7 && isDisabled) ? 'var(--gold-primary)' : 'var(--text-dim)' }}>
-                        {displayNote ? `(หมายเหตุ: ${displayNote})` : 'เอกสารประกอบตามระเบียบ ทบ.'}
-                      </div>
-                    </div>
-                  </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    {doc.uploaded ? (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
-                          <span 
-                            style={{ 
-                              fontSize: '12px', 
-                              color: 'var(--emerald-success)', 
-                              fontWeight: 500, 
-                              maxWidth: '180px', 
-                              overflow: 'hidden', 
-                              textOverflow: 'ellipsis', 
-                              whiteSpace: 'nowrap' 
-                            }} 
-                            title={doc.fileName}
-                          >
-                            📎 {doc.fileName}
-                          </span>
-                          {doc.fileSize > 0 && (
-                            <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                              ({(doc.fileSize / (1024 * 1024)).toFixed(2)} MB)
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '14px', color: doc.uploaded ? '#fff' : '#cbd5e1', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                          <span>{doc.name}</span>
+                          {isMandatory && <span style={{ color: 'var(--ruby-danger)', fontWeight: 700 }}>*</span>}
+                          {badgeText && (
+                            <span style={{
+                              fontSize: '11px',
+                              padding: '1px 8px',
+                              borderRadius: '4px',
+                              background: badgeType === 'mandatory' 
+                                ? 'rgba(239, 68, 68, 0.15)' 
+                                : badgeType === 'exempt' 
+                                ? 'rgba(16, 185, 129, 0.12)' 
+                                : 'rgba(234, 179, 8, 0.15)',
+                              color: badgeType === 'mandatory' 
+                                ? '#fca5a5' 
+                                : badgeType === 'exempt' 
+                                ? 'var(--emerald-success)' 
+                                : 'var(--gold-primary)',
+                              border: badgeType === 'mandatory' 
+                                ? '1px solid rgba(239, 68, 68, 0.3)' 
+                                : badgeType === 'exempt' 
+                                ? '1px solid rgba(16, 185, 129, 0.25)' 
+                                : '1px solid rgba(234, 179, 8, 0.3)'
+                            }}>
+                              {badgeText}
                             </span>
                           )}
                         </div>
+                        <div style={{ fontSize: '12px', color: badgeType === 'mandatory' ? 'var(--gold-primary)' : 'var(--text-dim)', marginTop: '2px' }}>
+                          {displayNote ? `(${displayNote})` : 'เอกสารประกอบตามระเบียบ ทบ.'}
+                        </div>
+                      </div>
+                    </div>
 
-                        {/* ปุ่มพรีวิวเอกสารที่แนบ */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPreviewDoc(doc)}
-                          className="btn btn-secondary btn-sm"
-                          style={{
-                            padding: '6px 12px',
-                            fontSize: '12px',
-                            gap: '5px',
-                            background: 'rgba(20, 184, 166, 0.15)',
-                            borderColor: 'var(--cyan-accent)',
-                            color: 'var(--cyan-accent)'
-                          }}
-                          title="กดดูพรีวิวเอกสารที่แนบนี้"
-                        >
-                          <Eye size={14} />
-                          <span>พรีวิวเอกสาร</span>
-                        </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      {doc.uploaded ? (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
+                            <span 
+                              style={{ 
+                                fontSize: '12px', 
+                                color: 'var(--emerald-success)', 
+                                fontWeight: 500, 
+                                maxWidth: '180px', 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis', 
+                                whiteSpace: 'nowrap' 
+                              }} 
+                              title={doc.fileName}
+                            >
+                              📎 {doc.fileName}
+                            </span>
+                            {doc.fileSize > 0 && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                                ({(doc.fileSize / (1024 * 1024)).toFixed(2)} MB)
+                              </span>
+                            )}
+                          </div>
 
-                        {/* ปุ่มเปลี่ยนไฟล์ */}
-                        <label 
-                          className="btn btn-secondary btn-sm" 
-                          style={{ cursor: 'pointer', padding: '6px 10px', fontSize: '12px', gap: '5px' }}
-                          title="เลือกไฟล์ใหม่เพื่อแทนที่เอกสารนี้ (ขนาดไม่เกิน 10MB)"
-                        >
-                          <Upload size={13} />
-                          <span>เปลี่ยนไฟล์</span>
-                          <input 
-                            type="file" 
-                            accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
-                            style={{ display: 'none' }} 
-                            onChange={(e) => {
-                              handleFileUpload(doc.index, e);
-                              e.target.value = '';
-                            }} 
-                          />
-                        </label>
+                          {/* ปุ่มพรีวิวเอกสารที่แนบ */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPreviewDoc(doc)}
+                            className="btn btn-secondary btn-sm"
+                            style={{
+                              padding: '6px 12px',
+                              fontSize: '12px',
+                              gap: '5px',
+                              background: 'rgba(20, 184, 166, 0.15)',
+                              borderColor: 'var(--cyan-accent)',
+                              color: 'var(--cyan-accent)'
+                            }}
+                            title="กดดูพรีวิวเอกสารที่แนบนี้"
+                          >
+                            <Eye size={14} />
+                            <span>พรีวิวเอกสาร</span>
+                          </button>
 
-                        {/* ปุ่มลบเอกสารเพื่อแนบใหม่ */}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFile(doc.index)}
-                          className="btn btn-sm"
-                          style={{
-                            padding: '6px 10px',
-                            fontSize: '12px',
-                            gap: '5px',
-                            background: 'rgba(239, 68, 68, 0.15)',
-                            border: '1px solid rgba(239, 68, 68, 0.4)',
-                            color: '#fca5a5',
-                            cursor: 'pointer'
-                          }}
-                          title="ลบเอกสารนี้เพื่อแนบไฟล์ใหม่"
-                        >
-                          <Trash2 size={13} />
-                          <span>ลบเอกสาร</span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPreviewDoc(doc)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '6px 10px', fontSize: '12px', gap: '5px', color: 'var(--text-dim)' }}
-                          title="ดูตัวอย่างแบบฟอร์มทางการ"
-                        >
-                          <Eye size={13} />
-                          <span>ดูตัวอย่าง</span>
-                        </button>
+                          {/* ปุ่มเปลี่ยนไฟล์ */}
+                          <label 
+                            className="btn btn-secondary btn-sm" 
+                            style={{ cursor: 'pointer', padding: '6px 10px', fontSize: '12px', gap: '5px' }}
+                            title="เลือกไฟล์ใหม่เพื่อแทนที่เอกสารนี้ (ขนาดไม่เกิน 10MB)"
+                          >
+                            <Upload size={13} />
+                            <span>เปลี่ยนไฟล์</span>
+                            <input 
+                              type="file" 
+                              accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                              style={{ display: 'none' }} 
+                              onChange={(e) => {
+                                handleFileUpload(doc.index, e);
+                                e.target.value = '';
+                              }} 
+                            />
+                          </label>
 
-                        <label 
-                          className="btn btn-secondary btn-sm" 
-                          style={{ 
-                            cursor: 'pointer', 
-                            padding: '6px 14px', 
-                            fontSize: '12px', 
-                            gap: '6px', 
-                            borderColor: isExempt ? 'var(--border-glass)' : 'var(--gold-primary)', 
-                            color: isExempt ? 'var(--text-dim)' : 'var(--gold-light)' 
-                          }}
-                          title="กดแนบไฟล์เอกสารนี้ (ขนาดไม่เกิน 10MB)"
-                        >
-                          <Upload size={14} />
-                          <span>{isExempt ? 'แนบไฟล์ (ไม่บังคับ)' : 'แนบไฟล์'}</span>
-                          <input 
-                            type="file" 
-                            accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
-                            style={{ display: 'none' }} 
-                            onChange={(e) => {
-                              handleFileUpload(doc.index, e);
-                              e.target.value = '';
-                            }} 
-                          />
-                        </label>
-                      </>
-                    )}
+                          {/* ปุ่มลบเอกสารเพื่อแนบใหม่ */}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFile(doc.index)}
+                            className="btn btn-sm"
+                            style={{
+                              padding: '6px 10px',
+                              fontSize: '12px',
+                              gap: '5px',
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              border: '1px solid rgba(239, 68, 68, 0.4)',
+                              color: '#fca5a5',
+                              cursor: 'pointer'
+                            }}
+                            title="ลบเอกสารนี้เพื่อแนบไฟล์ใหม่"
+                          >
+                            <Trash2 size={13} />
+                            <span>ลบเอกสาร</span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPreviewDoc(doc)}
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '6px 10px', fontSize: '12px', gap: '5px', color: 'var(--text-dim)' }}
+                            title="ดูตัวอย่างแบบฟอร์มทางการ"
+                          >
+                            <Eye size={13} />
+                            <span>ดูตัวอย่าง</span>
+                          </button>
+
+                          <label 
+                            className="btn btn-secondary btn-sm" 
+                            style={{ 
+                              cursor: 'pointer', 
+                              padding: '6px 14px', 
+                              fontSize: '12px', 
+                              gap: '6px', 
+                              borderColor: isExempt ? 'var(--border-glass)' : 'var(--gold-primary)', 
+                              color: isExempt ? 'var(--text-dim)' : 'var(--gold-light)' 
+                            }}
+                            title="กดแนบไฟล์เอกสารนี้ (ขนาดไม่เกิน 10MB)"
+                          >
+                            <Upload size={14} />
+                            <span>{isExempt ? 'แนบไฟล์ (ไม่บังคับ)' : 'แนบไฟล์'}</span>
+                            <input 
+                              type="file" 
+                              accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                              style={{ display: 'none' }} 
+                              onChange={(e) => {
+                                handleFileUpload(doc.index, e);
+                                e.target.value = '';
+                              }} 
+                            />
+                          </label>
+                        </>
+                      )}
+                    </div>
                   </div>
+
+                  {/* กล่องกรอกข้อมูลเพิ่มเติมเฉพาะสำหรับเอกสารข้อ 11: ข้อมูลทายาท/ผู้รับเงินสินไหม (ธนาคาร, เลขที่บัญชี, ที่อยู่, เบอร์โทร, อีเมล) */}
+                  {doc.index === 11 && (
+                    <div style={{
+                      marginTop: '8px',
+                      padding: '16px',
+                      borderRadius: '8px',
+                      background: 'rgba(212, 175, 55, 0.05)',
+                      border: '1px solid rgba(212, 175, 55, 0.25)',
+                      width: '100%'
+                    }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gold-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>👤 ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม และรายละเอียดบัญชีเงินฝาก (เอกสารข้อ 11)</span>
+                        <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                        <div>
+                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                            ชื่อ - สกุล ทายาท/ผู้รับเงิน <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="เช่น นางสมศรี ใจภักดี (คู่สมรส)"
+                            value={formData.heirName}
+                            onChange={(e) => setFormData({ ...formData, heirName: e.target.value })}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                            ธนาคาร (ไม่ระบุธนาคาร / ระบุธนาคารใดก็ได้)
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="เช่น ธ.ทหารไทยธนชาต (ttb), ธ.กรุงไทย หรืออื่นๆ"
+                            value={formData.heirBank}
+                            onChange={(e) => setFormData({ ...formData, heirBank: e.target.value })}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                            เลขที่บัญชีเงินฝากทายาท
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="เช่น 123-4-56789-0"
+                            value={formData.heirBankAccount}
+                            onChange={(e) => setFormData({ ...formData, heirBankAccount: e.target.value })}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                            เบอร์โทรศัพท์ติดต่อทายาท <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                          </label>
+                          <input
+                            type="tel"
+                            className="form-input"
+                            placeholder="เช่น 081-234-5678"
+                            value={formData.heirPhone}
+                            onChange={(e) => setFormData({ ...formData, heirPhone: e.target.value })}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                            อีเมลติดต่อทายาท (ถ้ามี)
+                          </label>
+                          <input
+                            type="email"
+                            className="form-input"
+                            placeholder="เช่น heir@example.com"
+                            value={formData.heirEmail}
+                            onChange={(e) => setFormData({ ...formData, heirEmail: e.target.value })}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        </div>
+
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                            ที่อยู่ปัจจุบันของทายาท (สำหรับติดต่อประสานงานและจัดส่งเอกสาร) <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="form-input"
+                            placeholder="ระบุที่อยู่ปัจจุบัน เช่น เลขที่... หมู่... ถนน... ต.... อ.... จ.... รหัสไปรษณีย์..."
+                            value={formData.heirAddress}
+                            onChange={(e) => setFormData({ ...formData, heirAddress: e.target.value })}
+                            style={{ width: '100%', fontSize: '13px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* กล่องกรอกข้อมูลเพิ่มเติมเฉพาะสำหรับเอกสารข้อ 12: รายงานสาเหตุความล่าช้า (กรณีเสนอเรื่องเกินกว่า 30 วันหลังจากกำลังพลเสียชีวิต) */}
+                  {doc.index === 12 && (
+                    <div style={{
+                      marginTop: '8px',
+                      padding: '14px 16px',
+                      borderRadius: '8px',
+                      background: isOverdue30Days ? 'rgba(239, 68, 68, 0.06)' : 'rgba(255, 255, 255, 0.02)',
+                      border: isOverdue30Days ? '1px solid rgba(239, 68, 68, 0.3)' : '1px dashed var(--border-glass)',
+                      width: '100%'
+                    }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: isOverdue30Days ? '#fca5a5' : 'var(--text-dim)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>⏳ บันทึกชี้แจงรายงานสาเหตุความล่าช้า (กรณีเสนอเรื่องถึง กพ.ทบ. เกินกว่า 30 วัน)</span>
+                        {isOverdue30Days && <span style={{ color: 'var(--ruby-danger)' }}>*</span>}
+                      </div>
+                      <textarea
+                        className="form-textarea"
+                        rows={2}
+                        placeholder={
+                          isOverdue30Days
+                            ? `ระบุรายงานสาเหตุความล่าช้า (เนื่องจากเสนอเรื่องเกิน 30 วัน: ${daysOverdue} วัน) เช่น อยู่ระหว่างรอผลชันสูตรพลิกศพของแพทย์/ตร., รอคำสั่งปลด, รอการประสานงานรวบรวมเอกสารทายาทต่างพื้นที่ ฯลฯ`
+                            : 'เสนอเรื่องภายในระยะเวลา 30 วันตามระเบียบ (ไม่จำเป็นต้องกรอก หรือระบุข้อความชี้แจงเพิ่มเติมถ้ามี)'
+                        }
+                        value={formData.delayReason}
+                        onChange={(e) => setFormData({ ...formData, delayReason: e.target.value })}
+                        style={{ width: '100%', fontSize: '13px' }}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

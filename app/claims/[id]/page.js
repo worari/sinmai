@@ -1,7 +1,7 @@
 // app/claims/[id]/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, 
@@ -36,7 +36,7 @@ import {
   FileUp,
   FileCheck2
 } from 'lucide-react';
-import { formatThaiDate, calculateSlaStatus, validateAttachmentFile } from '@/lib/thai-utils';
+import { formatThaiDate, calculateSlaStatus, validateAttachmentFile, REQUIRED_DOCUMENTS } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
@@ -286,6 +286,12 @@ export default function ClaimDetailPage({ params }) {
         } else {
           setRecipientName(`ทายาทของ ${data.claim.casualtyRank} ${data.claim.casualtyFirstName} ${data.claim.casualtyLastName}`);
         }
+        if (data.claim.heirBank) {
+          setTransferBank(data.claim.heirBank);
+        }
+        if (data.claim.heirBankAccount) {
+          setTransferAccount(data.claim.heirBankAccount);
+        }
       } else {
         setErrorMsg(data.message || 'ไม่สามารถเข้าถึงข้อมูลคำร้องนี้ได้');
       }
@@ -406,34 +412,32 @@ export default function ClaimDetailPage({ params }) {
 
   // ตรวจสอบเอกสารครบทุกข้อ (Batch Verify for Insurance / KSP)
   const handleVerifyAllDocs = async () => {
-    if (!confirm('ยืนยันการบันทึกว่าตรวจสอบเอกสารหลักฐานทั้ง 10 รายการ ถูกต้องครบถ้วนสมบูรณ์แล้ว?')) return;
+    if (!confirm('ยืนยันการบันทึกว่าตรวจสอบเอกสารหลักฐานทั้ง 12 รายการ ถูกต้องครบถ้วนสมบูรณ์แล้ว?')) return;
     setActionLoading(true);
     try {
-      for (const doc of (claim.documents || [])) {
-        if (doc.status !== 'VERIFIED') {
-          await fetch(`/api/claims/${id}/document`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: currentUser?.id,
-              docIndex: doc.index,
-              status: 'VERIFIED',
-              comment: 'เอกสารผ่านการตรวจสอบความถูกต้องเรียบร้อยแล้ว'
-            })
-          });
-        }
+      for (const docDef of REQUIRED_DOCUMENTS) {
+        await fetch(`/api/claims/${id}/document`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser?.id,
+            docIndex: docDef.index,
+            status: 'VERIFIED',
+            comment: 'เอกสารผ่านการตรวจสอบความถูกต้องเรียบร้อยแล้ว'
+          })
+        });
       }
       await loadClaim(currentUser);
       setNoticeMsg('บันทึกผลการตรวจสอบเอกสารทุกรายการครบถ้วนเรียบร้อยแล้ว');
 
-      // แจ้งเตือน Popup Modal รับทราบตรวจครบ 10 รายการ
+      // แจ้งเตือน Popup Modal รับทราบตรวจครบ 12 รายการ
       triggerStatusPopup({
         type: 'success',
-        title: 'ตรวจสอบเอกสารหลักฐานครบ 10 รายการเรียบร้อย',
-        message: 'เอกสารประกอบคำขอรับสิทธิเงินค่าสินไหมทดแทนทั้ง 10 รายการได้รับการตรวจสอบยืนยันความถูกต้องสมบูรณ์',
+        title: 'ตรวจสอบเอกสารหลักฐานครบ 12 รายการเรียบร้อย',
+        message: 'เอกสารประกอบคำขอรับสิทธิเงินค่าสินไหมทดแทนทั้ง 12 รายการได้รับการตรวจสอบยืนยันความถูกต้องสมบูรณ์',
         trackingCode: claim.trackingCode,
         casualtyName: `${claim.casualtyRank} ${claim.casualtyFirstName} ${claim.casualtyLastName}`,
-        action: 'รับรองเอกสารครบ 10 รายการ (Batch Inspection Verified)',
+        action: 'รับรองเอกสารครบ 12 รายการ (Batch Inspection Verified)',
         by: currentUser?.name ? `${currentUser.name} (${currentUser.role === 'INSURANCE_REP' ? 'บ.ประกันภัย' : 'กพ.ทบ.'})` : (currentUser?.role === 'INSURANCE_REP' ? 'บ.ประกันภัย' : 'กพ.ทบ.(กสพ.ฯ)'),
       });
     } catch (e) {
@@ -638,6 +642,14 @@ export default function ClaimDetailPage({ params }) {
   };
 
   const currentStepInfo = getWorkflowStepInfo(claim.status);
+
+  // เตรียมรายการเอกสาร 12 รายการ โดยผสานกับข้อมูลเอกสารที่มีการบันทึกไว้ในคำร้อง
+  const displayDocs = useMemo(() => {
+    return REQUIRED_DOCUMENTS.map((docDef) => {
+      const existing = (claim?.documents || []).find((d) => d.index === docDef.index);
+      return existing ? { ...docDef, ...existing } : { ...docDef, uploaded: false, status: 'PENDING' };
+    });
+  }, [claim?.documents]);
 
   return (
     <div className="container" style={{ paddingTop: '28px' }}>
@@ -1118,6 +1130,54 @@ export default function ClaimDetailPage({ params }) {
             </div>
           )}
 
+          {/* ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม (ตามเอกสารข้อ 11) */}
+          {(claim.heirName || claim.heirAddress || claim.heirPhone || claim.heirEmail || claim.heirBank || claim.heirBankAccount) && (
+            <div style={{
+              marginTop: '16px',
+              padding: '14px 16px',
+              borderRadius: '8px',
+              background: 'rgba(212, 175, 55, 0.06)',
+              border: '1px solid rgba(212, 175, 55, 0.25)'
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gold-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <User size={15} />
+                <span>ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม (เอกสารข้อ 11)</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12.5px' }}>
+                {claim.heirName && (
+                  <div>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>ชื่อทายาทผู้รับสิทธิ:</span>
+                    <strong style={{ color: '#fff' }}>{claim.heirName}</strong>
+                  </div>
+                )}
+                {claim.heirPhone && (
+                  <div>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>เบอร์โทรศัพท์:</span>
+                    <span style={{ color: '#93c5fd' }}>{claim.heirPhone}</span>
+                  </div>
+                )}
+                {(claim.heirBank || claim.heirBankAccount) && (
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>บัญชีรับเงิน:</span>
+                    <span style={{ color: '#e0f2fe' }}>{claim.heirBank || 'ไม่ระบุธนาคาร'} {claim.heirBankAccount ? `เลขที่ ${claim.heirBankAccount}` : ''}</span>
+                  </div>
+                )}
+                {claim.heirEmail && (
+                  <div>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>อีเมล:</span>
+                    <span style={{ color: '#cbd5e1' }}>{claim.heirEmail}</span>
+                  </div>
+                )}
+                {claim.heirAddress && (
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>ที่อยู่ปัจจุบัน:</span>
+                    <span style={{ color: '#e2e8f0' }}>{claim.heirAddress}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
 
       </div>
@@ -1266,7 +1326,7 @@ export default function ClaimDetailPage({ params }) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '12px', color: 'var(--gold-primary)' }}>
-              ครบถ้วน {claim.documents?.filter(d => d.uploaded).length || 0} / 10 รายการ
+              ครบถ้วน {displayDocs.filter(d => d.uploaded).length} / 12 รายการ
             </span>
 
             {/* ปุ่มลัด: ตรวจสอบเอกสารครบทุกข้อสำหรับ บ.ประกันภัย และ กสพ. */}
@@ -1279,7 +1339,7 @@ export default function ClaimDetailPage({ params }) {
               >
                 <CheckCheck size={14} />
                 <span>
-                  {currentUser?.role === 'KSP_OFFICER' ? '✓ กพ.ทบ. ตรวจสอบผ่านทั้งหมด (10 รายการ)' : '✓ ตรวจสอบผ่านทั้งหมด'}
+                  {currentUser?.role === 'KSP_OFFICER' ? '✓ กพ.ทบ. ตรวจสอบผ่านทั้งหมด (12 รายการ)' : '✓ ตรวจสอบผ่านทั้งหมด (12 รายการ)'}
                 </span>
               </button>
             )}
@@ -1287,7 +1347,7 @@ export default function ClaimDetailPage({ params }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {claim.documents?.map((doc) => (
+          {displayDocs.map((doc) => (
             <div 
               key={doc.index}
               style={{
@@ -1348,17 +1408,29 @@ export default function ClaimDetailPage({ params }) {
                   <span className={`badge ${doc.status === 'VERIFIED' ? 'badge-emerald' : doc.status === 'REJECTED' ? 'badge-red' : 'badge-amber'}`}>
                     {doc.status === 'VERIFIED' ? '✓ ตรวจสอบผ่าน' : doc.status === 'REJECTED' ? '✗ ให้แก้ไข' : 'รอตรวจ'}
                   </span>
-                ) : doc.index === 2 && claim.lossType === 'DISABLED' ? (
+                ) : doc.index === 3 && claim.incidentType === 'ILLNESS' ? (
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
+                    ✓ ยกเว้นไม่ต้องแนบ (กรณีเสียชีวิตจากการป่วยเจ็บ)
+                  </span>
+                ) : doc.index === 4 && claim.lossType === 'DISABLED' ? (
                   <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
                     ✓ ยกเว้นไม่ต้องแนบ (กรณีพิการทุพพลภาพ)
                   </span>
-                ) : doc.index === 7 && claim.lossType === 'DECEASED' ? (
+                ) : doc.index === 8 && (claim.incidentType !== 'ACCIDENT' || claim.isDriver === 'NO') ? (
                   <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
-                    ✓ ยกเว้นไม่ต้องแนบ (กรณีผู้เสียชีวิต)
+                    ✓ ยกเว้นไม่ต้องแนบ (มิใช่อุบัติเหตุที่เป็นผู้ขับขี่)
+                  </span>
+                ) : doc.index === 9 && (claim.incidentType === 'ILLNESS' || claim.incidentType === 'COMBAT') ? (
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
+                    ✓ ยกเว้นไม่ต้องแนบ (กรณีป่วยเจ็บ/การรบ)
                   </span>
                 ) : doc.index === 10 && claim.claimType === 'NORMAL' ? (
                   <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
                     ✓ ยกเว้นไม่ต้องแนบ (กรณี 60,000 บ.)
+                  </span>
+                ) : doc.index === 12 && (!claim.delayReason && (sla?.daysElapsed <= 30)) ? (
+                  <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--emerald-success)', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '11px' }}>
+                    ✓ ยกเว้น (เสนอเรื่องภายใน 30 วัน)
                   </span>
                 ) : (
                   <span className="badge badge-dark">ยังไม่แนบ</span>

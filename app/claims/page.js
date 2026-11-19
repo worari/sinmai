@@ -716,7 +716,7 @@ export default function ClaimsListPage() {
             )}
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-            จัดการข้อมูลคำร้องครบวงจร (CRUD) • จัดการไฟล์เอกสารแนบ 10 รายการ • นำเข้า/ส่งออก Excel สำหรับ Dashboard และรายงานย้อนหลัง
+            จัดการข้อมูลคำร้องครบวงจร (CRUD) • จัดการไฟล์เอกสารแนบ 12 รายการ • นำเข้า/ส่งออก Excel สำหรับ Dashboard และรายงานย้อนหลัง
           </p>
         </div>
 
@@ -1205,14 +1205,14 @@ export default function ClaimsListPage() {
                             padding: '4px 10px',
                             fontSize: '12px',
                             gap: '6px',
-                            background: uploadedDocsCount >= 10 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                            borderColor: uploadedDocsCount >= 10 ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-glass)',
-                            color: uploadedDocsCount >= 10 ? '#34d399' : 'var(--text-main)'
+                            background: uploadedDocsCount >= 12 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                            borderColor: uploadedDocsCount >= 12 ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-glass)',
+                            color: uploadedDocsCount >= 12 ? '#34d399' : 'var(--text-main)'
                           }}
-                          title="กดเพื่อเปิดหน้าต่างจัดการเอกสาร 10 รายการ แนบไฟล์/พรีวิว/ดาวน์โหลด"
+                          title="กดเพื่อเปิดหน้าต่างจัดการเอกสาร 12 รายการ แนบไฟล์/พรีวิว/ดาวน์โหลด"
                         >
-                          <FolderOpen size={14} color={uploadedDocsCount >= 10 ? '#34d399' : '#fbbf24'} />
-                          <span>{uploadedDocsCount}/10 เอกสาร</span>
+                          <FolderOpen size={14} color={uploadedDocsCount >= 12 ? '#34d399' : '#fbbf24'} />
+                          <span>{uploadedDocsCount}/12 เอกสาร</span>
                         </button>
                         {verifiedDocsCount > 0 && (
                           <div style={{ fontSize: '11px', color: 'var(--emerald-success)', marginTop: '2px' }}>
@@ -1294,7 +1294,7 @@ export default function ClaimsListPage() {
                             type="button"
                             onClick={() => handleOpenDocsModal(claim)}
                             className="btn btn-secondary btn-sm"
-                            title="จัดการเอกสาร 10 รายการ (แนบ/แทนที่/ลบ)"
+                            title="จัดการเอกสาร 12 รายการ (แนบ/แทนที่/ลบ)"
                             style={{ padding: '5px 9px', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}
                           >
                             <FolderOpen size={14} />
@@ -1359,7 +1359,7 @@ export default function ClaimsListPage() {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL 1: จัดการเอกสารคำร้อง 10 รายการ (Manage Documents Modal) */}
+      {/* MODAL 1: จัดการเอกสารคำร้อง 12 รายการ (Manage Documents Modal) */}
       {/* ========================================================================= */}
       {selectedClaimForDocs && (
         <div style={{
@@ -1411,7 +1411,7 @@ export default function ClaimsListPage() {
                 </div>
                 <div>
                   <h3 style={{ fontSize: '17px', color: '#fff', margin: 0 }}>
-                    จัดการเอกสารหลักฐาน 10 รายการ: {selectedClaimForDocs.trackingCode}
+                    จัดการเอกสารหลักฐาน 12 รายการ: {selectedClaimForDocs.trackingCode}
                   </h3>
                   <div style={{ fontSize: '12.5px', color: 'var(--text-dim)', marginTop: '2px' }}>
                     กำลังพล: <strong>{selectedClaimForDocs.casualtyRank} {selectedClaimForDocs.casualtyFirstName} {selectedClaimForDocs.casualtyLastName}</strong> • {selectedClaimForDocs.unitName}
@@ -1433,7 +1433,7 @@ export default function ClaimsListPage() {
             <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1, background: '#081215' }}>
               <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ fontSize: '13px', color: '#cbd5e1' }}>
-                  แนบแล้ว <strong>{(selectedClaimForDocs.documents || []).filter(d => d.uploaded).length}</strong> จากทั้งหมด 10 รายการ (จำกัดไฟล์ละไม่เกิน 10MB • ป้องกันไฟล์ไม่ปลอดภัย)
+                  แนบแล้ว <strong>{(selectedClaimForDocs.documents || []).filter(d => d.uploaded).length}</strong> จากทั้งหมด 12 รายการ (จำกัดไฟล์ละไม่เกิน 10MB • ป้องกันไฟล์ไม่ปลอดภัย)
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--gold-primary)' }}>
                   * เจ้าหน้าที่สามารถกดแนบไฟล์ใหม่, เปลี่ยนไฟล์ หรือลบไฟล์แนบได้โดยตรง
