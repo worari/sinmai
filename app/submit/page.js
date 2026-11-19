@@ -27,7 +27,9 @@ import {
   X,
   Clock,
   Save,
-  FileEdit
+  FileEdit,
+  Plus,
+  Users
 } from 'lucide-react';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
 import { 
@@ -104,7 +106,20 @@ export default function SubmitClaimPage() {
       province: 'กาญจนบุรี',
       fullAddress: 'ถ.แสงชูโต ต.ลาดหญ้า อ.เมืองกาญจนบุรี จ.กาญจนบุรี'
     },
-    // ข้อมูลทายาท / ผู้รับเงินค่าสินไหม (เอกสารข้อ 11)
+    // ข้อมูลทายาท / ผู้รับเงินค่าสินไหม (เอกสารข้อ 11) - รองรับกรณีมีทายาท 1 หรือหลายคน
+    heirs: [
+      {
+        id: 1,
+        name: '',
+        relation: 'คู่สมรส',
+        percentage: 100,
+        bank: '',
+        bankAccount: '',
+        phone: '',
+        email: '',
+        address: ''
+      }
+    ],
     heirName: '',
     heirBank: '',
     heirBankAccount: '',
@@ -114,6 +129,120 @@ export default function SubmitClaimPage() {
     // รายงานสาเหตุความล่าช้า กรณีเสนอเรื่องเกิน 30 วัน (เอกสารข้อ 12)
     delayReason: ''
   });
+
+  // จัดการข้อมูลทายาทหลายคน (เอกสารข้อ 11)
+  const handleAddHeir = () => {
+    setFormData((prev) => {
+      const currentHeirs = Array.isArray(prev.heirs) && prev.heirs.length > 0 ? prev.heirs : [
+        {
+          id: 1,
+          name: prev.heirName || '',
+          relation: 'คู่สมรส',
+          percentage: 100,
+          bank: prev.heirBank || '',
+          bankAccount: prev.heirBankAccount || '',
+          phone: prev.heirPhone || '',
+          email: prev.heirEmail || '',
+          address: prev.heirAddress || ''
+        }
+      ];
+
+      const newHeirCount = currentHeirs.length + 1;
+      const defaultRelation = newHeirCount === 2 ? 'บุตร' : (newHeirCount === 3 ? 'บิดา' : 'มารดา');
+      const updatedHeirs = [
+        ...currentHeirs,
+        {
+          id: Date.now() + Math.random(),
+          name: '',
+          relation: defaultRelation,
+          percentage: '',
+          bank: '',
+          bankAccount: '',
+          phone: '',
+          email: '',
+          address: currentHeirs[0]?.address || ''
+        }
+      ];
+
+      return {
+        ...prev,
+        heirs: updatedHeirs
+      };
+    });
+  };
+
+  const handleRemoveHeir = (indexToRemove) => {
+    setFormData((prev) => {
+      const currentHeirs = Array.isArray(prev.heirs) ? prev.heirs : [];
+      if (currentHeirs.length <= 1) return prev;
+      const updated = currentHeirs.filter((_, idx) => idx !== indexToRemove);
+      const primary = updated[0] || {};
+      return {
+        ...prev,
+        heirs: updated,
+        heirName: updated.map((h) => h.name).filter(Boolean).join(', ') || primary.name || '',
+        heirBank: primary.bank || '',
+        heirBankAccount: primary.bankAccount || '',
+        heirPhone: primary.phone || '',
+        heirEmail: primary.email || '',
+        heirAddress: primary.address || ''
+      };
+    });
+  };
+
+  const handleHeirChange = (index, field, value) => {
+    setFormData((prev) => {
+      const currentHeirs = Array.isArray(prev.heirs) && prev.heirs.length > 0 ? prev.heirs : [
+        {
+          id: 1,
+          name: prev.heirName || '',
+          relation: 'คู่สมรส',
+          percentage: 100,
+          bank: prev.heirBank || '',
+          bankAccount: prev.heirBankAccount || '',
+          phone: prev.heirPhone || '',
+          email: prev.heirEmail || '',
+          address: prev.heirAddress || ''
+        }
+      ];
+
+      const updatedHeirs = currentHeirs.map((h, idx) => {
+        if (idx === index) {
+          return { ...h, [field]: value };
+        }
+        return h;
+      });
+
+      const primary = updatedHeirs[0] || {};
+      return {
+        ...prev,
+        heirs: updatedHeirs,
+        heirName: updatedHeirs.map((h) => h.name).filter(Boolean).join(', ') || primary.name || '',
+        heirBank: primary.bank || '',
+        heirBankAccount: primary.bankAccount || '',
+        heirPhone: primary.phone || '',
+        heirEmail: primary.email || '',
+        heirAddress: primary.address || ''
+      };
+    });
+  };
+
+  const handleSplitEqualPercentage = () => {
+    setFormData((prev) => {
+      const currentHeirs = Array.isArray(prev.heirs) ? prev.heirs : [];
+      if (currentHeirs.length === 0) return prev;
+      const count = currentHeirs.length;
+      const equalShare = Number((100 / count).toFixed(2));
+      const updatedHeirs = currentHeirs.map((h, idx) => ({
+        ...h,
+        percentage: idx === count - 1 ? Number((100 - (equalShare * (count - 1))).toFixed(2)) : equalShare
+      }));
+      return {
+        ...prev,
+        heirs: updatedHeirs
+      };
+    });
+  };
 
   // State เก็บรายการเอกสารแนบ 12 รายการ ตามระเบียบ ทบ.
   const [attachedDocs, setAttachedDocs] = useState(
@@ -321,6 +450,21 @@ export default function SubmitClaimPage() {
         disabledOrganDetail: c.disabledOrganDetail || '',
         lossSpecificCause: c.lossSpecificCause || '',
         locationOfLoss: c.locationOfLoss || prev.locationOfLoss,
+        heirs: Array.isArray(c.heirs) && c.heirs.length > 0 
+          ? c.heirs 
+          : [
+              {
+                id: 1,
+                name: c.heirName || prev.heirName || '',
+                relation: c.heirRelation || 'คู่สมรส',
+                percentage: 100,
+                bank: c.heirBank || prev.heirBank || '',
+                bankAccount: c.heirBankAccount || prev.heirBankAccount || '',
+                phone: c.heirPhone || prev.heirPhone || '',
+                email: c.heirEmail || prev.heirEmail || '',
+                address: c.heirAddress || prev.heirAddress || ''
+              }
+            ],
         heirName: c.heirName || prev.heirName || '',
         heirBank: c.heirBank || prev.heirBank || '',
         heirBankAccount: c.heirBankAccount || prev.heirBankAccount || '',
@@ -984,10 +1128,25 @@ export default function SubmitClaimPage() {
       return;
     }
 
-    // ตรวจสอบข้อมูลทายาทในข้อ 11
-    if (!formData.heirName || formData.heirName.trim().length < 2) {
-      setErrorMsg('กรุณาระบุชื่อ-นามสกุล ของทายาทผู้รับประโยชน์เงินสินไหมในเอกสารข้อ 11 ให้ถูกต้อง');
-      return;
+    // ตรวจสอบข้อมูลทายาทในข้อ 11 (รองรับทั้งทายาท 1 คน และหลายคน)
+    const heirsList = Array.isArray(formData.heirs) && formData.heirs.length > 0
+      ? formData.heirs
+      : [{ name: formData.heirName, phone: formData.heirPhone, address: formData.heirAddress }];
+
+    for (let i = 0; i < heirsList.length; i++) {
+      const h = heirsList[i];
+      if (!h.name || h.name.trim().length < 2) {
+        setErrorMsg(`กรุณาระบุชื่อ-นามสกุล ของทายาทคนที่ ${i + 1} ในเอกสารข้อ 11 ให้ถูกต้องอย่างน้อย 2 ตัวอักษร`);
+        return;
+      }
+      if (!h.phone || h.phone.trim().length < 5) {
+        setErrorMsg(`กรุณาระบุเบอร์โทรศัพท์ติดต่อของทายาทคนที่ ${i + 1} (${h.name}) ในเอกสารข้อ 11`);
+        return;
+      }
+      if (!h.address || h.address.trim().length < 5) {
+        setErrorMsg(`กรุณาระบุที่อยู่ปัจจุบันของทายาทคนที่ ${i + 1} (${h.name}) ในเอกสารข้อ 11`);
+        return;
+      }
     }
 
     // ตรวจสอบรายงานความล่าช้าในข้อ 12 กรณีเกิน 30 วัน
@@ -2321,7 +2480,7 @@ export default function SubmitClaimPage() {
                     </div>
                   </div>
 
-                  {/* กล่องกรอกข้อมูลเพิ่มเติมเฉพาะสำหรับเอกสารข้อ 11: ข้อมูลทายาท/ผู้รับเงินสินไหม (ธนาคาร, เลขที่บัญชี, ที่อยู่, เบอร์โทร, อีเมล) */}
+                  {/* กล่องกรอกข้อมูลเพิ่มเติมเฉพาะสำหรับเอกสารข้อ 11: ข้อมูลทายาท/ผู้รับเงินสินไหม (รองรับกรณีมีทายาท 1 หรือหลายคน) */}
                   {doc.index === 11 && (
                     <div style={{
                       marginTop: '8px',
@@ -2331,94 +2490,320 @@ export default function SubmitClaimPage() {
                       border: '1px solid rgba(212, 175, 55, 0.25)',
                       width: '100%'
                     }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gold-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>👤 ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม และรายละเอียดบัญชีเงินฝาก (เอกสารข้อ 11)</span>
-                        <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px',
+                        marginBottom: '14px',
+                        borderBottom: '1px solid rgba(212, 175, 55, 0.2)',
+                        paddingBottom: '10px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--gold-primary)' }}>
+                            👤 ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม และรายละเอียดบัญชีเงินฝาก (เอกสารข้อ 11)
+                          </span>
+                          <span style={{
+                            fontSize: '11.5px',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: 'rgba(212, 175, 55, 0.15)',
+                            color: 'var(--gold-light)',
+                            border: '1px solid rgba(212, 175, 55, 0.3)'
+                          }}>
+                            ทายาท {formData.heirs?.length || 1} คน
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          {formData.heirs?.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={handleSplitEqualPercentage}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '11.5px', padding: '4px 10px', color: '#93c5fd', borderColor: '#3b82f6' }}
+                              title="แบ่งสัดส่วนการรับเงินสินไหมเท่าๆ กันอัตโนมัติ"
+                            >
+                              ⚖️ แบ่งสัดส่วนเท่ากัน ({Number((100 / (formData.heirs?.length || 1)).toFixed(1))}%)
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleAddHeir}
+                            className="btn btn-primary btn-sm"
+                            style={{
+                              fontSize: '12px',
+                              padding: '5px 12px',
+                              gap: '6px',
+                              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                              border: 'none',
+                              color: '#fff',
+                              fontWeight: 600
+                            }}
+                            title="กดเพื่อเพิ่มข้อมูลทายาทคนต่อไป"
+                          >
+                            <Plus size={14} />
+                            <span>+ เพิ่มข้อมูลทายาทคนต่อไป</span>
+                          </button>
+                        </div>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-                        <div>
-                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                            ชื่อ - สกุล ทายาท/ผู้รับเงิน <span style={{ color: 'var(--ruby-danger)' }}>*</span>
-                          </label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder="เช่น นางสมศรี ใจภักดี (คู่สมรส)"
-                            value={formData.heirName}
-                            onChange={(e) => setFormData({ ...formData, heirName: e.target.value })}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          />
-                        </div>
+                      {/* รายการทายาทแต่ละคน */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {(formData.heirs || []).map((heir, hIdx) => {
+                          const heirCompensation = ((formData.claimType === 'HIGH_RISK' ? 300000 : 60000) * (Number(heir.percentage) || (formData.heirs.length === 1 ? 100 : 0)) / 100);
 
-                        <div>
-                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                            ธนาคาร (ไม่ระบุธนาคาร / ระบุธนาคารใดก็ได้)
-                          </label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder="เช่น ธ.ทหารไทยธนชาต (ttb), ธ.กรุงไทย หรืออื่นๆ"
-                            value={formData.heirBank}
-                            onChange={(e) => setFormData({ ...formData, heirBank: e.target.value })}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          />
-                        </div>
+                          return (
+                            <div
+                              key={heir.id || hIdx}
+                              style={{
+                                padding: '14px',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.025)',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                position: 'relative'
+                              }}
+                            >
+                              <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                marginBottom: '12px',
+                                flexWrap: 'wrap',
+                                gap: '8px'
+                              }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{
+                                    width: '24px',
+                                    height: '24px',
+                                    borderRadius: '50%',
+                                    background: 'var(--gold-primary)',
+                                    color: '#000',
+                                    fontWeight: 700,
+                                    fontSize: '12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}>
+                                    {hIdx + 1}
+                                  </span>
+                                  <strong style={{ fontSize: '13.5px', color: '#fff' }}>
+                                    ทายาทคนที่ {hIdx + 1}: {heir.name || '(ยังไม่ได้ระบุชื่อ)'}
+                                  </strong>
+                                  {heir.relation && (
+                                    <span style={{ fontSize: '11px', color: '#93c5fd', background: 'rgba(59, 130, 246, 0.15)', padding: '1px 8px', borderRadius: '4px' }}>
+                                      {heir.relation}
+                                    </span>
+                                  )}
+                                  {heir.percentage && (
+                                    <span style={{ fontSize: '11.5px', color: 'var(--emerald-success)', fontWeight: 600 }}>
+                                      สัดส่วน: {heir.percentage}% (ประมาณ {heirCompensation.toLocaleString('th-TH')} บ.)
+                                    </span>
+                                  )}
+                                </div>
 
-                        <div>
-                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                            เลขที่บัญชีเงินฝากทายาท
-                          </label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder="เช่น 123-4-56789-0"
-                            value={formData.heirBankAccount}
-                            onChange={(e) => setFormData({ ...formData, heirBankAccount: e.target.value })}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          />
-                        </div>
+                                {formData.heirs.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveHeir(hIdx)}
+                                    className="btn btn-sm"
+                                    style={{
+                                      fontSize: '11.5px',
+                                      padding: '3px 8px',
+                                      background: 'rgba(239, 68, 68, 0.12)',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      color: '#fca5a5'
+                                    }}
+                                    title="ลบข้อมูลทายาทคนนี้"
+                                  >
+                                    <Trash2 size={12} />
+                                    <span>ลบทายาทคนที่ {hIdx + 1}</span>
+                                  </button>
+                                )}
+                              </div>
 
-                        <div>
-                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                            เบอร์โทรศัพท์ติดต่อทายาท <span style={{ color: 'var(--ruby-danger)' }}>*</span>
-                          </label>
-                          <input
-                            type="tel"
-                            className="form-input"
-                            placeholder="เช่น 081-234-5678"
-                            value={formData.heirPhone}
-                            onChange={(e) => setFormData({ ...formData, heirPhone: e.target.value })}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          />
-                        </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    ชื่อ - สกุล ทายาท/ผู้รับเงิน <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="เช่น นางสมศรี ใจภักดี"
+                                    value={heir.name || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'name', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                    required
+                                  />
+                                </div>
 
-                        <div>
-                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                            อีเมลติดต่อทายาท (ถ้ามี)
-                          </label>
-                          <input
-                            type="email"
-                            className="form-input"
-                            placeholder="เช่น heir@example.com"
-                            value={formData.heirEmail}
-                            onChange={(e) => setFormData({ ...formData, heirEmail: e.target.value })}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          />
-                        </div>
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    ความสัมพันธ์กับกำลังพล
+                                  </label>
+                                  <select
+                                    className="form-select"
+                                    value={heir.relation || 'คู่สมรส'}
+                                    onChange={(e) => handleHeirChange(hIdx, 'relation', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                  >
+                                    <option value="คู่สมรส">คู่สมรส</option>
+                                    <option value="บุตร">บุตร</option>
+                                    <option value="บิดา">บิดา</option>
+                                    <option value="มารดา">มารดา</option>
+                                    <option value="พี่น้อง">พี่น้อง</option>
+                                    <option value="ผู้รับประโยชน์ตามหนังสือแสดงเจตนา">ผู้รับประโยชน์ตามหนังสือแสดงเจตนา</option>
+                                    <option value="ทายาทตาม ป.ค.14">ทายาทตาม ป.ค.14</option>
+                                    <option value="อื่นๆ">อื่นๆ</option>
+                                  </select>
+                                </div>
 
-                        <div style={{ gridColumn: '1 / -1' }}>
-                          <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                            ที่อยู่ปัจจุบันของทายาท (สำหรับติดต่อประสานงานและจัดส่งเอกสาร) <span style={{ color: 'var(--ruby-danger)' }}>*</span>
-                          </label>
-                          <input
-                            type="text"
-                            className="form-input"
-                            placeholder="ระบุที่อยู่ปัจจุบัน เช่น เลขที่... หมู่... ถนน... ต.... อ.... จ.... รหัสไปรษณีย์..."
-                            value={formData.heirAddress}
-                            onChange={(e) => setFormData({ ...formData, heirAddress: e.target.value })}
-                            style={{ width: '100%', fontSize: '13px' }}
-                          />
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    สัดส่วนการรับเงิน (%)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    step="0.01"
+                                    className="form-input"
+                                    placeholder="เช่น 100 หรือ 50"
+                                    value={heir.percentage || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'percentage', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    ธนาคาร (ไม่ระบุธนาคาร / ระบุธนาคารใดก็ได้)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="เช่น ธ.ทหารไทยธนชาต (ttb), กรุงไทย หรืออื่นๆ"
+                                    value={heir.bank || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'bank', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    เลขที่บัญชีเงินฝากทายาท
+                                  </label>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="เช่น 123-4-56789-0"
+                                    value={heir.bankAccount || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'bankAccount', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                  />
+                                </div>
+
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    เบอร์โทรศัพท์ติดต่อทายาท <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                                  </label>
+                                  <input
+                                    type="tel"
+                                    className="form-input"
+                                    placeholder="เช่น 081-234-5678"
+                                    value={heir.phone || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'phone', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                    required
+                                  />
+                                </div>
+
+                                <div>
+                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                                    อีเมลติดต่อทายาท (ถ้ามี)
+                                  </label>
+                                  <input
+                                    type="email"
+                                    className="form-input"
+                                    placeholder="เช่น heir@example.com"
+                                    value={heir.email || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'email', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                  />
+                                </div>
+
+                                <div style={{ gridColumn: '1 / -1' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                                      ที่อยู่ปัจจุบันของทายาท (สำหรับจัดส่งเอกสารและประสานงาน) <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                                    </label>
+                                    {hIdx > 0 && formData.heirs[0]?.address && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleHeirChange(hIdx, 'address', formData.heirs[0].address)}
+                                        style={{ background: 'transparent', border: 'none', color: '#93c5fd', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                                      >
+                                        🏠 ใช้ที่อยู่เดียวกับทายาทคนที่ 1
+                                      </button>
+                                    )}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="ระบุที่อยู่ปัจจุบัน เช่น เลขที่... หมู่... ถนน... ต.... อ.... จ.... รหัสไปรษณีย์..."
+                                    value={heir.address || ''}
+                                    onChange={(e) => handleHeirChange(hIdx, 'address', e.target.value)}
+                                    style={{ width: '100%', fontSize: '13px' }}
+                                    required
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* ปุ่มเพิ่มทายาทคนต่อไปด้านล่าง */}
+                      <div style={{
+                        marginTop: '14px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px',
+                        paddingTop: '10px',
+                        borderTop: '1px dashed rgba(212, 175, 55, 0.2)'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={handleAddHeir}
+                          className="btn btn-secondary btn-sm"
+                          style={{
+                            fontSize: '12px',
+                            gap: '6px',
+                            borderColor: 'var(--gold-primary)',
+                            color: 'var(--gold-light)'
+                          }}
+                        >
+                          <Plus size={14} />
+                          <span>+ เพิ่มข้อมูลทายาทคนต่อไป (ทายาทคนที่ {(formData.heirs?.length || 1) + 1})</span>
+                        </button>
+
+                        <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                          สัดส่วนรวม: <strong style={{
+                            color: (formData.heirs || []).reduce((sum, h) => sum + (Number(h.percentage) || 0), 0) === 100
+                              ? 'var(--emerald-success)'
+                              : 'var(--gold-primary)'
+                          }}>
+                            {(formData.heirs || []).reduce((sum, h) => sum + (Number(h.percentage) || 0), 0)}%
+                          </strong>
+                          {formData.heirs?.length > 1 && (
+                            <span style={{ marginLeft: '6px', color: '#94a3b8' }}>
+                              (ยอดเงินรวม {((formData.claimType === 'HIGH_RISK' ? 300000 : 60000)).toLocaleString('th-TH')} บาท)
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

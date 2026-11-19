@@ -138,13 +138,30 @@ export default function SampleDocumentViewer({
   const fullAddress = claim?.locationOfLoss?.fullAddress || 'ต.บาเจาะ อ.บันนังสตา จ.ยะลา';
   const trackingCode = claim?.trackingCode || 'ทบ-กพ-๖๙/๐๑๒';
 
-  // ข้อมูลทายาทและบัญชีเงินฝาก
-  const heirName = claim?.heirName || 'นางสมศรี มั่นคง';
-  const heirPhone = claim?.heirPhone || claim?.phone || '081-234-5678';
-  const heirEmail = claim?.heirEmail || claim?.email || 'heir.rta@gmail.com';
-  const heirAddress = claim?.heirAddress || fullAddress || 'หมู่ที่ 3 ต.บาเจาะ อ.บันนังสตา จ.ยะลา 95130';
-  const heirBank = claim?.heirBank || claim?.transferDetails?.bank || 'ธนาคารทหารไทยธนชาต (ttb)';
-  const heirBankAccount = claim?.heirBankAccount || claim?.transferDetails?.bankAccount || '140-2-89412-5';
+  // ข้อมูลทายาทและบัญชีเงินฝาก (รองรับทั้งทายาท 1 คน และหลายคน)
+  const heirsList = Array.isArray(claim?.heirs) && claim.heirs.length > 0 
+    ? claim.heirs 
+    : [
+        {
+          id: 1,
+          name: claim?.heirName || 'นางสมศรี มั่นคง',
+          relation: 'คู่สมรส',
+          percentage: 100,
+          bank: claim?.heirBank || claim?.transferDetails?.bank || 'ธนาคารทหารไทยธนชาต (ttb)',
+          bankAccount: claim?.heirBankAccount || claim?.transferDetails?.bankAccount || '140-2-89412-5',
+          phone: claim?.heirPhone || claim?.phone || '081-234-5678',
+          email: claim?.heirEmail || claim?.email || 'heir.rta@gmail.com',
+          address: claim?.heirAddress || fullAddress || 'หมู่ที่ 3 ต.บาเจาะ อ.บันนังสตา จ.ยะลา 95130'
+        }
+      ];
+
+  const primaryHeir = heirsList[0] || {};
+  const heirName = heirsList.map(h => h.name).filter(Boolean).join(', ') || primaryHeir.name || 'นางสมศรี มั่นคง';
+  const heirPhone = primaryHeir.phone || claim?.phone || '081-234-5678';
+  const heirEmail = primaryHeir.email || claim?.email || 'heir.rta@gmail.com';
+  const heirAddress = primaryHeir.address || fullAddress || 'หมู่ที่ 3 ต.บาเจาะ อ.บันนังสตา จ.ยะลา 95130';
+  const heirBank = primaryHeir.bank || claim?.transferDetails?.bank || 'ธนาคารทหารไทยธนชาต (ttb)';
+  const heirBankAccount = primaryHeir.bankAccount || claim?.transferDetails?.bankAccount || '140-2-89412-5';
 
   // จัดการอัปโหลดไฟล์ใหม่เข้าพรีวิวทันที
   const handleLocalFileChange = (e) => {
@@ -690,8 +707,15 @@ export default function SampleDocumentViewer({
                     หนังสือแสดงเจตนาระบุผู้รับประโยชน์ / หนังสือรับรองทายาท (แบบ ป.ค.๑๔)
                   </div>
                   <p style={{ textIndent: '30px', margin: '8px 0', fontSize: '13.5px' }}>
-                    ข้าพเจ้า <strong>{rank} {firstName} {lastName}</strong> สังกัด {unit} ขอแสดงเจตนาระบุให้ <strong>{heirName}</strong> (ความสัมพันธ์: มารดา/ทายาทโดยธรรม) เป็นผู้รับประโยชน์ในเงินค่าสินไหมทดแทนประกันชีวิตกำลังพลกองทัพบก หากข้าพเจ้าถึงแก่ความตายจากการปฏิบัติหน้าที่ราชการ
+                    ข้าพเจ้า <strong>{rank} {firstName} {lastName}</strong> สังกัด {unit} ขอแสดงเจตนาระบุให้ทายาทผู้มีสิทธิรับประโยชน์ในเงินค่าสินไหมทดแทนประกันชีวิตกำลังพลกองทัพบก หากข้าพเจ้าถึงแก่ความตายจากการปฏิบัติหน้าที่ราชการ ได้แก่:
                   </p>
+                  <div style={{ margin: '10px 0 14px 20px', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {heirsList.map((h, i) => (
+                      <div key={h.id || i}>
+                        {i + 1}. <strong>{h.name}</strong> (ความสัมพันธ์: {h.relation || 'ทายาทโดยธรรม'}) {h.percentage ? `สัดส่วน ${h.percentage}%` : ''}
+                      </div>
+                    ))}
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginTop: '18px' }}>
                     <div style={{ border: '1px dashed #64748b', padding: '10px', textAlign: 'center', fontSize: '12px' }}>
                       <div style={{ height: '24px', borderBottom: '1px solid #0f172a', marginBottom: '4px' }}></div>
@@ -712,17 +736,24 @@ export default function SampleDocumentViewer({
                     <div style={{ fontSize: '15.5px', fontWeight: 800, color: '#065f46' }}>
                       เอกสารประจำตัวผู้รับเงินสินไหม และหนังสือยินยอมเปิดเผยข้อมูลส่วนบุคคล (PDPA)
                     </div>
-                    <div style={{ fontSize: '12px', color: '#047857' }}>สำเนาบัตร ปชช. (๖.๑) • สำเนาทะเบียนบ้าน (๖.๒) • หนังสือยินยอม PDPA (๖.๓)</div>
+                    <div style={{ fontSize: '12px', color: '#047857' }}>สำเนาบัตร ปชช. (๖.๑) • สำเนาทะเบียนบ้าน (๖.๒) • หนังสือยินยอม PDPA (๖.๓) ({heirsList.length} ท่าน)</div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '13px' }}>
-                    <div>• <strong>ชื่อ-สกุล ทายาทผู้รับเงิน:</strong> {heirName}</div>
-                    <div>• <strong>เลขประจำตัวประชาชน:</strong> ๓-๙๔๑๐-๐๐๑๒๔-๕๖-๗</div>
-                    <div>• <strong>เบอร์โทรศัพท์ติดต่อ:</strong> {heirPhone}</div>
-                    <div>• <strong>อีเมล์:</strong> {heirEmail}</div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      • <strong>ที่อยู่ปัจจุบัน:</strong> {heirAddress}
-                    </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {heirsList.map((h, i) => (
+                      <div key={h.id || i} style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', border: '1px solid #bbf7d0', fontSize: '12.5px' }}>
+                        <div style={{ fontWeight: 700, color: '#065f46', marginBottom: '4px' }}>
+                          ทายาทคนที่ {i + 1}: {h.name} ({h.relation || 'ทายาท'}) {h.percentage ? `• สัดส่วน ${h.percentage}%` : ''}
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '4px' }}>
+                          <div>• <strong>เบอร์โทร:</strong> {h.phone || '-'}</div>
+                          <div>• <strong>อีเมล์:</strong> {h.email || '-'}</div>
+                          <div style={{ gridColumn: '1 / -1' }}>• <strong>ที่อยู่:</strong> {h.address || heirAddress}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+
                   <div style={{ marginTop: '12px', padding: '10px 14px', background: '#dcfce7', borderRadius: '4px', fontSize: '12px', color: '#166534' }}>
                     <strong>✓ หนังสือยินยอม PDPA:</strong> ข้าพเจ้ายินยอมให้ กรมกำลังพลทหารบก และ บริษัทประกันภัย เก็บรวบรวม ใช้ และเปิดเผยข้อมูลส่วนบุคคลเพื่อการดำเนินการจ่ายเงินสินไหมทดแทน
                   </div>
@@ -804,52 +835,65 @@ export default function SampleDocumentViewer({
                 </div>
               )}
 
-              {/* 11. สำเนาสมุดบัญชีเงินฝาก (ไม่ระบุธนาคาร) ของทายาท พร้อมที่อยู่ เบอร์โทร อีเมล์ */}
+              {/* 11. สำเนาสมุดบัญชีเงินฝาก (ไม่ระบุธนาคาร) ของทายาท พร้อมที่อยู่ เบอร์โทร อีเมล์ (รองรับทั้งกรณี 1 คน และหลายคน) */}
               {isBankPassbook && (
-                <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
-                  <div style={{
-                    width: '520px',
-                    border: '2px solid #0284c7',
-                    borderRadius: '8px',
-                    padding: '22px 26px',
-                    background: '#f0f9ff',
-                    boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-                    position: 'relative'
-                  }}>
-                    <div style={{
-                      position: 'absolute',
-                      top: '46%',
-                      left: '8%',
-                      transform: 'rotate(-8deg)',
-                      color: '#0369a1',
-                      fontWeight: 800,
-                      fontSize: '12.5px',
-                      background: 'rgba(255,255,255,0.92)',
-                      padding: '2px 10px',
-                      border: '1.5px solid #0284c7',
-                      zIndex: 3
-                    }}>
-                      สำเนาถูกต้อง สำหรับรับโอนสินไหม ทบ.
-                    </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', margin: '16px 0' }}>
+                  {heirsList.map((h, hIndex) => (
+                    <div 
+                      key={h.id || hIndex}
+                      style={{
+                        width: '520px',
+                        maxWidth: '100%',
+                        border: '2px solid #0284c7',
+                        borderRadius: '8px',
+                        padding: '22px 26px',
+                        background: '#f0f9ff',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+                        position: 'relative'
+                      }}
+                    >
+                      <div style={{
+                        position: 'absolute',
+                        top: '46%',
+                        left: '8%',
+                        transform: 'rotate(-8deg)',
+                        color: '#0369a1',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        background: 'rgba(255,255,255,0.92)',
+                        padding: '2px 10px',
+                        border: '1.5px solid #0284c7',
+                        zIndex: 3
+                      }}>
+                        สำเนาถูกต้อง สำหรับรับโอนสินไหม ทบ.
+                      </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0284c7', paddingBottom: '8px', marginBottom: '14px' }}>
-                      <span style={{ fontWeight: 800, fontSize: '15.5px', color: '#0369a1' }}>
-                        🏦 {heirBank}
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>สมุดคู่ฝากเงินออมทรัพย์</span>
-                    </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0284c7', paddingBottom: '8px', marginBottom: '14px', flexWrap: 'wrap', gap: '6px' }}>
+                        <div>
+                          <span style={{ fontWeight: 800, fontSize: '15.5px', color: '#0369a1' }}>
+                            🏦 {h.bank || 'ธนาคารทหารไทยธนชาต (ttb)'}
+                          </span>
+                          {heirsList.length > 1 && (
+                            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#0284c7', fontWeight: 600 }}>
+                              (ทายาทคนที่ {hIndex + 1}: {h.relation || 'ทายาท'} {h.percentage ? `• สัดส่วน ${h.percentage}%` : ''})
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>สมุดคู่ฝากเงินออมทรัพย์</span>
+                      </div>
 
-                    <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <div>• <strong>ชื่อบัญชีผู้รับเงิน:</strong> {heirName}</div>
-                      <div>• <strong>เลขที่บัญชี:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '14px', color: '#0284c7' }}>{heirBankAccount}</span></div>
-                      
-                      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #7dd3fc', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12.5px', color: '#0369a1' }}>
-                        <div><strong>📍 ที่อยู่ปัจจุบันของทายาท:</strong> {heirAddress}</div>
-                        <div><strong>📞 เบอร์โทรศัพท์ติดต่อ:</strong> {heirPhone}</div>
-                        <div><strong>✉️ อีเมล์:</strong> {heirEmail}</div>
+                      <div style={{ fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div>• <strong>ชื่อบัญชีผู้รับเงิน:</strong> {h.name || '(ระบุชื่อทายาท)'}</div>
+                        <div>• <strong>เลขที่บัญชี:</strong> <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '14px', color: '#0284c7' }}>{h.bankAccount || '140-2-89412-5'}</span></div>
+                        
+                        <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #7dd3fc', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12.5px', color: '#0369a1' }}>
+                          <div><strong>📍 ที่อยู่ปัจจุบันของทายาท:</strong> {h.address || heirAddress}</div>
+                          <div><strong>📞 เบอร์โทรศัพท์ติดต่อ:</strong> {h.phone || heirPhone}</div>
+                          <div><strong>✉️ อีเมล์:</strong> {h.email || heirEmail}</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
               )}
 

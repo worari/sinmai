@@ -34,7 +34,8 @@ import {
   Lock,
   ShieldAlert,
   FileUp,
-  FileCheck2
+  FileCheck2,
+  Users
 } from 'lucide-react';
 import { formatThaiDate, calculateSlaStatus, validateAttachmentFile, REQUIRED_DOCUMENTS } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
@@ -1130,51 +1131,140 @@ export default function ClaimDetailPage({ params }) {
             </div>
           )}
 
-          {/* ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม (ตามเอกสารข้อ 11) */}
-          {(claim.heirName || claim.heirAddress || claim.heirPhone || claim.heirEmail || claim.heirBank || claim.heirBankAccount) && (
+          {/* ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม (ตามเอกสารข้อ 11) - รองรับทายาท 1 หรือหลายคน */}
+          {((Array.isArray(claim.heirs) && claim.heirs.length > 0) || claim.heirName || claim.heirAddress || claim.heirPhone || claim.heirBank || claim.heirBankAccount) && (
             <div style={{
               marginTop: '16px',
-              padding: '14px 16px',
+              padding: '16px',
               borderRadius: '8px',
               background: 'rgba(212, 175, 55, 0.06)',
               border: '1px solid rgba(212, 175, 55, 0.25)'
             }}>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--gold-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <User size={15} />
-                <span>ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม (เอกสารข้อ 11)</span>
+              <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--gold-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={16} />
+                  <span>ข้อมูลทายาทผู้มีสิทธิรับเงินสินไหม (เอกสารข้อ 11)</span>
+                </div>
+                <span style={{
+                  fontSize: '11.5px',
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  background: 'rgba(212, 175, 55, 0.15)',
+                  color: 'var(--gold-light)',
+                  border: '1px solid rgba(212, 175, 55, 0.3)'
+                }}>
+                  {Array.isArray(claim.heirs) && claim.heirs.length > 0 ? `ทายาท ${claim.heirs.length} คน` : 'ทายาท 1 คน'}
+                </span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12.5px' }}>
-                {claim.heirName && (
-                  <div>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>ชื่อทายาทผู้รับสิทธิ:</span>
-                    <strong style={{ color: '#fff' }}>{claim.heirName}</strong>
-                  </div>
-                )}
-                {claim.heirPhone && (
-                  <div>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>เบอร์โทรศัพท์:</span>
-                    <span style={{ color: '#93c5fd' }}>{claim.heirPhone}</span>
-                  </div>
-                )}
-                {(claim.heirBank || claim.heirBankAccount) && (
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>บัญชีรับเงิน:</span>
-                    <span style={{ color: '#e0f2fe' }}>{claim.heirBank || 'ไม่ระบุธนาคาร'} {claim.heirBankAccount ? `เลขที่ ${claim.heirBankAccount}` : ''}</span>
-                  </div>
-                )}
-                {claim.heirEmail && (
-                  <div>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>อีเมล:</span>
-                    <span style={{ color: '#cbd5e1' }}>{claim.heirEmail}</span>
-                  </div>
-                )}
-                {claim.heirAddress && (
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>ที่อยู่ปัจจุบัน:</span>
-                    <span style={{ color: '#e2e8f0' }}>{claim.heirAddress}</span>
-                  </div>
-                )}
-              </div>
+
+              {Array.isArray(claim.heirs) && claim.heirs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {claim.heirs.map((h, i) => {
+                    const hAmount = (claim.compensationAmount || 300000) * (Number(h.percentage) || (claim.heirs.length === 1 ? 100 : 0)) / 100;
+                    return (
+                      <div
+                        key={h.id || i}
+                        style={{
+                          padding: '12px',
+                          borderRadius: '6px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.07)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{
+                              width: '20px',
+                              height: '20px',
+                              borderRadius: '50%',
+                              background: 'var(--gold-primary)',
+                              color: '#000',
+                              fontWeight: 700,
+                              fontSize: '11px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              {i + 1}
+                            </span>
+                            <strong style={{ color: '#fff', fontSize: '13px' }}>{h.name}</strong>
+                            {h.relation && (
+                              <span style={{ fontSize: '11px', color: '#93c5fd', background: 'rgba(59, 130, 246, 0.15)', padding: '1px 6px', borderRadius: '4px' }}>
+                                {h.relation}
+                              </span>
+                            )}
+                          </div>
+                          {h.percentage && (
+                            <span style={{ fontSize: '12px', color: 'var(--emerald-success)', fontWeight: 600 }}>
+                              สัดส่วน: {h.percentage}% ({hAmount.toLocaleString('th-TH')} บาท)
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px', fontSize: '12px' }}>
+                          {(h.bank || h.bankAccount) && (
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>บัญชีรับเงิน: </span>
+                              <span style={{ color: '#e0f2fe' }}>{h.bank || 'ไม่ระบุธนาคาร'} {h.bankAccount ? `เลขที่ ${h.bankAccount}` : ''}</span>
+                            </div>
+                          )}
+                          {h.phone && (
+                            <div>
+                              <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>เบอร์โทร: </span>
+                              <span style={{ color: '#93c5fd' }}>{h.phone}</span>
+                            </div>
+                          )}
+                          {h.email && (
+                            <div>
+                              <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>อีเมล: </span>
+                              <span style={{ color: '#cbd5e1' }}>{h.email}</span>
+                            </div>
+                          )}
+                          {h.address && (
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>ที่อยู่: </span>
+                              <span style={{ color: '#e2e8f0' }}>{h.address}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12.5px' }}>
+                  {claim.heirName && (
+                    <div>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>ชื่อทายาทผู้รับสิทธิ:</span>
+                      <strong style={{ color: '#fff' }}>{claim.heirName}</strong>
+                    </div>
+                  )}
+                  {claim.heirPhone && (
+                    <div>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>เบอร์โทรศัพท์:</span>
+                      <span style={{ color: '#93c5fd' }}>{claim.heirPhone}</span>
+                    </div>
+                  )}
+                  {(claim.heirBank || claim.heirBankAccount) && (
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>บัญชีรับเงิน:</span>
+                      <span style={{ color: '#e0f2fe' }}>{claim.heirBank || 'ไม่ระบุธนาคาร'} {claim.heirBankAccount ? `เลขที่ ${claim.heirBankAccount}` : ''}</span>
+                    </div>
+                  )}
+                  {claim.heirEmail && (
+                    <div>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>อีเมล:</span>
+                      <span style={{ color: '#cbd5e1' }}>{claim.heirEmail}</span>
+                    </div>
+                  )}
+                  {claim.heirAddress && (
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '11px', display: 'block' }}>ที่อยู่ปัจจุบัน:</span>
+                      <span style={{ color: '#e2e8f0' }}>{claim.heirAddress}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2578,6 +2668,54 @@ export default function ClaimDetailPage({ params }) {
                   >
                     <Eye size={13} /> ดูตัวเรื่องอนุมัติ
                   </button>
+                </div>
+              )}
+
+              {/* กรณีมีทายาทหลายคน: ให้เลือกทายาทเพื่อดึงข้อมูลโอนเงินด่วน */}
+              {Array.isArray(claim.heirs) && claim.heirs.length > 1 && (
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(59, 130, 246, 0.08)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  marginBottom: '14px'
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#93c5fd', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Users size={14} />
+                    <span>คำร้องนี้มีทายาท {claim.heirs.length} คน (คลิกเลือกทายาทเพื่อดึงชื่อ บัญชี และคำนวณยอดเงินตามสัดส่วน):</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {claim.heirs.map((h, i) => {
+                      const hShareAmount = (claim.compensationAmount || 300000) * (Number(h.percentage) || 0) / 100;
+                      const isSelected = recipientName === h.name;
+                      return (
+                        <button
+                          key={h.id || i}
+                          type="button"
+                          onClick={() => {
+                            setRecipientName(h.name);
+                            if (h.bank) {
+                              const bName = h.bank.includes('(') ? h.bank : `ธนาคาร${h.bank}`;
+                              setTransferBank(bName);
+                            }
+                            if (h.bankAccount) setTransferAccount(h.bankAccount);
+                            if (hShareAmount > 0) setTransferAmount(hShareAmount);
+                          }}
+                          className="btn btn-sm"
+                          style={{
+                            fontSize: '11.5px',
+                            padding: '5px 12px',
+                            background: isSelected ? '#2563eb' : 'rgba(255,255,255,0.06)',
+                            color: '#fff',
+                            border: isSelected ? '1.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.15)',
+                            fontWeight: isSelected ? 700 : 500
+                          }}
+                        >
+                          ทายาทคนที่ {i + 1}: {h.name} ({h.relation || 'ทายาท'}) {h.percentage ? `• ${h.percentage}%` : ''}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
