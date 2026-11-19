@@ -53,7 +53,8 @@ import {
   DRIVER_STATUSES,
   ALCOHOL_TEST_RESULTS,
   validateName,
-  validateDateNotFuture
+  validateDateNotFuture,
+  THAI_BANKS
 } from '@/lib/thai-utils';
 import { INITIAL_MILITARY_UNITS } from '@/lib/military-units';
 import LocationPicker from '@/components/LocationPicker';
@@ -206,9 +207,17 @@ export default function SubmitClaimPage() {
         }
       ];
 
+      // Sanitization per field: เลขที่บัญชีไม่เกิน 15 หลัก, เบอร์โทรตัวเลข 10 หลัก
+      let sanitizedValue = value;
+      if (field === 'bankAccount') {
+        sanitizedValue = String(value || '').replace(/\D/g, '').slice(0, 15);
+      } else if (field === 'phone') {
+        sanitizedValue = String(value || '').replace(/\D/g, '').slice(0, 10);
+      }
+
       const updatedHeirs = currentHeirs.map((h, idx) => {
         if (idx === index) {
-          return { ...h, [field]: value };
+          return { ...h, [field]: sanitizedValue };
         }
         return h;
       });
@@ -1139,8 +1148,18 @@ export default function SubmitClaimPage() {
         setErrorMsg(`กรุณาระบุชื่อ-นามสกุล ของทายาทคนที่ ${i + 1} ในเอกสารข้อ 11 ให้ถูกต้องอย่างน้อย 2 ตัวอักษร`);
         return;
       }
-      if (!h.phone || h.phone.trim().length < 5) {
+      const cleanPhone = String(h.phone || '').replace(/\D/g, '');
+      if (!cleanPhone) {
         setErrorMsg(`กรุณาระบุเบอร์โทรศัพท์ติดต่อของทายาทคนที่ ${i + 1} (${h.name}) ในเอกสารข้อ 11`);
+        return;
+      }
+      if (cleanPhone.length !== 10) {
+        setErrorMsg(`เบอร์โทรศัพท์ติดต่อของทายาทคนที่ ${i + 1} (${h.name}) ต้องเป็นตัวเลข 10 หลัก (ปัจจุบันมี ${cleanPhone.length} หลัก)`);
+        return;
+      }
+      const cleanBankAcc = String(h.bankAccount || '').replace(/\D/g, '');
+      if (cleanBankAcc && cleanBankAcc.length > 15) {
+        setErrorMsg(`เลขที่บัญชีเงินฝากของทายาทคนที่ ${i + 1} (${h.name}) ต้องกรอกได้ไม่เกิน 15 หลัก (ปัจจุบันมี ${cleanBankAcc.length} หลัก)`);
         return;
       }
       if (!h.address || h.address.trim().length < 5) {
@@ -2679,45 +2698,95 @@ export default function SubmitClaimPage() {
 
                                 <div>
                                   <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                                    ธนาคาร (ไม่ระบุธนาคาร / ระบุธนาคารใดก็ได้)
+                                    ธนาคาร (มีตัวเลือก ธนาคารไทยทุกธนาคาร)
                                   </label>
-                                  <input
-                                    type="text"
-                                    className="form-input"
-                                    placeholder="เช่น ธ.ทหารไทยธนชาต (ttb), กรุงไทย หรืออื่นๆ"
-                                    value={heir.bank || ''}
-                                    onChange={(e) => handleHeirChange(hIdx, 'bank', e.target.value)}
+                                  <select
+                                    className="form-select"
+                                    value={heir.bank && !THAI_BANKS.includes(heir.bank) && heir.bank !== 'ธนาคารอื่นๆ' ? heir.bank : (heir.bank || '')}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === 'OTHER') {
+                                        handleHeirChange(hIdx, 'bank', 'ธนาคารอื่นๆ');
+                                      } else {
+                                        handleHeirChange(hIdx, 'bank', val);
+                                      }
+                                    }}
                                     style={{ width: '100%', fontSize: '13px' }}
-                                  />
+                                  >
+                                    <option value="">-- เลือกธนาคาร (ทุกธนาคารในประเทศไทย) --</option>
+                                    {heir.bank && !THAI_BANKS.includes(heir.bank) && heir.bank !== 'ธนาคารอื่นๆ' && (
+                                      <option value={heir.bank}>{heir.bank}</option>
+                                    )}
+                                    {THAI_BANKS.map((bName) => (
+                                      <option key={bName} value={bName}>{bName}</option>
+                                    ))}
+                                    <option value="OTHER">🏦 ธนาคารอื่นๆ / สหกรณ์ออมทรัพย์ (ระบุเอง)...</option>
+                                  </select>
+                                  {(heir.bank === 'ธนาคารอื่นๆ' || (heir.bank && !THAI_BANKS.includes(heir.bank))) && (
+                                    <input
+                                      type="text"
+                                      className="form-input"
+                                      style={{ marginTop: '6px', width: '100%', fontSize: '12.5px' }}
+                                      placeholder="พิมพ์ระบุชื่อธนาคาร หรือสหกรณ์ออมทรัพย์"
+                                      value={heir.bank === 'ธนาคารอื่นๆ' ? '' : heir.bank}
+                                      onChange={(e) => handleHeirChange(hIdx, 'bank', e.target.value || 'ธนาคารอื่นๆ')}
+                                    />
+                                  )}
                                 </div>
 
                                 <div>
-                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                                    เลขที่บัญชีเงินฝากทายาท
-                                  </label>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                                      เลขที่บัญชีเงินฝากทายาท
+                                    </label>
+                                    <span style={{ fontSize: '11px', color: (heir.bankAccount || '').length === 15 ? 'var(--amber-warning)' : 'var(--text-muted)' }}>
+                                      {(heir.bankAccount || '').length}/15 หลัก
+                                    </span>
+                                  </div>
                                   <input
                                     type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    maxLength={15}
                                     className="form-input"
-                                    placeholder="เช่น 123-4-56789-0"
+                                    placeholder="ระบุตัวเลขบัญชี ไม่เกิน 15 หลัก"
                                     value={heir.bankAccount || ''}
-                                    onChange={(e) => handleHeirChange(hIdx, 'bankAccount', e.target.value)}
-                                    style={{ width: '100%', fontSize: '13px' }}
+                                    onChange={(e) => handleHeirChange(hIdx, 'bankAccount', e.target.value.replace(/\D/g, '').slice(0, 15))}
+                                    style={{ width: '100%', fontSize: '13px', fontFamily: 'monospace' }}
                                   />
+                                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginTop: '3px' }}>
+                                    กรอกเฉพาะตัวเลข ไม่เกิน 15 หลัก
+                                  </span>
                                 </div>
 
                                 <div>
-                                  <label style={{ fontSize: '12px', color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                                    เบอร์โทรศัพท์ติดต่อทายาท <span style={{ color: 'var(--ruby-danger)' }}>*</span>
-                                  </label>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                                      เบอร์โทรศัพท์ติดต่อทายาท <span style={{ color: 'var(--ruby-danger)' }}>*</span>
+                                    </label>
+                                    <span style={{
+                                      fontSize: '11px',
+                                      color: (heir.phone || '').length === 10 ? 'var(--emerald-success)' : ((heir.phone || '').length > 0 ? 'var(--amber-warning)' : 'var(--text-muted)'),
+                                      fontWeight: (heir.phone || '').length === 10 ? 600 : 400
+                                    }}>
+                                      {(heir.phone || '').length === 10 ? '✓ ครบ 10 หลัก' : `${(heir.phone || '').length}/10 หลัก`}
+                                    </span>
+                                  </div>
                                   <input
                                     type="tel"
+                                    inputMode="tel"
+                                    pattern="[0-9]{10}"
+                                    maxLength={10}
                                     className="form-input"
-                                    placeholder="เช่น 081-234-5678"
+                                    placeholder="เช่น 0812345678 (ตัวเลข 10 หลัก)"
                                     value={heir.phone || ''}
-                                    onChange={(e) => handleHeirChange(hIdx, 'phone', e.target.value)}
-                                    style={{ width: '100%', fontSize: '13px' }}
+                                    onChange={(e) => handleHeirChange(hIdx, 'phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                                    style={{ width: '100%', fontSize: '13px', fontFamily: 'monospace' }}
                                     required
                                   />
+                                  <span style={{ fontSize: '11px', color: 'var(--text-dim)', display: 'block', marginTop: '3px' }}>
+                                    กรอกตัวเลข 10 หลัก (เช่น 0812345678)
+                                  </span>
                                 </div>
 
                                 <div>

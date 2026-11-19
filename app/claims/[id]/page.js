@@ -37,7 +37,7 @@ import {
   FileCheck2,
   Users
 } from 'lucide-react';
-import { formatThaiDate, calculateSlaStatus, validateAttachmentFile, REQUIRED_DOCUMENTS } from '@/lib/thai-utils';
+import { formatThaiDate, calculateSlaStatus, validateAttachmentFile, REQUIRED_DOCUMENTS, THAI_BANKS } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
@@ -2754,31 +2754,34 @@ export default function ClaimDetailPage({ params }) {
               {/* ธนาคารและเลขบัญชีปลายทาง */}
               <div className="grid-cols-2" style={{ gap: '14px' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label required">ธนาคารปลายทาง (ผู้รับโอน)</label>
+                  <label className="form-label required">ธนาคารปลายทาง (ตัวเลือกธนาคารไทยทุกธนาคาร)</label>
                   <select 
                     className="form-input"
                     value={transferBank}
                     onChange={(e) => setTransferBank(e.target.value)}
                     required
                   >
-                    <option value="ธนาคารทหารไทยธนชาต (ttb)">ธนาคารทหารไทยธนชาต (ttb)</option>
-                    <option value="ธนาคารกรุงไทย (KTB)">ธนาคารกรุงไทย (KTB)</option>
-                    <option value="ธนาคารกสิกรไทย (KBANK)">ธนาคารกสิกรไทย (KBANK)</option>
-                    <option value="ธนาคารไทยพาณิชย์ (SCB)">ธนาคารไทยพาณิชย์ (SCB)</option>
-                    <option value="ธนาคารกรุงเทพ (BBL)">ธนาคารกรุงเทพ (BBL)</option>
-                    <option value="ธนาคารออมสิน (GSB)">ธนาคารออมสิน (GSB)</option>
+                    <option value="">-- เลือกธนาคารปลายทาง --</option>
+                    {transferBank && !THAI_BANKS.includes(transferBank) && (
+                      <option value={transferBank}>{transferBank}</option>
+                    )}
+                    {THAI_BANKS.map((bName) => (
+                      <option key={bName} value={bName}>{bName}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label required">เลขที่บัญชีธนาคารปลายทาง</label>
+                  <label className="form-label required">เลขที่บัญชีธนาคารปลายทาง (ไม่เกิน 15 หลัก)</label>
                   <input 
                     type="text"
+                    inputMode="numeric"
                     className="form-input"
-                    placeholder="เช่น 140-2-89412-5"
-                    maxLength={20}
+                    placeholder="เช่น 1402894125 (ตัวเลขไม่เกิน 15 หลัก)"
+                    maxLength={15}
                     value={transferAccount}
-                    onChange={(e) => setTransferAccount(e.target.value.replace(/[^0-9-]/g, '').slice(0, 20))}
+                    onChange={(e) => setTransferAccount(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                    style={{ fontFamily: 'monospace' }}
                     required
                   />
                 </div>
