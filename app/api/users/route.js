@@ -122,6 +122,22 @@ export async function PUT(request) {
       return NextResponse.json({ success: false, message: 'รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมน' }, { status: 400 });
     }
 
+    // ตรวจสอบเงื่อนไขความปลอดภัยของรหัสผ่านใหม่ (หากมีการเปลี่ยนรหัสผ่าน)
+    if (updateData.password !== undefined && updateData.password !== null) {
+      const pwd = String(updateData.password).trim();
+      if (!pwd) {
+        delete updateData.password; // เว้นว่าง = ไม่เปลี่ยนรหัสผ่าน คงรหัสผ่านเดิมของบัญชีไว้
+      } else {
+        if (pwd.length < 8 || !/[a-zA-Z]/.test(pwd) || !/\d/.test(pwd)) {
+          return NextResponse.json({
+            success: false,
+            message: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร และประกอบด้วยตัวอักษรภาษาอังกฤษและตัวเลข'
+          }, { status: 400 });
+        }
+        updateData.password = pwd;
+      }
+    }
+
     const updated = db.updateUser(userId, updateData, currentAdmin);
     await db.flush();
     const { password: _, ...safeUser } = updated;

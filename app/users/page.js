@@ -27,6 +27,7 @@ import {
   X,
   Key,
   Eye,
+  EyeOff,
   AlertTriangle,
   FileSpreadsheet,
   ChevronLeft,
@@ -35,11 +36,13 @@ import {
   ChevronsRight,
   Laptop,
   Smartphone,
-  Globe
+  Globe,
+  Sparkles
 } from 'lucide-react';
 import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId, formatThaiDate, validatePhoneNumber, validateEmail, validateName, formatPhoneNumber } from '@/lib/thai-utils';
 import { USER_ROLES, USER_STATUS } from '@/lib/constants';
 import { getSocketClient } from '@/lib/socket-client';
+import UnitAutocomplete from '@/components/UnitAutocomplete';
 
 export default function UserManagementPage() {
   const [activeTab, setActiveTab] = useState('users'); // 'users' | 'pending' | 'logs'
@@ -77,8 +80,8 @@ export default function UserManagementPage() {
     firstName: '',
     lastName: '',
     position: 'นายทหารฝ่ายกำลังพล',
-    unitId: '9th_INF_DIV',
-    unitName: 'กองพลทหารราบที่ 9 (พล.ร.9)',
+    unitId: '',
+    unitName: '',
     phone: '',
     email: '',
     password: 'password123',
@@ -92,6 +95,22 @@ export default function UserManagementPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [savingAction, setSavingAction] = useState(false);
 
+  // Unit autocomplete state (เชื่อมโยงโครงสร้างการจัดหน่วย ทบ. 864 หน่วย)
+  const [units, setUnits] = useState([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+  const [unitsError, setUnitsError] = useState('');
+
+  // Password editing state for Edit Modal
+  const [passwordMode, setPasswordMode] = useState('KEEP'); // 'KEEP' | 'NEW'
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showOldPasswordNotice, setShowOldPasswordNotice] = useState(false);
+
+  // Password visibility for Add Modal
+  const [showAddPassword, setShowAddPassword] = useState(false);
+
   useEffect(() => {
     const checkAuth = () => {
       const saved = localStorage.getItem('rta_user');
@@ -103,6 +122,7 @@ export default function UserManagementPage() {
     };
     checkAuth();
     loadUsers();
+    loadUnits();
     loadLogs('', 'ALL', 1);
 
     window.addEventListener('rta_auth_change', checkAuth);
@@ -123,6 +143,86 @@ export default function UserManagementPage() {
       }
     };
   }, []);
+
+  const loadUnits = async () => {
+    setUnitsLoading(true);
+    setUnitsError('');
+    try {
+      const res = await fetch('/api/units');
+      const data = await res.json();
+      if (data.success && Array.isArray(data.units)) {
+        setUnits(data.units);
+      } else {
+        setUnitsError(data.message || 'ไม่สามารถโหลดข้อมูลหน่วยสังกัดได้');
+      }
+    } catch (err) {
+      setUnitsError(err.message || 'เกิดข้อผิดพลาดในการโหลดข้อมูลหน่วยสังกัด');
+    } finally {
+      setUnitsLoading(false);
+    }
+  };
+
+  // Helper: ตรวจสอบความแข็งแกร่งของรหัสผ่าน
+  const getPasswordStrength = (pwd) => {
+    if (!pwd) return { score: 0, text: 'ยังไม่ได้ระบุ', color: 'var(--text-dim)', percent: 0 };
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (pwd.length >= 12) score += 1;
+    if (/[a-zA-Z]/.test(pwd)) score += 1;
+    if (/\d/.test(pwd)) score += 1;
+    if (/[^a-zA-Z0-9]/.test(pwd)) score += 1;
+
+    if (score <= 2) return { score: 1, text: 'ระดับต่ำ (ไม่ผ่านเกณฑ์)', color: '#ef4444', percent: 25 };
+    if (score === 3) return { score: 2, text: 'ปานกลาง (ผ่านเกณฑ์พื้นฐาน)', color: '#f59e0b', percent: 60 };
+    if (score === 4) return { score: 3, text: 'ปลอดภัยดี', color: '#10b981', percent: 85 };
+    return { score: 4, text: 'ปลอดภัยสูงสุด', color: '#06b6d4', percent: 100 };
+  };
+
+  // Helper: สุ่มรหัสผ่านปลอดภัยตามเงื่อนไข
+  const generateSecurePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    let result = '';
+    if (typeof window !== 'undefined' && window.crypto) {
+      const randomArray = new Uint8Array(10);
+      window.crypto.getRandomValues(randomArray);
+      for (let i = 0; i < 10; i++) {
+        result += chars[randomArray[i] % chars.length];
+      }
+    } else {
+      for (let i = 0; i < 10; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+    }
+    if (!/[a-zA-Z]/.test(result)) result = 'Army' + result.slice(4);
+    if (!/\d/.test(result)) result = result.slice(0, 8) + '99';
+    return result;
+  };
+
+  // Helper: เปิด Modal แก้ไขข้อมูลผู้ใช้พร้อมตั้งค่าเริ่มต้นรหัสผ่าน
+  const handleOpenEditModal = (u) => {
+    setEditForm({
+      id: u.id,
+      citizenId: u.citizenId || '',
+      rank: u.rank || 'ร.อ.',
+      firstName: u.firstName || '',
+      lastName: u.lastName || '',
+      position: u.position || '',
+      unitId: u.unitId || '',
+      unitName: u.unitName || '',
+      phone: u.phone || '',
+      email: u.email || '',
+      role: u.role || 'UNIT_OFFICER',
+      status: u.status || 'APPROVED',
+      isActive: u.isActive !== false
+    });
+    setPasswordMode('KEEP');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+    setShowOldPasswordNotice(false);
+    setShowEditModal(true);
+  };
 
   const loadUsers = async () => {
     setLoading(true);
@@ -252,6 +352,11 @@ export default function UserManagementPage() {
       return;
     }
 
+    if (!addForm.unitId) {
+      showNotification('กรุณาค้นหาและเลือกหน่วยสังกัดจากรายการโครงสร้างหน่วย ทบ.', true);
+      return;
+    }
+
     if (addForm.phone && !validatePhoneNumber(addForm.phone)) {
       showNotification('เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678', true);
       return;
@@ -259,6 +364,11 @@ export default function UserManagementPage() {
 
     if (!validateEmail(addForm.email)) {
       showNotification('รูปแบบอีเมลไม่ถูกต้อง ต้องมีเครื่องหมาย @ และชื่อโดเมนที่ถูกต้อง', true);
+      return;
+    }
+
+    if (addForm.password.length < 8 || !/[a-zA-Z]/.test(addForm.password) || !/\d/.test(addForm.password)) {
+      showNotification('รหัสผ่านเริ่มต้นต้องมีความยาวอย่างน้อย 8 ตัวอักษร และประกอบด้วยตัวอักษรภาษาอังกฤษและตัวเลข', true);
       return;
     }
 
@@ -283,8 +393,8 @@ export default function UserManagementPage() {
         firstName: '',
         lastName: '',
         position: 'นายทหารฝ่ายกำลังพล',
-        unitId: '9th_INF_DIV',
-        unitName: 'กองพลทหารราบที่ 9 (พล.ร.9)',
+        unitId: '',
+        unitName: '',
         phone: '',
         email: '',
         password: 'password123',
@@ -315,6 +425,11 @@ export default function UserManagementPage() {
       return;
     }
 
+    if (!editForm.unitId) {
+      showNotification('กรุณาเลือกหน่วยสังกัดจากรายการค้นหาโครงสร้างหน่วย', true);
+      return;
+    }
+
     if (editForm.phone && !validatePhoneNumber(editForm.phone)) {
       showNotification('เบอร์โทรศัพท์ติดต่อต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 เช่น 0812345678', true);
       return;
@@ -325,16 +440,41 @@ export default function UserManagementPage() {
       return;
     }
 
+    // ตรวจสอบเงื่อนไขความปลอดภัยรหัสผ่านใหม่ (หากเลือกเปลี่ยนรหัสผ่าน)
+    if (passwordMode === 'NEW') {
+      const trimmedPwd = (newPassword || '').trim();
+      if (!trimmedPwd) {
+        showNotification('กรุณาระบุรหัสผ่านใหม่ หรือเลือก "คงรหัสผ่านเดิมไว้"', true);
+        return;
+      }
+      if (trimmedPwd.length < 8 || !/[a-zA-Z]/.test(trimmedPwd) || !/\d/.test(trimmedPwd)) {
+        showNotification('รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 8 ตัวอักษร และมีทั้งตัวอักษรภาษาอังกฤษและตัวเลขตามนโยบายความปลอดภัย', true);
+        return;
+      }
+      if (confirmPassword && trimmedPwd !== confirmPassword.trim()) {
+        showNotification('รหัสผ่านใหม่และช่องยืนยันรหัสผ่านไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง', true);
+        return;
+      }
+    }
+
     setSavingAction(true);
     try {
+      const payload = {
+        userId: editForm.id,
+        ...editForm,
+        adminUser: currentUser
+      };
+
+      if (passwordMode === 'NEW' && newPassword.trim()) {
+        payload.password = newPassword.trim();
+      } else {
+        delete payload.password; // คงรหัสผ่านเดิมไว้ ไม่ส่ง field password ไปอัปเดต
+      }
+
       const res = await fetch('/api/users', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: editForm.id,
-          ...editForm,
-          adminUser: currentUser
-        })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'บันทึกการแก้ไขไม่สำเร็จ');
@@ -342,6 +482,9 @@ export default function UserManagementPage() {
       showNotification(data.message);
       setShowEditModal(false);
       setEditForm(null);
+      setPasswordMode('KEEP');
+      setNewPassword('');
+      setConfirmPassword('');
       loadUsers();
       loadLogs();
     } catch (err) {
@@ -876,13 +1019,10 @@ export default function UserManagementPage() {
                                   {/* แก้ไขข้อมูล */}
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      setEditForm({ ...u, password: '' });
-                                      setShowEditModal(true);
-                                    }}
+                                    onClick={() => handleOpenEditModal(u)}
                                     className="btn btn-sm btn-secondary"
                                     style={{ padding: '4px 8px', fontSize: '12px' }}
-                                    title="แก้ไขข้อมูลผู้ใช้"
+                                    title="แก้ไขข้อมูลผู้ใช้และจัดการรหัสผ่าน"
                                   >
                                     <Edit3 size={14} />
                                   </button>
@@ -1303,32 +1443,48 @@ export default function UserManagementPage() {
                 </div>
               </div>
 
-              <div className="grid-cols-2">
-                <div className="form-group">
-                  <label className="form-label required">ตำแหน่ง</label>
-                  <input 
-                    type="text" 
-                    className="form-input"
-                    value={addForm.position}
-                    onChange={(e) => setAddForm({ ...addForm, position: e.target.value })}
-                    placeholder="เช่น นายทหารกำลังพล"
-                    required
-                  />
-                </div>
+              <div className="form-group">
+                <label className="form-label required">ตำแหน่ง</label>
+                <input 
+                  type="text" 
+                  className="form-input"
+                  value={addForm.position}
+                  onChange={(e) => setAddForm({ ...addForm, position: e.target.value })}
+                  placeholder="เช่น นายทหารกำลังพล, รอง ผบ.ร้อย."
+                  required
+                />
+              </div>
 
-                <div className="form-group">
-                  <label className="form-label required">หน่วยสังกัด</label>
-                  <select 
-                    className="form-select"
-                    value={addForm.unitId}
-                    onChange={(e) => {
-                      const u = MILITARY_UNITS.find((unit) => unit.id === e.target.value);
-                      setAddForm({ ...addForm, unitId: e.target.value, unitName: u ? u.name : e.target.value });
-                    }}
-                    required
-                  >
-                    {MILITARY_UNITS.map((u) => <option key={u.id} value={u.id}>[{u.level}] {u.name}</option>)}
-                  </select>
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label required" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Building size={15} color="var(--cyan-accent)" />
+                    <span>หน่วยสังกัด (เชื่อมโยงโครงสร้างการจัดหน่วย ทบ.)</span>
+                  </label>
+                  {addForm.unitName && (
+                    <span style={{ fontSize: '11.5px', color: 'var(--cyan-accent)', background: 'rgba(6, 182, 212, 0.12)', padding: '2px 8px', borderRadius: '4px' }}>
+                      เลือกแล้ว: {addForm.unitName}
+                    </span>
+                  )}
+                </div>
+                <UnitAutocomplete
+                  units={units}
+                  value={addForm.unitId}
+                  onChange={(selectedUnit) => {
+                    setAddForm((prev) => ({
+                      ...prev,
+                      unitId: selectedUnit ? selectedUnit.id : '',
+                      unitName: selectedUnit ? (selectedUnit.name || selectedUnit.shortName) : ''
+                    }));
+                  }}
+                  loading={unitsLoading}
+                  error={unitsError}
+                  onRetry={loadUnits}
+                  required
+                  placeholder="พิมพ์ค้นหาชื่อหน่วย, ชื่อย่อ (เช่น พล.ร.9, มทบ.11, ร.9 พัน.1), รหัส หรือจังหวัด..."
+                />
+                <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px' }}>
+                  * เชื่อมโยงฐานข้อมูลโครงสร้างการจัดหน่วย ทบ. 864 หน่วย
                 </div>
               </div>
 
@@ -1410,14 +1566,40 @@ export default function UserManagementPage() {
 
               <div className="form-group">
                 <label className="form-label required">รหัสผ่านเริ่มต้น</label>
-                <input 
-                  type="password" 
-                  className="form-input"
-                  value={addForm.password}
-                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                  placeholder="รหัสผ่านอย่างน้อย 6 ตัวอักษร"
-                  required
-                />
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type={showAddPassword ? 'text' : 'password'} 
+                    className="form-input"
+                    style={{ paddingRight: '40px' }}
+                    value={addForm.password}
+                    onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+                    placeholder="รหัสผ่านอย่างน้อย 8 ตัวอักษร (มีตัวอักษรและตัวเลข)"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPassword((prev) => !prev)}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                    title={showAddPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                  >
+                    {showAddPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px' }}>
+                  * ความยาวอย่างน้อย 8 ตัวอักษร มีทั้งภาษาอังกฤษและตัวเลข (ค่าเริ่มต้น: password123)
+                </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
@@ -1499,31 +1681,49 @@ export default function UserManagementPage() {
                 </div>
               </div>
 
-              <div className="grid-cols-2">
-                <div className="form-group">
-                  <label className="form-label required">ตำแหน่ง</label>
-                  <input 
-                    type="text" 
-                    className="form-input"
-                    value={editForm.position || ''}
-                    onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
-                    required
-                  />
-                </div>
+              <div className="form-group">
+                <label className="form-label required">ตำแหน่ง</label>
+                <input 
+                  type="text" 
+                  className="form-input"
+                  value={editForm.position || ''}
+                  onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
+                  placeholder="เช่น นายทหารฝ่ายกำลังพล, ผบ.ร้อย.1"
+                  required
+                />
+              </div>
 
-                <div className="form-group">
-                  <label className="form-label required">หน่วยสังกัด</label>
-                  <select 
-                    className="form-select"
-                    value={editForm.unitId}
-                    onChange={(e) => {
-                      const u = MILITARY_UNITS.find((unit) => unit.id === e.target.value);
-                      setEditForm({ ...editForm, unitId: e.target.value, unitName: u ? u.name : e.target.value });
-                    }}
-                    required
-                  >
-                    {MILITARY_UNITS.map((u) => <option key={u.id} value={u.id}>[{u.level}] {u.name}</option>)}
-                  </select>
+              {/* หน่วยสังกัด (เชื่อมโยงโครงสร้างการจัดหน่วย ทบ. 864 หน่วย) */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="form-label required" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Building size={15} color="var(--cyan-accent)" />
+                    <span>หน่วยสังกัด (เชื่อมโยงโครงสร้างการจัดหน่วย ทบ.)</span>
+                  </label>
+                  {editForm.unitName && (
+                    <span style={{ fontSize: '11.5px', color: 'var(--cyan-accent)', background: 'rgba(6, 182, 212, 0.12)', padding: '2px 8px', borderRadius: '4px' }}>
+                      สังกัดเดิม: {editForm.unitName}
+                    </span>
+                  )}
+                </div>
+                <UnitAutocomplete
+                  units={units}
+                  value={editForm.unitId}
+                  onChange={(selectedUnit) => {
+                    setEditForm((prev) => ({
+                      ...prev,
+                      unitId: selectedUnit ? selectedUnit.id : '',
+                      unitName: selectedUnit ? (selectedUnit.name || selectedUnit.shortName) : ''
+                    }));
+                  }}
+                  loading={unitsLoading}
+                  error={unitsError}
+                  onRetry={loadUnits}
+                  required
+                  placeholder="พิมพ์ค้นหาชื่อหน่วย, ชื่อย่อ (เช่น พล.ร.9, มทบ.11, ร.9 พัน.1), รหัส หรือจังหวัด..."
+                />
+                <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px' }}>
+                  * ค้นหาและเลือกหน่วยจากโครงสร้างหน่วย ทบ. 864 หน่วย (แสดงสายการบังคับบัญชา)
                 </div>
               </div>
 
@@ -1603,15 +1803,302 @@ export default function UserManagementPage() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">เปลี่ยนรหัสผ่านใหม่ (ปล่อยว่างถ้าไม่ต้องการเปลี่ยน)</label>
-                <input 
-                  type="password" 
-                  className="form-input"
-                  value={editForm.password || ''}
-                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
-                  placeholder="กรอกรหัสผ่านใหม่เพื่อรีเซ็ต"
-                />
+              {/* การจัดการรหัสผ่านผู้ใช้งาน (Password Security & Management) */}
+              <div style={{
+                marginTop: '20px',
+                marginBottom: '20px',
+                padding: '16px',
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Key size={18} color="var(--gold-primary)" />
+                    <span style={{ fontWeight: 600, fontSize: '14px', color: '#fff' }}>
+                      ความปลอดภัยและการจัดการรหัสผ่าน
+                    </span>
+                  </div>
+
+                  {/* สลับโหมด: คงรหัสเดิม vs กำหนดรหัสผ่านใหม่ */}
+                  <div style={{ display: 'inline-flex', background: 'rgba(0, 0, 0, 0.35)', padding: '3px', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordMode('KEEP');
+                        setNewPassword('');
+                        setConfirmPassword('');
+                      }}
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: passwordMode === 'KEEP' ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                        color: passwordMode === 'KEEP' ? '#6ee7b7' : 'var(--text-muted)',
+                        fontWeight: passwordMode === 'KEEP' ? 600 : 400,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                    >
+                      <Lock size={12} />
+                      <span>คงรหัสผ่านเดิมไว้</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPasswordMode('NEW')}
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: passwordMode === 'NEW' ? 'rgba(6, 182, 212, 0.25)' : 'transparent',
+                        color: passwordMode === 'NEW' ? '#67e8f9' : 'var(--text-muted)',
+                        fontWeight: passwordMode === 'NEW' ? 600 : 400,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                    >
+                      <Key size={12} />
+                      <span>กำหนดรหัสผ่านใหม่</span>
+                    </button>
+                  </div>
+                </div>
+
+                {passwordMode === 'KEEP' ? (
+                  <div style={{
+                    background: 'rgba(16, 185, 129, 0.06)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    borderRadius: '8px',
+                    padding: '12px 14px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <ShieldCheck size={20} color="var(--emerald-success)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: '#6ee7b7', marginBottom: '2px' }}>
+                            บัญชีนี้กำลังใช้งานรหัสผ่านเดิม (คงรหัสเดิมไว้โดยไม่เปลี่ยนแปลง)
+                          </div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                            รหัสผ่านเดิมของผู้ใช้ถูกจัดเก็บด้วยการเข้ารหัสความปลอดภัยสูง (Salted Scrypt) ทางเดียว หากไม่ต้องการรีเซ็ตรหัสผ่าน ให้เลือกโหมดนี้ไว้ รหัสผ่านเดิมจะยังคงใช้งานได้ตามปกติ
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowOldPasswordNotice((prev) => !prev)}
+                        className="btn btn-secondary btn-sm"
+                        style={{ padding: '4px 10px', fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '5px', whiteSpace: 'nowrap' }}
+                        title="ตรวจสอบข้อมูลการจัดเก็บรหัสผ่านเดิม"
+                      >
+                        {showOldPasswordNotice ? <EyeOff size={13} /> : <Eye size={13} />}
+                        <span>{showOldPasswordNotice ? 'ซ่อนข้อมูลรหัสเดิม' : 'ดูข้อมูลรหัสเดิม'}</span>
+                      </button>
+                    </div>
+
+                    {showOldPasswordNotice && (
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '10px 14px',
+                        background: 'rgba(0, 0, 0, 0.4)',
+                        borderRadius: '6px',
+                        border: '1px dashed rgba(245, 158, 11, 0.4)',
+                        fontSize: '11.5px',
+                        color: '#fcd34d',
+                        lineHeight: 1.6
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', fontWeight: 600 }}>
+                          <AlertCircle size={14} />
+                          <span>นโยบายความปลอดภัยไซเบอร์ (Zero-Plaintext Policy):</span>
+                        </div>
+                        <div>
+                          รหัสผ่านเดิมถูกจัดเก็บด้วยการแฮชชั้นสูง (One-way Salted Hash) เพื่อความปลอดภัยสูงสุด จึงไม่มีผู้ใด (รวมถึง Admin) สามารถเรียกดูรหัสเดิมเป็นข้อความธรรมดาได้ หากผู้ใช้ลืมรหัสผ่าน กรุณากดปุ่ม <strong>&quot;กำหนดรหัสผ่านใหม่&quot;</strong> เพื่อตั้งรหัสผ่านใหม่หรือกดรีเซ็ตเป็นรหัสเริ่มต้น
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    {/* Quick Preset Buttons */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        กำหนดรหัสผ่านใหม่ที่ปลอดภัย (อย่างน้อย 8 ตัวอักษร มีตัวอักษรและตัวเลข):
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewPassword('password123');
+                            setConfirmPassword('password123');
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="ตั้งเป็นรหัสผ่านเริ่มต้นของระบบ"
+                        >
+                          <span>⚡ รหัสเริ่มต้น (password123)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const gen = generateSecurePassword();
+                            setNewPassword(gen);
+                            setConfirmPassword(gen);
+                            setShowNewPassword(true);
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="สุ่มรหัสผ่านความปลอดภัยสูง"
+                        >
+                          <Sparkles size={11} color="var(--gold-primary)" />
+                          <span>สุ่มรหัสปลอดภัย</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid-cols-2">
+                      {/* ช่องรหัสผ่านใหม่ */}
+                      <div className="form-group" style={{ marginBottom: '12px' }}>
+                        <label className="form-label required" style={{ fontSize: '12.5px' }}>
+                          รหัสผ่านใหม่ (New Password)
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <input 
+                            type={showNewPassword ? 'text' : 'password'}
+                            className="form-input"
+                            style={{ paddingRight: '40px', fontSize: '13px' }}
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="ระบุรหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร"
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword((prev) => !prev)}
+                            style={{
+                              position: 'absolute',
+                              right: '8px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                            title={showNewPassword ? 'ซ่อนรหัสผ่านใหม่' : 'แสดงรหัสผ่านใหม่'}
+                          >
+                            {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* ช่องยืนยันรหัสผ่านใหม่ */}
+                      <div className="form-group" style={{ marginBottom: '12px' }}>
+                        <label className="form-label required" style={{ fontSize: '12.5px' }}>
+                          ยืนยันรหัสผ่านใหม่ (Confirm Password)
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <input 
+                            type={showConfirmPassword ? 'text' : 'password'}
+                            className="form-input"
+                            style={{ paddingRight: '40px', fontSize: '13px' }}
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword((prev) => !prev)}
+                            style={{
+                              position: 'absolute',
+                              right: '8px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                            title={showConfirmPassword ? 'ซ่อนรหัสยืนยัน' : 'แสดงรหัสยืนยัน'}
+                          >
+                            {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ความแข็งแกร่งของรหัสผ่าน */}
+                    {newPassword && (
+                      <div style={{ marginBottom: '12px' }}>
+                        {(() => {
+                          const strength = getPasswordStrength(newPassword);
+                          return (
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11.5px', marginBottom: '4px' }}>
+                                <span style={{ color: 'var(--text-muted)' }}>ระดับความปลอดภัยของรหัสผ่าน:</span>
+                                <span style={{ color: strength.color, fontWeight: 600 }}>{strength.text}</span>
+                              </div>
+                              <div style={{ height: '4px', width: '100%', background: 'rgba(255, 255, 255, 0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                                <div style={{ width: `${strength.percent}%`, height: '100%', background: strength.color, transition: 'width 0.25s ease' }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Security Checklist เงื่อนไขความปลอดภัย */}
+                    <div style={{
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      fontSize: '11.5px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                      gap: '6px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: newPassword.length >= 8 ? 'var(--emerald-success)' : 'var(--text-dim)' }}>
+                        {newPassword.length >= 8 ? <Check size={13} /> : <X size={13} />}
+                        <span>ความยาวอย่างน้อย 8 ตัวอักษร ({newPassword.length}/8)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: /[a-zA-Z]/.test(newPassword) ? 'var(--emerald-success)' : 'var(--text-dim)' }}>
+                        {/[a-zA-Z]/.test(newPassword) ? <Check size={13} /> : <X size={13} />}
+                        <span>มีตัวอักษรภาษาอังกฤษ (A-Z, a-z)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: /\d/.test(newPassword) ? 'var(--emerald-success)' : 'var(--text-dim)' }}>
+                        {/\d/.test(newPassword) ? <Check size={13} /> : <X size={13} />}
+                        <span>มีตัวเลขอารบิก (0-9)</span>
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: confirmPassword && newPassword === confirmPassword ? 'var(--emerald-success)' : confirmPassword ? 'var(--ruby-danger)' : 'var(--text-dim)'
+                      }}>
+                        {confirmPassword && newPassword === confirmPassword ? <Check size={13} /> : <X size={13} />}
+                        <span>
+                          {confirmPassword
+                            ? newPassword === confirmPassword
+                              ? 'รหัสผ่านทั้งสองช่องตรงกัน'
+                              : 'รหัสผ่านสองช่องไม่ตรงกัน'
+                            : 'ช่องยืนยันรหัสผ่านตรงกัน'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>

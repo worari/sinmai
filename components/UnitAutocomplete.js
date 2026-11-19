@@ -117,7 +117,12 @@ export default function UnitAutocomplete({
 
   const selectedItem = useMemo(() => {
     if (!value) return null;
-    const found = enrichedUnits.find((item) => item.unit.id === value);
+    let found = enrichedUnits.find((item) => item.unit.id === value);
+    if (!found) {
+      found = enrichedUnits.find(
+        (item) => item.unit.code === value || item.unit.name === value || item.unit.shortName === value
+      );
+    }
     if (found) return found;
     const raw = unitMap.get(value);
     if (!raw) return null;
