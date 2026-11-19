@@ -22,7 +22,10 @@ import {
   MessageSquare,
   Trash2,
   ShieldAlert,
-  Database
+  Database,
+  Eye,
+  EyeOff,
+  Smartphone
 } from 'lucide-react';
 import { getSocketClient } from '@/lib/socket-client';
 
@@ -41,6 +44,22 @@ export default function SettingsPage() {
   const [runningBotCmd, setRunningBotCmd] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  // LINE Messaging API state
+  const [lineConfig, setLineConfig] = useState({
+    channelId: '2008072444',
+    channelSecret: '',
+    hasChannelSecret: true,
+    userId: 'U0c2d860736a215cc3dbd3ecad1f8074b',
+    enabled: true
+  });
+  const [lineBotInfo, setLineBotInfo] = useState(null);
+  const [savingLine, setSavingLine] = useState(false);
+  const [testingLine, setTestingLine] = useState(false);
+  const [checkingLineBot, setCheckingLineBot] = useState(false);
+  const [showLineSecret, setShowLineSecret] = useState(false);
+  const [customLineMessage, setCustomLineMessage] = useState('');
+  const [sendingLineCustom, setSendingLineCustom] = useState(false);
 
   // Custom Broadcast Alert & Bot Command states
   const [customTitle, setCustomTitle] = useState('ประกาศแจ้งเตือนจาก กพ.ทบ.');
@@ -124,9 +143,10 @@ export default function SettingsPage() {
       if (uid) params.set('userId', uid);
       if (withBotCheck) params.set('checkBot', 'true');
 
-      const [res, pdpaRes] = await Promise.all([
+      const [res, pdpaRes, lineRes] = await Promise.all([
         fetch(`/api/telegram?${params.toString()}`, { cache: 'no-store' }),
-        fetch('/api/pdpa?admin=true', { cache: 'no-store' }).catch(() => null)
+        fetch('/api/pdpa?admin=true', { cache: 'no-store' }).catch(() => null),
+        fetch(`/api/line?${params.toString()}`, { cache: 'no-store' }).catch(() => null)
       ]);
       const data = await res.json();
       if (data.success) {
@@ -140,6 +160,17 @@ export default function SettingsPage() {
         if (pdpaData.success) {
           setPdpaSummary(pdpaData.summary);
           if (pdpaData.storage) setStorageInfo(pdpaData.storage);
+        }
+      }
+      if (lineRes && lineRes.ok) {
+        const lineData = await lineRes.json();
+        if (lineData.success) {
+          setLineConfig((prev) => ({
+            ...prev,
+            ...lineData.config,
+            channelSecret: lineData.config.channelSecret || prev.channelSecret
+          }));
+          if (lineData.botInfo) setLineBotInfo(lineData.botInfo);
         }
       }
     } catch (e) {
@@ -234,6 +265,128 @@ export default function SettingsPage() {
       setError(err.message);
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleCheckLineBot = async () => {
+    setCheckingLineBot(true);
+    setMessage('');
+    setError('');
+    try {
+      const res = await fetch('/api/line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CHECK_BOT',
+          userId: getCurrentUserId(),
+          channelId: lineConfig.channelId,
+          channelSecret: lineConfig.channelSecret
+        })
+      });
+      const data = await res.json();
+      if (data.botInfo) setLineBotInfo(data.botInfo);
+      if (!data.success) throw new Error(data.message || 'ตรวจสอบการเชื่อมต่อ LINE Bot ไม่สำเร็จ');
+      setMessage(data.message);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCheckingLineBot(false);
+    }
+  };
+
+  const handleSaveLineConfig = async (e) => {
+    e.preventDefault();
+    setSavingLine(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_CONFIG',
+          userId: getCurrentUserId(),
+          channelId: lineConfig.channelId,
+          channelSecret: lineConfig.channelSecret,
+          userIdTarget: lineConfig.userId,
+          enabled: lineConfig.enabled
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'บันทึกไม่สำเร็จ');
+
+      setMessage(data.message || 'บันทึกการตั้งค่า LINE Messaging API สำเร็จเรียบร้อย');
+      loadSettings(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingLine(false);
+    }
+  };
+
+  const handleSendLineTest = async () => {
+    setTestingLine(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TEST_LINE',
+          userId: getCurrentUserId(),
+          targetUserId: lineConfig.userId,
+          testMessage: '🎖️ ทดสอบส่งข้อความแจ้งเตือนจากระบบเสนอขอรับสิทธิเงินค่าสินไหมทดแทน กองทัพบก (LINE Messaging API: กองสิทธิกำลังพล) เรียบร้อยแล้วครับ'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'ส่งทดสอบ LINE ไม่สำเร็จ');
+
+      setMessage(data.message || 'ส่งแจ้งเตือนทดสอบเข้า LINE สำเร็จเรียบร้อย');
+      loadSettings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTestingLine(false);
+    }
+  };
+
+  const handleSendCustomLine = async (e) => {
+    e.preventDefault();
+    if (!customLineMessage.trim()) {
+      setError('กรุณากรอกข้อความที่ต้องการส่งแจ้งเตือน LINE');
+      return;
+    }
+    setSendingLineCustom(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/line', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'TEST_LINE',
+          userId: getCurrentUserId(),
+          targetUserId: lineConfig.userId,
+          testMessage: customLineMessage.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'ส่งแจ้งเตือนเข้า LINE ไม่สำเร็จ');
+
+      setMessage(data.message || 'ส่งข้อความเข้า LINE สำเร็จเรียบร้อย');
+      setCustomLineMessage('');
+      loadSettings();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSendingLineCustom(false);
     }
   };
 
@@ -359,10 +512,10 @@ export default function SettingsPage() {
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ fontSize: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Settings size={24} color="var(--gold-primary)" />
-          <span>การตั้งค่าระบบแจ้งเตือน Telegram & กรอบเวลา SLA</span>
+          <span>การตั้งค่าระบบแจ้งเตือน (LINE Messaging API &amp; Telegram) &amp; กรอบเวลา SLA</span>
         </h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>
-          กำหนดค่าการเชื่อมต่อ Telegram Bot API เพื่อแจ้งเตือนอัตโนมัติเมื่อมีการเสนอเรื่อง, ตีกลับเอกสาร, อนุมัติ และเตือนล่าช้า
+          กำหนดค่าการเชื่อมต่อ LINE Official Account และ Telegram Bot เพื่อแจ้งเตือนอัตโนมัติเมื่อมีการเสนอเรื่อง, ตีกลับเอกสาร, อนุมัติ จก.กพ.ทบ., โอนเงิน และแจ้งเตือน SLA
         </p>
       </div>
 
@@ -764,6 +917,229 @@ export default function SettingsPage() {
                 <span>{scanningSla ? 'กำลังส่ง...' : 'ส่งสรุป SLA เข้า Socket & Telegram'}</span>
               </button>
             </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* LINE Messaging API Configuration & Live Announcement */}
+      <div className="grid-cols-2" style={{ marginBottom: '28px' }}>
+
+        {/* LINE Configuration Form */}
+        <div className="glass-panel" style={{ padding: '24px', borderTop: '3px solid #06c755' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <h2 style={{ fontSize: '17px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Smartphone size={18} color="#06c755" />
+              <span>ตั้งค่า LINE Messaging API (LINE Official Account)</span>
+            </h2>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span className={`badge ${lineBotInfo?.ok ? 'badge-emerald' : lineBotInfo ? 'badge-red' : 'badge-slate'}`} style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: lineBotInfo?.ok ? 'rgba(6, 199, 85, 0.4)' : undefined }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: lineBotInfo?.ok ? '#06c755' : '#ef4444', display: 'inline-block' }}></span>
+                {lineBotInfo?.ok ? `@${lineBotInfo.bot?.basicId || '060kdplv'}` : lineBotInfo ? 'LINE ขัดข้อง' : 'ยังไม่ตรวจ LINE'}
+              </span>
+            </div>
+          </div>
+
+          {lineBotInfo && (
+            <div style={{
+              marginBottom: '14px',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              fontSize: '12.5px',
+              background: lineBotInfo.ok ? 'rgba(6, 199, 85, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+              border: `1px solid ${lineBotInfo.ok ? 'rgba(6, 199, 85, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+              color: lineBotInfo.ok ? '#a7f3d0' : '#fca5a5'
+            }}>
+              {lineBotInfo.ok ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {lineBotInfo.bot?.pictureUrl && (
+                    <img
+                      src={lineBotInfo.bot.pictureUrl}
+                      alt={lineBotInfo.bot.displayName}
+                      style={{ width: '38px', height: '38px', borderRadius: '50%', border: '2px solid #06c755' }}
+                    />
+                  )}
+                  <div>
+                    <div>
+                      <strong style={{ color: '#fff' }}>✓ Official Account พร้อมใช้งาน:</strong>{' '}
+                      <span style={{ color: '#06c755', fontWeight: 600 }}>{lineBotInfo.bot?.displayName}</span>{' '}
+                      (@{lineBotInfo.bot?.basicId})
+                    </div>
+                    <div style={{ marginTop: '2px', color: 'var(--text-muted)', fontSize: '11.5px' }}>
+                      OAuth 2.0 Token: <strong>Active (Client Credentials)</strong> • User ID เป้าหมาย: <strong>{lineConfig.userId || 'ยังไม่กำหนด'}</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>⚠ {lineBotInfo.description || 'ไม่สามารถเชื่อมต่อ LINE Messaging API ได้'}</div>
+              )}
+            </div>
+          )}
+
+          <form onSubmit={handleSaveLineConfig}>
+
+            <div className="form-group">
+              <label className="form-label">LINE Channel ID</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="เช่น 2008072444"
+                value={lineConfig.channelId}
+                onChange={(e) => setLineConfig({ ...lineConfig, channelId: e.target.value })}
+              />
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                Channel ID จาก LINE Developers Console (Official Account: กองสิทธิกำลังพล)
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">LINE Channel Secret</label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showLineSecret ? 'text' : 'password'}
+                  className="form-input"
+                  style={{ paddingRight: '42px' }}
+                  placeholder="เช่น 544681060829d50b24e740428b35f8fa"
+                  value={lineConfig.channelSecret}
+                  onChange={(e) => setLineConfig({ ...lineConfig, channelSecret: e.target.value })}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLineSecret(!showLineSecret)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                  title={showLineSecret ? 'ซ่อน Channel Secret' : 'แสดง Channel Secret'}
+                >
+                  {showLineSecret ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                Channel Secret สำหรับขอรับ Access Token อัตโนมัติ (หากแสดง ... คือค่าที่บันทึกไว้ในระบบแล้ว)
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">LINE Target User ID / Group ID</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="เช่น U0c2d860736a215cc3dbd3ecad1f8074b"
+                value={lineConfig.userId}
+                onChange={(e) => setLineConfig({ ...lineConfig, userId: e.target.value })}
+              />
+              <span style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                Your User ID จากแถบ Basic Settings ใน LINE Developers Console ที่ต้องการให้ข้อความแจ้งเตือนไปถึง
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={lineConfig.enabled}
+                  onChange={(e) => setLineConfig({ ...lineConfig, enabled: e.target.checked })}
+                />
+                <span style={{ fontSize: '14px', color: '#fff' }}>เปิดใช้งานระบบส่งข้อความแจ้งเตือนอัตโนมัติ (LINE Messaging API)</span>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '20px', flexWrap: 'wrap' }}>
+              <button
+                type="submit"
+                className="btn"
+                disabled={savingLine}
+                style={{ background: '#06c755', color: '#fff', border: 'none' }}
+              >
+                {savingLine ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า LINE'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendLineTest}
+                className="btn btn-secondary"
+                disabled={testingLine}
+              >
+                <Send size={14} color="#06c755" />
+                <span>{testingLine ? 'กำลังส่ง...' : 'ทดสอบยิง Alert LINE'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCheckLineBot}
+                className="btn btn-secondary"
+                disabled={checkingLineBot}
+              >
+                <Bot size={14} />
+                <span>{checkingLineBot ? 'กำลังตรวจ...' : 'ตรวจสถานะ LINE Official'}</span>
+              </button>
+            </div>
+
+          </form>
+        </div>
+
+        {/* LINE Custom Push Broadcast & Feature Summary */}
+        <div className="glass-panel" style={{ padding: '24px', borderTop: '3px solid #06c755', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div>
+            <h2 style={{ fontSize: '16.5px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Send size={18} color="#06c755" />
+              <span>ส่งข้อความประกาศแจ้งเตือนด่วนเข้า LINE (LINE Push Announcement)</span>
+            </h2>
+            <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              ส่งข้อความแจ้งเตือนเข้า LINE User ID เป้าหมายโดยตรงผ่าน LINE Official Account (&quot;กองสิทธิกำลังพล&quot;)
+            </div>
+
+            <form onSubmit={handleSendCustomLine}>
+              <div className="form-group">
+                <label className="form-label">ข้อความแจ้งเตือนที่ต้องการส่งเข้า LINE</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  value={customLineMessage}
+                  onChange={(e) => setCustomLineMessage(e.target.value)}
+                  placeholder="พิมพ์ข้อความ เช่น แจ้งเตือนด่วน: มีรายการคำร้องเสนอขอรับสิทธิเงินค่าสินไหมทดแทนเข้าใหม่ กรุณาตรวจสอบ..."
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn"
+                disabled={sendingLineCustom}
+                style={{ background: '#06c755', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Send size={14} />
+                <span>{sendingLineCustom ? 'กำลังส่ง...' : 'ส่งประกาศเข้า LINE ทันที'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Highlights & Security Notice */}
+          <div style={{
+            marginTop: '18px',
+            padding: '12px 14px',
+            borderRadius: '10px',
+            background: 'rgba(6, 199, 85, 0.05)',
+            border: '1px solid rgba(6, 199, 85, 0.2)'
+          }}>
+            <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#34d399', marginBottom: '6px' }}>
+              จุดเด่นระบบแจ้งเตือน LINE Messaging API กพ.ทบ.:
+            </div>
+            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '11.8px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              <li><strong>OAuth 2.0 Client Credentials:</strong> ออก Token อัตโนมัติ ปลอดภัย ไม่ต้องป้อน Channel Access Token ด้วยตนเอง</li>
+              <li><strong>Flex Message Army Theme:</strong> แจ้งเตือนคำร้องด้วยรูปแบบการ์ดสีเขียวทหารบก พร้อมปุ่มกดตรวจสอบรายละเอียด</li>
+              <li><strong>Real-time Workflow Events:</strong> แจ้งเตือนเมื่อมีคำร้องใหม่, ตรวจเอกสาร, ตีกลับแก้ไข, อนุมัติ และโอนเงินประกัน</li>
+            </ul>
           </div>
         </div>
 
