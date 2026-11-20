@@ -271,10 +271,11 @@ export default function ClaimDetailPage({ params }) {
   const loadClaim = async (user) => {
     setLoading(true);
     try {
-      const url = user?.id ? `/api/claims/${id}?userId=${user.id}` : `/api/claims/${id}`;
-      const res = await fetch(url);
+      const url = user?.id ? `/api/claims/${id}?userId=${encodeURIComponent(user.id)}` : `/api/claims/${id}`;
+      const headers = user?.id ? { 'x-user-id': user.id } : {};
+      const res = await fetch(url, { headers });
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.claim) {
         setClaim(data.claim);
         if (data.claim.delayReason) {
           setDelayReasonInput(data.claim.delayReason);
@@ -285,7 +286,7 @@ export default function ClaimDetailPage({ params }) {
         if (data.claim.heirName) {
           setRecipientName(data.claim.heirName);
         } else {
-          setRecipientName(`ทายาทของ ${data.claim.casualtyRank} ${data.claim.casualtyFirstName} ${data.claim.casualtyLastName}`);
+          setRecipientName(`ทายาทของ ${data.claim.casualtyRank || ''} ${data.claim.casualtyFirstName || ''} ${data.claim.casualtyLastName || ''}`.trim());
         }
         if (data.claim.heirBank) {
           setTransferBank(data.claim.heirBank);
@@ -540,14 +541,25 @@ export default function ClaimDetailPage({ params }) {
     }
   };
 
+  // เตรียมรายการเอกสาร 12 รายการ โดยผสานกับข้อมูลเอกสารที่มีการบันทึกไว้ในคำร้อง
+  // (ต้องประกาศ useMemo ก่อนเงื่อนไข return ทุกจุด ตามกฎ Rules of Hooks ของ React)
+  const displayDocs = useMemo(() => {
+    return REQUIRED_DOCUMENTS.map((docDef) => {
+      const existing = (claim?.documents || []).find((d) => d.index === docDef.index);
+      return existing ? { ...docDef, ...existing } : { ...docDef, uploaded: false, status: 'PENDING' };
+    });
+  }, [claim?.documents]);
+
   if (loading) {
     return <div className="container" style={{ paddingTop: '60px', textAlign: 'center' }}>กำลังโหลดข้อมูลคำร้อง...</div>;
   }
 
-  if (errorMsg && !claim) {
+  if (!claim) {
     return (
       <div className="container" style={{ paddingTop: '60px', textAlign: 'center' }}>
-        <div style={{ color: 'var(--ruby-danger)', fontSize: '18px', marginBottom: '16px' }}>{errorMsg}</div>
+        <div style={{ color: 'var(--ruby-danger)', fontSize: '18px', marginBottom: '16px' }}>
+          {errorMsg || 'ไม่พบข้อมูลคำร้องที่ต้องการตรวจสอบ'}
+        </div>
         <button onClick={() => router.push('/claims')} className="btn btn-secondary">
           <ArrowLeft size={16} /> กลับสู่หน้ารายการ
         </button>
@@ -643,14 +655,6 @@ export default function ClaimDetailPage({ params }) {
   };
 
   const currentStepInfo = getWorkflowStepInfo(claim.status);
-
-  // เตรียมรายการเอกสาร 12 รายการ โดยผสานกับข้อมูลเอกสารที่มีการบันทึกไว้ในคำร้อง
-  const displayDocs = useMemo(() => {
-    return REQUIRED_DOCUMENTS.map((docDef) => {
-      const existing = (claim?.documents || []).find((d) => d.index === docDef.index);
-      return existing ? { ...docDef, ...existing } : { ...docDef, uploaded: false, status: 'PENDING' };
-    });
-  }, [claim?.documents]);
 
   return (
     <div className="container" style={{ paddingTop: '28px' }}>
@@ -956,9 +960,9 @@ export default function ClaimDetailPage({ params }) {
                 {claim.locationOfLoss.district ? `อ.${claim.locationOfLoss.district} ` : ''}
                 {claim.locationOfLoss.province ? `จ.${claim.locationOfLoss.province}` : ''}
               </div>
-              {claim.locationOfLoss.lat && (
+              {claim.locationOfLoss.lat != null && claim.locationOfLoss.lng != null && !isNaN(Number(claim.locationOfLoss.lat)) && !isNaN(Number(claim.locationOfLoss.lng)) && (
                 <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                  พิกัด: {claim.locationOfLoss.lat.toFixed(6)}, {claim.locationOfLoss.lng.toFixed(6)}
+                  พิกัด: {Number(claim.locationOfLoss.lat).toFixed(6)}, {Number(claim.locationOfLoss.lng).toFixed(6)}
                 </div>
               )}
             </div>
