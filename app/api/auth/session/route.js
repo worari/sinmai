@@ -1,7 +1,7 @@
 // app/api/auth/session/route.js
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { authenticateRequest, clearSessionCookie } from '@/lib/security';
+import { authenticateRequest, attachSessionCookie, clearSessionCookie } from '@/lib/security';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,9 +22,12 @@ export async function GET(request) {
     user.name = `${user.rank || ''} ${user.firstName || ''} ${user.lastName || ''}`.trim() || 'เจ้าหน้าที่ ทบ.';
   }
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     { success: true, authenticated: true, user },
     { headers: { 'Cache-Control': 'no-store' } }
   );
+  // ต่ออายุ / ซ่อมแซม Signed HttpOnly Session Cookie อัตโนมัติ
+  attachSessionCookie(response, request, user);
+  return response;
 }
 

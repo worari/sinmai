@@ -33,7 +33,17 @@ import {
   Info,
   RotateCcw
 } from 'lucide-react';
-import { formatThaiDate, REQUIRED_DOCUMENTS, validateAttachmentFile, MILITARY_RANKS, getPersonnelTypeFromRank, getGenderFromRank, validateCitizenId, validateName } from '@/lib/thai-utils';
+import { 
+  formatThaiDate, 
+  formatCitizenId, 
+  REQUIRED_DOCUMENTS, 
+  validateAttachmentFile, 
+  MILITARY_RANKS, 
+  getPersonnelTypeFromRank, 
+  getGenderFromRank, 
+  validateCitizenId, 
+  validateName 
+} from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
 import SampleDocumentViewer from '@/components/SampleDocumentViewer';
@@ -43,7 +53,8 @@ import { getSocketClient } from '@/lib/socket-client';
 const CLAIMS_PER_PAGE = 10;
 
 const getClaimDateKey = (claim) => {
-  const raw = claim?.reportDate || claim?.createdAt || '';
+  if (!claim) return '';
+  const raw = claim.reportDate || claim.createdAt || '';
   if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw)) {
     return raw.slice(0, 10);
   }
@@ -56,6 +67,7 @@ const getClaimDateKey = (claim) => {
 };
 
 const matchesStatusFilter = (claim, filterValue) => {
+  if (!claim) return false;
   if (!filterValue || filterValue === 'ALL') return true;
   if (filterValue === 'GROUP_IN_PROGRESS') {
     return ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_APPROVAL'].includes(claim.status);
@@ -81,6 +93,7 @@ export default function ClaimsListPage() {
   const [filteredClaims, setFilteredClaims] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(false);
 
   // Filters & Pagination
   const [searchQuery, setSearchQuery] = useState('');
@@ -159,33 +172,54 @@ export default function ClaimsListPage() {
 
   const loadClaims = async (user) => {
     setLoading(true);
+    setAuthError(false);
     try {
-      const url = user?.id ? `/api/claims?userId=${user.id}` : '/api/claims';
-      const res = await fetch(url);
+      const u = user || (typeof window !== 'undefined' ? (() => {
+        try { return JSON.parse(localStorage.getItem('rta_user')); } catch { return null; }
+      })() : null);
+
+      const url = u?.id ? `/api/claims?userId=${encodeURIComponent(u.id)}` : '/api/claims';
+      const headers = u?.id ? { 'x-user-id': u.id } : {};
+      const res = await fetch(url, { headers });
+
+      if (res.status === 401 || res.status === 403) {
+        setAuthError(true);
+        setClaims([]);
+        setFilteredClaims([]);
+        return;
+      }
+
       const data = await res.json();
-      if (data.success) {
+      if (data.success && Array.isArray(data.claims)) {
         setClaims(data.claims);
         setFilteredClaims(data.claims);
+      } else {
+        setClaims([]);
+        setFilteredClaims([]);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading claims:', e);
+      setClaims([]);
+      setFilteredClaims([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    let result = [...claims];
+    let result = Array.isArray(claims) ? [...claims] : [];
 
     // Custom Date Range filter (ช่วงวันที่เริ่มต้น - สิ้นสุด แบบ inclusive)
     if (startDate) {
       result = result.filter((c) => {
+        if (!c) return false;
         const key = getClaimDateKey(c);
         return key && key >= startDate;
       });
     }
     if (endDate) {
       result = result.filter((c) => {
+        if (!c) return false;
         const key = getClaimDateKey(c);
         return key && key <= endDate;
       });
@@ -195,6 +229,7 @@ export default function ClaimsListPage() {
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter((c) => {
+        if (!c) return false;
         const fullName = `${c.casualtyRank || ''} ${c.casualtyFirstName || ''} ${c.casualtyLastName || ''}`.toLowerCase();
         const cause = `${c.causeOfLoss || ''} ${c.lossSpecificCause || ''}`.toLowerCase();
         return (
@@ -218,6 +253,7 @@ export default function ClaimsListPage() {
     if (slaFilter !== 'ALL') {
       const now = new Date();
       result = result.filter((c) => {
+        if (!c) return false;
         const created = new Date(c.reportDate || c.createdAt);
         const days = Math.floor((now - created) / (1000 * 60 * 60 * 24));
         const remaining = 30 - days;
@@ -290,30 +326,33 @@ export default function ClaimsListPage() {
     searchQuery.trim() || statusFilter !== 'ALL' || slaFilter !== 'ALL' || startDate || endDate
   );
 
-  const totalClaimsCount = filteredClaims.length;
-  const filteredCompensationTotal = filteredClaims.reduce(
-    (sum, c) => sum + Number(c.compensationAmount || (c.claimType === 'HIGH_RISK' ? 300000 : 60000)),
+  const safeClaims = Array.isArray(claims) ? claims : [];
+  const safeFilteredClaims = Array.isArray(filteredClaims) ? filteredClaims : [];
+  const totalClaimsCount = safeFilteredClaims.length;
+  const filteredCompensationTotal = safeFilteredClaims.reduce(
+    (sum, c) => sum + Number(c?.compensationAmount || (c?.claimType === 'HIGH_RISK' ? 300000 : 60000) || 0),
     0
   );
   const totalPages = Math.max(1, Math.ceil(totalClaimsCount / CLAIMS_PER_PAGE));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-  const paginatedClaims = filteredClaims.slice(
+  const paginatedClaims = safeFilteredClaims.slice(
     (safeCurrentPage - 1) * CLAIMS_PER_PAGE,
     safeCurrentPage * CLAIMS_PER_PAGE
   );
 
   // Quick Counter Aggregation (อ้างอิงตามช่วงวันที่ที่เลือก เพื่อให้ยอดบนการ์ดตรงกับตาราง 100%)
-  const dateScopedClaims = claims.filter((c) => {
+  const dateScopedClaims = safeClaims.filter((c) => {
+    if (!c) return false;
     const key = getClaimDateKey(c);
     if (startDate && (!key || key < startDate)) return false;
     if (endDate && (!key || key > endDate)) return false;
     return true;
   });
   const totalCount = dateScopedClaims.length;
-  const draftCount = dateScopedClaims.filter((c) => c.status === 'DRAFT').length;
-  const inProgressCount = dateScopedClaims.filter((c) => matchesStatusFilter(c, 'GROUP_IN_PROGRESS')).length;
-  const approvedCount = dateScopedClaims.filter((c) => matchesStatusFilter(c, 'GROUP_APPROVED')).length;
-  const paidCount = dateScopedClaims.filter((c) => matchesStatusFilter(c, 'GROUP_PAID')).length;
+  const draftCount = dateScopedClaims.filter((c) => c && c.status === 'DRAFT').length;
+  const inProgressCount = dateScopedClaims.filter((c) => c && matchesStatusFilter(c, 'GROUP_IN_PROGRESS')).length;
+  const approvedCount = dateScopedClaims.filter((c) => c && matchesStatusFilter(c, 'GROUP_APPROVED')).length;
+  const paidCount = dateScopedClaims.filter((c) => c && matchesStatusFilter(c, 'GROUP_PAID')).length;
 
   // ==========================================
   // CRUD Handlers
@@ -707,7 +746,7 @@ export default function ClaimsListPage() {
             <span>รายการคำร้องเสนอขอรับสิทธิเงินค่าสินไหมทดแทน</span>
             {currentUser?.role === 'UNIT_OFFICER' ? (
               <span className="badge badge-amber" style={{ fontSize: '12px' }}>
-                เฉพาะสังกัด: {currentUser.unitName}
+                เฉพาะสังกัด: {currentUser?.unitName || 'หน่วยสังกัด'}
               </span>
             ) : (
               <span className="badge badge-blue" style={{ fontSize: '12px' }}>
@@ -1113,6 +1152,44 @@ export default function ClaimsListPage() {
       <div className="glass-panel" style={{ padding: '20px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>กำลังโหลดรายการคำร้อง...</div>
+        ) : authError ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px', maxWidth: '520px', margin: '0 auto' }}>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '16px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+              color: 'var(--ruby-danger)'
+            }}>
+              <AlertTriangle size={30} />
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px', color: '#fff' }}>
+              เซสชันหมดอายุหรือไม่พบสิทธิ์เข้าถึง (401 Unauthorized)
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', lineHeight: 1.6, marginBottom: '22px' }}>
+              กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตนเจ้าหน้าที่ ทบ. และเข้าถึงข้อมูลคำร้องสินไหมตามบทบาทหน้าที่
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button 
+                type="button" 
+                onClick={() => loadClaims(currentUser)} 
+                className="btn btn-secondary"
+                style={{ gap: '6px' }}
+              >
+                <RefreshCw size={14} />
+                <span>ลองใหม่อีกครั้ง</span>
+              </button>
+              <Link href="/login?redirect=/claims" className="btn btn-primary" style={{ gap: '6px' }}>
+                <Shield size={15} />
+                <span>เข้าสู่ระบบสำหรับเจ้าหน้าที่ ทบ.</span>
+              </Link>
+            </div>
+          </div>
         ) : filteredClaims.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
             <FileText size={42} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
@@ -1147,7 +1224,9 @@ export default function ClaimsListPage() {
               </thead>
               <tbody>
                 {paginatedClaims.map((claim) => {
-                  const daysDiff = Math.floor((new Date() - new Date(claim.reportDate || claim.createdAt)) / (1000 * 60 * 60 * 24));
+                  if (!claim) return null;
+                  const createdTime = new Date(claim.reportDate || claim.createdAt).getTime();
+                  const daysDiff = !isNaN(createdTime) ? Math.floor((Date.now() - createdTime) / (1000 * 60 * 60 * 24)) : 0;
                   const remaining = 30 - daysDiff;
                   const isOverdue = remaining <= 0;
                   const isWarning = remaining > 0 && remaining <= 7;

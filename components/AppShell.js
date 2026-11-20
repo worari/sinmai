@@ -38,7 +38,9 @@ export default function AppShell({ children }) {
           const parsed = JSON.parse(savedUser);
           setCurrentUser(parsed);
           if (verifyWithServer) {
-            const res = await fetch('/api/auth/session', { cache: 'no-store' });
+            const url = parsed?.id ? `/api/auth/session?userId=${encodeURIComponent(parsed.id)}` : '/api/auth/session';
+            const headers = parsed?.id ? { 'x-user-id': parsed.id } : {};
+            const res = await fetch(url, { cache: 'no-store', headers });
             const sessData = await res.json();
             if (!sessData.authenticated) {
               localStorage.removeItem('rta_user');
@@ -67,7 +69,7 @@ export default function AppShell({ children }) {
       if (!savedUser) {
         const publicRoutes = ['/', '/login', '/register', '/reset-password', '/track'];
         if (!publicRoutes.includes(pathname)) {
-          window.location.href = '/';
+          router.replace('/login?redirect=' + encodeURIComponent(pathname));
         }
       }
     };
