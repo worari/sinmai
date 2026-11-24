@@ -71,7 +71,7 @@ export default function StatusModal() {
 
   const isSuccess = popupData.type === 'success';
   const isWarning = popupData.type === 'warning';
-  const isError = popupData.type === 'error';
+  const isError = popupData.type === 'error' || popupData.type === 'danger';
 
   const themeColor = isSuccess 
     ? 'var(--emerald-success)' 

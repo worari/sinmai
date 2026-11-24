@@ -75,6 +75,7 @@ export default function SubmitClaimPage() {
   const [draftTrackingCode, setDraftTrackingCode] = useState('');
   const [savingDraft, setSavingDraft] = useState(false);
   const [loadingDraft, setLoadingDraft] = useState(false);
+  const [draftPopup, setDraftPopup] = useState(null); // { status: 'success' | 'error', title, message, trackingCode, casualtyName, uploadedDocsCount, isUpdate }
 
   // Form State
   const [formData, setFormData] = useState({
@@ -87,7 +88,7 @@ export default function SubmitClaimPage() {
     casualtyCitizenId: '',
     casualtyBirthDate: '1995-01-01',
     lossDate: new Date().toISOString().split('T')[0],
-    claimType: 'HIGH_RISK', // NORMAL (60,000) or HIGH_RISK (300,000)
+    claimType: 'NORMAL', // ค่าเริ่มต้น: NORMAL ยามปกติ (60,000) หรือ HIGH_RISK เสี่ยงภัย (300,000)
     lossType: 'DECEASED', // DECEASED or DISABLED
     incidentType: 'ILLNESS', // ILLNESS (ป่วย), ACCIDENT (อุบัติเหตุ), COMBAT (การรบ/ปะทะ), OTHER (อื่นๆ)
     isDriver: 'YES', // YES (เป็นผู้ขับขี่), NO (ไม่ใช่ผู้ขับขี่)
@@ -447,7 +448,7 @@ export default function SubmitClaimPage() {
         casualtyCitizenId: c.casualtyCitizenId || '',
         casualtyBirthDate: c.casualtyBirthDate || '1995-01-01',
         lossDate: c.lossDate || new Date().toISOString().split('T')[0],
-        claimType: c.claimType || 'HIGH_RISK',
+        claimType: c.claimType || 'NORMAL',
         lossType: c.lossType || 'DECEASED',
         incidentType: c.incidentType || 'ILLNESS',
         isDriver: c.isDriver || 'YES',
@@ -896,7 +897,13 @@ export default function SubmitClaimPage() {
 
     // สำหรับบันทึกแบบร่าง ขอเพียงมีชื่อหรือนามสกุลอย่างน้อย 1 ช่อง เพื่อใช้แสดงในการ์ด/ตารางค้นหา
     if (!formData.casualtyFirstName && !formData.casualtyLastName) {
-      setErrorMsg('กรุณากรอกชื่อหรือนามสกุลของผู้สูญเสียอย่างน้อย 1 ช่อง เพื่อบันทึกแบบร่างสำหรับกลับมาค้นหาแก้ไข');
+      const msg = 'กรุณากรอกชื่อหรือนามสกุลของผู้สูญเสียอย่างน้อย 1 ช่อง เพื่อบันทึกแบบร่างสำหรับกลับมาค้นหาแก้ไข';
+      setErrorMsg(msg);
+      setDraftPopup({
+        status: 'error',
+        title: 'ยังไม่สามารถบันทึกแบบร่างได้',
+        message: msg
+      });
       return;
     }
 
@@ -905,7 +912,13 @@ export default function SubmitClaimPage() {
       if (doc.uploaded && doc.fileName) {
         const val = validateAttachmentFile({ name: doc.fileName, size: doc.fileSize });
         if (!val.valid) {
-          setErrorMsg(`เอกสารข้อที่ ${doc.index} (${doc.name}): ${val.error}`);
+          const msg = `เอกสารข้อที่ ${doc.index} (${doc.name}): ${val.error}`;
+          setErrorMsg(msg);
+          setDraftPopup({
+            status: 'error',
+            title: 'พบไฟล์แนบไม่ผ่านเกณฑ์ความปลอดภัย',
+            message: msg
+          });
           return;
         }
       }
@@ -969,17 +982,19 @@ export default function SubmitClaimPage() {
       }
 
       const savedClaim = resData.claim;
-      setSuccessMsg(`บันทึกแบบร่างเรียบร้อยแล้ว! เลขที่แบบร่าง: ${savedClaim.trackingCode}`);
+      const wasUpdate = Boolean(isEditingDraft && editingDraftId);
+      const uploadedDocsCount = attachedDocs.filter((d) => d.uploaded).length;
+      setSuccessMsg(`บันทึกแบบร่างเรียบร้อยแล้ว! เลขที่แบบร่าง: ${savedClaim.trackingCode} (สถานะ: ยังไม่ส่งเรื่องไป กพ.ทบ.)`);
 
-      triggerStatusPopup({
-        type: 'warning',
-        title: 'บันทึกแบบร่างคำร้องเรียบร้อย (รอเอกสารเพิ่มเติม)',
-        message: `ระบบได้บันทึกข้อมูลและไฟล์ที่แนบไว้ทั้งหมดในแบบร่าง "${savedClaim.trackingCode}" เรียบร้อยแล้ว ท่านสามารถกลับมากด "แก้ไข/แนบเอกสารต่อ" ได้ตลอดเวลาในหน้ารายการคำร้อง`,
+      // แสดง Modal Popup แจ้งเตือนผลการบันทึกแบบร่างและย้ำว่ายังไม่ได้ส่งเรื่องไป กพ.ทบ.
+      setDraftPopup({
+        status: 'success',
+        isUpdate: wasUpdate,
+        title: wasUpdate ? 'บันทึกแบบร่างต่อสำเร็จ (ยังไม่ส่งเรื่องไป กพ.ทบ.)' : 'บันทึกร่างคำร้องสำเร็จ (ยังไม่ส่งเรื่องไป กพ.ทบ.)',
+        message: `ระบบได้บันทึกข้อมูลและเอกสารที่แนบไว้ในแบบร่าง "${savedClaim.trackingCode}" เรียบร้อยแล้ว`,
         trackingCode: savedClaim.trackingCode,
-        casualtyName: `${savedClaim.casualtyRank} ${savedClaim.casualtyFirstName} ${savedClaim.casualtyLastName}`,
-        action: 'บันทึกแบบร่าง (Draft Saved)',
-        by: `${currentUserDisplayName} (${currentUserUnitName})`,
-        ref: savedClaim.trackingCode
+        casualtyName: `${savedClaim.casualtyRank || ''} ${savedClaim.casualtyFirstName || ''} ${savedClaim.casualtyLastName || ''}`.trim(),
+        uploadedDocsCount
       });
 
       if (!isEditingDraft) {
@@ -989,6 +1004,11 @@ export default function SubmitClaimPage() {
       }
     } catch (err) {
       setErrorMsg(err.message);
+      setDraftPopup({
+        status: 'error',
+        title: 'บันทึกแบบร่างไม่สำเร็จ',
+        message: err.message || 'เกิดข้อผิดพลาดในการบันทึกแบบร่าง กรุณาลองใหม่อีกครั้ง'
+      });
     } finally {
       setSavingDraft(false);
     }
@@ -1450,8 +1470,8 @@ export default function SubmitClaimPage() {
                 onChange={(e) => setFormData({ ...formData, claimType: e.target.value })}
                 required
               >
-                <option value="HIGH_RISK">หน้าที่สำคัญ หรือ ปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท)</option>
                 <option value="NORMAL">ยามปกติ หรือ ปฏิบัติราชการทั่วไป (รับเงิน 60,000 บาท)</option>
+                <option value="HIGH_RISK">หน้าที่สำคัญ หรือ ปฏิบัติหน้าที่สำคัญ (รับเงิน 300,000 บาท)</option>
               </select>
               <span style={{ fontSize: '12px', color: formData.claimType === 'HIGH_RISK' ? 'var(--gold-primary)' : 'var(--emerald-success)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {formData.claimType === 'HIGH_RISK' ? (
@@ -2974,6 +2994,156 @@ export default function SubmitClaimPage() {
         </div>
 
       </form>
+
+      {/* ========================================================================= */}
+      {/* MODAL: แจ้งเตือนสถานะการบันทึกแบบร่าง (ย้ำรับทราบว่ายังไม่ส่งเรื่องไป กพ.ทบ.) */}
+      {/* ========================================================================= */}
+      {draftPopup && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(2, 8, 12, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 250,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '520px',
+            background: 'var(--bg-surface, rgba(4, 20, 23, 0.98))',
+            border: `2px solid ${draftPopup.status === 'success' ? 'var(--amber-warning)' : 'var(--ruby-danger)'}`,
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.85)',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            position: 'relative'
+          }}>
+            <div style={{
+              height: '5px',
+              background: draftPopup.status === 'success'
+                ? 'linear-gradient(90deg, #f59e0b, #10b981)'
+                : 'var(--ruby-danger)'
+            }} />
+
+            <button
+              type="button"
+              onClick={() => setDraftPopup(null)}
+              style={{
+                position: 'absolute',
+                top: '14px',
+                right: '14px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: 'none',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              title="ปิดหน้าต่าง"
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ padding: '26px 24px 22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <div style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '12px',
+                  background: draftPopup.status === 'success' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: draftPopup.status === 'success' ? '#fbbf24' : '#f87171',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  {draftPopup.status === 'success' ? <CheckCircle2 size={26} /> : <AlertCircle size={26} />}
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '17px', fontWeight: 700, color: '#fff', margin: 0 }}>
+                    {draftPopup.title}
+                  </h3>
+                  {draftPopup.trackingCode && (
+                    <div style={{ fontSize: '12.5px', color: 'var(--gold-light)', marginTop: '2px' }}>
+                      รหัสแบบร่าง: <strong>{draftPopup.trackingCode}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
+                {draftPopup.message}
+              </p>
+
+              {draftPopup.status === 'success' && (
+                <>
+                  <div style={{
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: 'rgba(245, 158, 11, 0.14)',
+                    border: '1px solid rgba(245, 158, 11, 0.45)',
+                    color: '#fde68a',
+                    fontSize: '13px',
+                    lineHeight: 1.55,
+                    marginBottom: '14px'
+                  }}>
+                    <strong>⚠️ แจ้งเพื่อรับทราบ:</strong> คำร้องนี้อยู่ในสถานะ <strong>"แบบร่าง (Draft)"</strong> และ <strong>ยังไม่ได้ส่งเรื่องไปยัง กพ.ทบ. (กสพ.ฯ)</strong> กรุณากลับมาแนบเอกสารให้ครบถ้วนแล้วกดปุ่ม <strong>"ส่งเรื่องเสนอขอรับสิทธิสินไหม"</strong> เพื่อเข้าสู่ขั้นตอนพิจารณา
+                  </div>
+
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: 'rgba(0, 0, 0, 0.28)',
+                    border: '1px solid var(--border-glass)',
+                    fontSize: '12.5px',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    marginBottom: '18px'
+                  }}>
+                    <div><strong>ผู้สูญเสีย:</strong> <span style={{ color: '#fff' }}>{draftPopup.casualtyName || '-'}</span></div>
+                    <div><strong>เอกสารที่แนบแล้ว:</strong> <span style={{ color: 'var(--emerald-success)', fontWeight: 600 }}>{draftPopup.uploadedDocsCount} / 12 รายการ</span></div>
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+                {draftPopup.status === 'success' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftPopup(null);
+                      router.push('/claims');
+                    }}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '13.5px' }}
+                  >
+                    ไปหน้ารายการคำร้อง
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDraftPopup(null)}
+                  className={draftPopup.status === 'success' ? 'btn btn-primary' : 'btn btn-danger'}
+                  style={{ fontSize: '13.5px', padding: '8px 20px' }}
+                >
+                  {draftPopup.status === 'success' ? 'รับทราบ / ดำเนินการต่อ' : 'รับทราบ / กลับไปตรวจสอบ'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODAL: พรีวิวเอกสารที่แนบในหน้ายื่นเสนอเรื่อง (Attached Document Preview Modal) */}
