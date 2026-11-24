@@ -1214,7 +1214,7 @@ export default function ClaimsListPage() {
               </Link>
             </div>
           </div>
-        ) : filteredClaims.length === 0 ? (
+        ) : paginatedClaims.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
             <FileText size={42} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
             <div>ไม่พบข้อมูลคำร้องตามเงื่อนไขที่ค้นหา</div>
