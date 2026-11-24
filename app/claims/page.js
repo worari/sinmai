@@ -3,17 +3,17 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { 
-  FileText, 
-  Search, 
-  Filter, 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle2, 
+import {
+  FileText,
+  Search,
+  Filter,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
   ArrowUpRight,
-  Shield, 
-  Building, 
-  Calendar, 
+  Shield,
+  Building,
+  Calendar,
   AlertCircle,
   FolderOpen,
   Edit3,
@@ -31,18 +31,21 @@ import {
   FileUp,
   HelpCircle,
   Info,
-  RotateCcw
+  RotateCcw,
+  Phone,
+  Users
 } from 'lucide-react';
-import { 
-  formatThaiDate, 
-  formatCitizenId, 
-  REQUIRED_DOCUMENTS, 
-  validateAttachmentFile, 
-  MILITARY_RANKS, 
-  getPersonnelTypeFromRank, 
-  getGenderFromRank, 
-  validateCitizenId, 
-  validateName 
+import {
+  formatThaiDate,
+  formatCitizenId,
+  formatPhoneNumber,
+  REQUIRED_DOCUMENTS,
+  validateAttachmentFile,
+  MILITARY_RANKS,
+  getPersonnelTypeFromRank,
+  getGenderFromRank,
+  validateCitizenId,
+  validateName
 } from '@/lib/thai-utils';
 import { CLAIM_STATUS } from '@/lib/constants';
 import { triggerStatusPopup } from '@/components/StatusModal';
@@ -759,7 +762,7 @@ export default function ClaimsListPage() {
 
   return (
     <div className="container" style={{ paddingTop: '28px', paddingBottom: '60px' }}>
-      
+
       {/* Header & Scoping Notice */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
         <div>
@@ -781,15 +784,14 @@ export default function ClaimsListPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <button 
-            onClick={() => loadClaims(currentUser, latestQueryRef.current)} 
+          <button
+            onClick={() => loadClaims(currentUser)}
             className="btn btn-secondary btn-sm"
             title="รีเฟรชข้อมูลคำร้องล่าสุด"
-            disabled={isRefreshing}
             style={{ gap: '6px' }}
           >
-            <RefreshCw size={14} className={isRefreshing ? 'spin' : ''} />
-            <span>{isRefreshing ? 'กำลังโหลด...' : 'รีเฟรช'}</span>
+            <RefreshCw size={14} />
+            <span>รีเฟรช</span>
           </button>
 
           <button
@@ -967,11 +969,11 @@ export default function ClaimsListPage() {
       <div className="glass-panel" style={{ padding: '16px 20px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {/* Row 1: Search, Status, SLA */}
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          
+
           {/* Search Box */}
           <div style={{ flex: '1 1 260px', position: 'relative' }}>
             <Search size={16} color="var(--text-dim)" style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', left: '12px' }} />
-            <input 
+            <input
               type="text"
               className="form-input"
               style={{ paddingLeft: '38px', paddingRight: searchQuery ? '34px' : '12px' }}
@@ -1003,7 +1005,7 @@ export default function ClaimsListPage() {
 
           {/* Workflow Status Filter */}
           <div style={{ minWidth: '240px', flex: '0 1 280px' }}>
-            <select 
+            <select
               className="form-select"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -1031,7 +1033,7 @@ export default function ClaimsListPage() {
 
           {/* SLA Filter */}
           <div style={{ minWidth: '185px' }}>
-            <select 
+            <select
               className="form-select"
               value={slaFilter}
               onChange={(e) => setSlaFilter(e.target.value)}
@@ -1197,9 +1199,9 @@ export default function ClaimsListPage() {
               กรุณาเข้าสู่ระบบใหม่เพื่อยืนยันตัวตนเจ้าหน้าที่ ทบ. และเข้าถึงข้อมูลคำร้องสินไหมตามบทบาทหน้าที่
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button 
-                type="button" 
-                onClick={() => loadClaims(currentUser)} 
+              <button
+                type="button"
+                onClick={() => loadClaims(currentUser)}
                 className="btn btn-secondary"
                 style={{ gap: '6px' }}
               >
@@ -1212,7 +1214,7 @@ export default function ClaimsListPage() {
               </Link>
             </div>
           </div>
-        ) : paginatedClaims.length === 0 ? (
+        ) : filteredClaims.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
             <FileText size={42} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
             <div>ไม่พบข้อมูลคำร้องตามเงื่อนไขที่ค้นหา</div>
@@ -1237,6 +1239,7 @@ export default function ClaimsListPage() {
                   <th style={{ padding: '12px 14px' }}>วันที่เสนอ</th>
                   <th style={{ padding: '12px 14px' }}>หน่วยสังกัด</th>
                   <th style={{ padding: '12px 14px' }}>ผู้สูญเสีย</th>
+                  <th style={{ padding: '12px 14px', minWidth: '185px' }}>เบอร์โทรติดต่อ (จนท. / ทายาท)</th>
                   <th style={{ padding: '12px 14px' }}>ประเภทสินไหม</th>
                   <th style={{ padding: '12px 14px' }}>เอกสารแนบ</th>
                   <th style={{ padding: '12px 14px' }}>ขั้นตอน Workflow</th>
@@ -1252,13 +1255,13 @@ export default function ClaimsListPage() {
                   const remaining = 30 - daysDiff;
                   const isOverdue = remaining <= 0;
                   const isWarning = remaining > 0 && remaining <= 7;
-                  
+
                   const uploadedDocsCount = (claim.documents || []).filter((d) => d.uploaded).length;
                   const verifiedDocsCount = (claim.documents || []).filter((d) => d.status === 'VERIFIED').length;
 
                   return (
                     <tr key={claim.id} style={{ borderBottom: '1px solid var(--border-glass)' }}>
-                      
+
                       {/* Tracking Code */}
                       <td style={{ padding: '14px', fontWeight: 600, color: 'var(--gold-primary)' }}>
                         <Link href={`/claims/${claim.id}`} style={{ color: 'var(--gold-primary)', textDecoration: 'none' }} title="คลิกเพื่อดูรายละเอียดคำร้อง">
@@ -1288,6 +1291,77 @@ export default function ClaimsListPage() {
                         <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
                           ปชช. {claim.casualtyCitizenId || '-'} • {claim.lossType === 'DECEASED' ? 'เสียชีวิต' : 'พิการทุพพลภาพ'}
                         </div>
+                      </td>
+
+                      {/* Contact Phones: Officer & Heirs */}
+                      <td style={{ padding: '14px', fontSize: '12px', lineHeight: 1.55 }}>
+                        {(() => {
+                          const officerPhone = (claim.reporterPhone || '').trim();
+                          const heirList = Array.isArray(claim.heirContacts) && claim.heirContacts.length > 0
+                            ? claim.heirContacts
+                            : Array.isArray(claim.heirs) && claim.heirs.length > 0
+                              ? claim.heirs.map((h) => ({ name: h?.name || '', relation: h?.relation || '', phone: h?.phone || '' }))
+                              : (claim.heirPhone || claim.heirName)
+                                ? [{ name: claim.heirName || '', relation: '', phone: claim.heirPhone || '' }]
+                                : [];
+                          const heirsWithPhone = heirList.filter((h) => h.phone && h.phone.trim());
+                          const primaryHeir = heirsWithPhone[0] || heirList[0] || null;
+
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                              {/* เบอร์ติดต่อเจ้าหน้าที่ */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                                <Phone size={12} color="var(--cyan-accent)" style={{ flexShrink: 0 }} />
+                                <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>จนท.:</span>
+                                {officerPhone ? (
+                                  <a
+                                    href={`tel:${officerPhone.replace(/\D/g, '')}`}
+                                    style={{ color: '#67e8f9', fontWeight: 600, textDecoration: 'none', fontFamily: 'monospace' }}
+                                    title={`โทรติดต่อเจ้าหน้าที่ (${claim.reporterName || 'ผู้เสนอเรื่อง'})`}
+                                  >
+                                    {formatPhoneNumber(officerPhone)}
+                                  </a>
+                                ) : (
+                                  <span style={{ color: 'var(--text-dim)' }}>-</span>
+                                )}
+                              </div>
+
+                              {/* เบอร์ติดต่อทายาท */}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '5px' }}>
+                                <Users size={12} color="var(--gold-primary)" style={{ flexShrink: 0, marginTop: '3px' }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                                    <span style={{ color: 'var(--text-dim)', fontSize: '11px' }}>ทายาท:</span>
+                                    {primaryHeir?.phone ? (
+                                      <a
+                                        href={`tel:${primaryHeir.phone.replace(/\D/g, '')}`}
+                                        style={{ color: 'var(--gold-light)', fontWeight: 600, textDecoration: 'none', fontFamily: 'monospace' }}
+                                        title={`โทรติดต่อทายาท${primaryHeir.name ? ` (${primaryHeir.name})` : ''}`}
+                                      >
+                                        {formatPhoneNumber(primaryHeir.phone)}
+                                      </a>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-dim)' }}>-</span>
+                                    )}
+                                  </div>
+                                  {primaryHeir?.name && (
+                                    <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
+                                      {primaryHeir.name}{primaryHeir.relation ? ` (${primaryHeir.relation})` : ''}
+                                      {heirsWithPhone.length > 1 && (
+                                        <span
+                                          style={{ color: 'var(--gold-primary)', marginLeft: '4px', fontWeight: 600 }}
+                                          title={heirsWithPhone.map((h, i) => `${i + 1}. ${h.name || 'ทายาท'}${h.relation ? ` (${h.relation})` : ''}: ${formatPhoneNumber(h.phone)}`).join('\n')}
+                                        >
+                                          (+{heirsWithPhone.length - 1} คน)
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Compensation Type */}
@@ -1379,10 +1453,10 @@ export default function ClaimsListPage() {
                       {/* CRUD Actions */}
                       <td style={{ padding: '14px', textAlign: 'right' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          
+
                           {/* 1. View Detail */}
-                          <Link 
-                            href={`/claims/${claim.id}`} 
+                          <Link
+                            href={`/claims/${claim.id}`}
                             className="btn btn-secondary btn-sm"
                             title="ดูรายละเอียดคำร้องและไทม์ไลน์"
                             style={{ padding: '5px 9px' }}
@@ -1391,7 +1465,7 @@ export default function ClaimsListPage() {
                           </Link>
 
                           {/* 2. Manage Documents */}
-                          <button 
+                          <button
                             type="button"
                             onClick={() => handleOpenDocsModal(claim)}
                             className="btn btn-secondary btn-sm"
@@ -1403,7 +1477,7 @@ export default function ClaimsListPage() {
 
                           {/* 3. Edit Claim */}
                           {claim.status === 'DRAFT' ? (
-                            <Link 
+                            <Link
                               href={`/submit?draftId=${claim.id}`}
                               className="btn btn-warning btn-sm"
                               title="แก้ไขแบบร่างและส่งเรื่อง"
@@ -1413,7 +1487,7 @@ export default function ClaimsListPage() {
                               <span>แก้ไขร่าง</span>
                             </Link>
                           ) : (
-                            <button 
+                            <button
                               type="button"
                               onClick={() => handleOpenEditModal(claim)}
                               className="btn btn-secondary btn-sm"
@@ -1426,7 +1500,7 @@ export default function ClaimsListPage() {
 
                           {/* 4. Delete Claim */}
                           {canDeleteClaim(claim) && (
-                            <button 
+                            <button
                               type="button"
                               onClick={() => handleOpenDeleteModal(claim)}
                               className="btn btn-danger btn-sm"
@@ -1487,7 +1561,7 @@ export default function ClaimsListPage() {
             border: '1px solid var(--border-glass)',
             boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)'
           }}>
-            
+
             {/* Modal Header */}
             <div style={{
               padding: '16px 24px',
@@ -1520,7 +1594,7 @@ export default function ClaimsListPage() {
                 </div>
               </div>
 
-              <button 
+              <button
                 type="button"
                 onClick={() => setSelectedClaimForDocs(null)}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '6px' }}
@@ -1548,7 +1622,7 @@ export default function ClaimsListPage() {
                   const isUploading = uploadingDocIndex === docDef.index;
 
                   return (
-                    <div 
+                    <div
                       key={docDef.index}
                       style={{
                         padding: '12px 16px',
@@ -1604,7 +1678,7 @@ export default function ClaimsListPage() {
 
                       {/* Actions for this doc */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        
+
                         {/* 1. Preview Doc */}
                         <button
                           type="button"
@@ -1618,16 +1692,16 @@ export default function ClaimsListPage() {
                         </button>
 
                         {/* 2. Upload / Replace File */}
-                        <label 
+                        <label
                           className={`btn btn-sm ${isUploaded ? 'btn-secondary' : 'btn-primary'}`}
                           style={{ padding: '6px 12px', fontSize: '12px', gap: '4px', cursor: isUploading ? 'not-allowed' : 'pointer' }}
                           title={isUploaded ? 'เปลี่ยนไฟล์เอกสารนี้' : 'แนบไฟล์เอกสาร'}
                         >
                           <Upload size={13} />
                           <span>{isUploading ? 'กำลังแนบ...' : isUploaded ? 'เปลี่ยนไฟล์' : 'แนบไฟล์'}</span>
-                          <input 
-                            type="file" 
-                            accept=".pdf,.png,.jpg,.jpeg" 
+                          <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg"
                             style={{ display: 'none' }}
                             disabled={isUploading}
                             onChange={(e) => handleModalDocUpload(docDef.index, e)}
@@ -1666,19 +1740,19 @@ export default function ClaimsListPage() {
                     <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>
                       พรีวิว: {previewDocInModal.name}
                     </div>
-                    <button 
-                      type="button" 
-                      onClick={() => setPreviewDocInModal(null)} 
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDocInModal(null)}
                       className="btn btn-secondary btn-sm"
                       style={{ padding: '4px 8px' }}
                     >
                       ปิดพรีวิว
                     </button>
                   </div>
-                  <SampleDocumentViewer 
-                    doc={previewDocInModal} 
-                    claim={selectedClaimForDocs} 
-                    onDownload={() => {}}
+                  <SampleDocumentViewer
+                    doc={previewDocInModal}
+                    claim={selectedClaimForDocs}
+                    onDownload={() => { }}
                   />
                 </div>
               )}
@@ -1692,7 +1766,7 @@ export default function ClaimsListPage() {
               justifyContent: 'flex-end',
               background: 'rgba(3, 16, 19, 0.95)'
             }}>
-              <button 
+              <button
                 type="button"
                 onClick={() => setSelectedClaimForDocs(null)}
                 className="btn btn-secondary"
@@ -1732,7 +1806,7 @@ export default function ClaimsListPage() {
             overflow: 'hidden',
             border: '1px solid var(--border-glass)'
           }}>
-            
+
             {/* Edit Header */}
             <div style={{
               padding: '16px 24px',
@@ -1748,8 +1822,8 @@ export default function ClaimsListPage() {
                   แก้ไขข้อมูลคำร้อง: {selectedClaimForEdit.trackingCode}
                 </h3>
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setSelectedClaimForEdit(null)}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
               >
@@ -1759,7 +1833,7 @@ export default function ClaimsListPage() {
 
             {/* Edit Body */}
             <form onSubmit={handleSaveQuickEdit} style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-              
+
               {editError && (
                 <div style={{ padding: '10px 14px', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--ruby-danger)', color: '#fca5a5', marginBottom: '16px', fontSize: '13px' }}>
                   ⚠️ {editError}
@@ -1769,7 +1843,7 @@ export default function ClaimsListPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>ยศกำลังพล</label>
-                  <select 
+                  <select
                     className="form-select"
                     value={editFormData.casualtyRank}
                     onChange={(e) => handleRankChange(e.target.value)}
@@ -1782,9 +1856,9 @@ export default function ClaimsListPage() {
 
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>ประเภทกำลังพล</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    className="form-input"
                     value={editFormData.personnelType || ''}
                     readOnly
                     style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--gold-primary)' }}
@@ -1795,9 +1869,9 @@ export default function ClaimsListPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>ชื่อผู้สูญเสีย *</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    className="form-input"
                     value={editFormData.casualtyFirstName || ''}
                     onChange={(e) => setEditFormData({ ...editFormData, casualtyFirstName: e.target.value })}
                     required
@@ -1806,9 +1880,9 @@ export default function ClaimsListPage() {
 
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>นามสกุล *</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    className="form-input"
                     value={editFormData.casualtyLastName || ''}
                     onChange={(e) => setEditFormData({ ...editFormData, casualtyLastName: e.target.value })}
                     required
@@ -1819,9 +1893,9 @@ export default function ClaimsListPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>เลขประจำตัวประชาชน 13 หลัก</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    className="form-input"
                     maxLength={17}
                     value={editFormData.casualtyCitizenId || ''}
                     onChange={(e) => setEditFormData({ ...editFormData, casualtyCitizenId: e.target.value })}
@@ -1830,7 +1904,7 @@ export default function ClaimsListPage() {
 
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>เพศ</label>
-                  <select 
+                  <select
                     className="form-select"
                     value={editFormData.casualtyGender || 'ชาย'}
                     onChange={(e) => setEditFormData({ ...editFormData, casualtyGender: e.target.value })}
@@ -1844,7 +1918,7 @@ export default function ClaimsListPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>ประเภทสิทธิสินไหม</label>
-                  <select 
+                  <select
                     className="form-select"
                     value={editFormData.claimType}
                     onChange={(e) => setEditFormData({ ...editFormData, claimType: e.target.value })}
@@ -1856,7 +1930,7 @@ export default function ClaimsListPage() {
 
                 <div className="form-group" style={{ margin: 0 }}>
                   <label className="form-label" style={{ fontSize: '12.5px' }}>ประเภทการสูญเสีย</label>
-                  <select 
+                  <select
                     className="form-select"
                     value={editFormData.lossType}
                     onChange={(e) => setEditFormData({ ...editFormData, lossType: e.target.value })}
@@ -1871,9 +1945,9 @@ export default function ClaimsListPage() {
                 <label className="form-label" style={{ fontSize: '12.5px' }}>
                   {editFormData.lossType === 'DECEASED' ? 'สาเหตุการเสียชีวิต (ตามใบมรณบัตร)' : 'สาเหตุการสูญเสีย / อวัยวะที่สูญเสีย'}
                 </label>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   value={editFormData.lossSpecificCause || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, lossSpecificCause: e.target.value })}
                   placeholder="ระบุสาเหตุตามเอกสารราชการ..."
@@ -1882,8 +1956,8 @@ export default function ClaimsListPage() {
 
               <div className="form-group" style={{ marginBottom: '14px' }}>
                 <label className="form-label" style={{ fontSize: '12.5px' }}>พฤติการณ์เหตุการณ์ (ตามรายงาน กพ.4)</label>
-                <textarea 
-                  className="form-textarea" 
+                <textarea
+                  className="form-textarea"
                   rows={3}
                   value={editFormData.causeOfLoss || ''}
                   onChange={(e) => setEditFormData({ ...editFormData, causeOfLoss: e.target.value })}
@@ -1892,16 +1966,16 @@ export default function ClaimsListPage() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button 
-                  type="button" 
-                  onClick={() => setSelectedClaimForEdit(null)} 
+                <button
+                  type="button"
+                  onClick={() => setSelectedClaimForEdit(null)}
                   className="btn btn-secondary"
                   disabled={savingEdit}
                 >
                   ยกเลิก
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn btn-primary"
                   disabled={savingEdit}
                   style={{ gap: '6px' }}
@@ -1981,15 +2055,15 @@ export default function ClaimsListPage() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setSelectedClaimForDelete(null)}
                 className="btn btn-secondary"
                 disabled={deleting}
               >
                 ยกเลิก
               </button>
-              <button 
+              <button
                 type="button"
                 onClick={handleConfirmDelete}
                 className="btn btn-danger"
@@ -2064,7 +2138,7 @@ export default function ClaimsListPage() {
                 </div>
               </div>
 
-              <button 
+              <button
                 type="button"
                 onClick={() => {
                   setIsImportModalOpen(false);
@@ -2081,7 +2155,7 @@ export default function ClaimsListPage() {
 
             {/* Modal Body */}
             <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-              
+
               {/* Banner แนะนำและปุ่มดาวน์โหลด Template */}
               <div style={{
                 background: 'linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(6, 182, 212, 0.08) 100%)',
@@ -2132,15 +2206,15 @@ export default function ClaimsListPage() {
                       รองรับคอลัมน์: เลขที่คำร้อง, วันที่รายงาน, วันที่สูญเสีย, เลข ปชช. 13 หลัก, ยศ, ชื่อ, นามสกุล, สังกัด, ประเภทสินไหม, ยอดเงิน, สถานะ
                     </div>
 
-                    <input 
-                      type="file" 
+                    <input
+                      type="file"
                       accept=".xlsx, .xls, .csv"
                       onChange={handleImportFileChange}
                       style={{ display: 'none' }}
                       id="claims-excel-file-upload-input"
                     />
-                    
-                    <label 
+
+                    <label
                       htmlFor="claims-excel-file-upload-input"
                       className="btn btn-secondary"
                       style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '9px 24px' }}
@@ -2159,7 +2233,7 @@ export default function ClaimsListPage() {
                   {/* ตัวเลือก Overwrite */}
                   <div style={{ marginBottom: '22px', background: 'rgba(255, 255, 255, 0.03)', padding: '12px 16px', borderRadius: '8px' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13.5px' }}>
-                      <input 
+                      <input
                         type="checkbox"
                         checked={overwriteExistingClaims}
                         onChange={(e) => setOverwriteExistingClaims(e.target.checked)}
@@ -2184,14 +2258,14 @@ export default function ClaimsListPage() {
 
                   {/* ปุ่มล่าง */}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setIsImportModalOpen(false)}
                       className="btn btn-secondary"
                     >
                       ยกเลิก
                     </button>
-                    <button 
+                    <button
                       type="submit"
                       className="btn btn-primary"
                       disabled={importLoading || !importFile}
