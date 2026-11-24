@@ -44,6 +44,27 @@ import {
 } from 'lucide-react';
 import { ARMY_LEVELS, RTA_LEVEL_OPTIONS, RTA_ORGANIZATION_SECTIONS, getRtaSection } from '@/lib/military-units';
 import { triggerStatusPopup } from '@/components/StatusModal';
+import SearchableAutocomplete from '@/components/SearchableAutocomplete';
+
+// รายชื่อ 77 จังหวัดในประเทศไทย สำหรับ Search Autocomplete
+const THAI_PROVINCES = [
+  'กรุงเทพมหานคร', 'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร',
+  'ขอนแก่น', 'จันทบุรี', 'ฉะเชิงเทรา', 'ชลบุรี', 'ชัยนาท',
+  'ชัยภูมิ', 'ชุมพร', 'เชียงราย', 'เชียงใหม่', 'ตรัง',
+  'ตราด', 'ตาก', 'นครนายก', 'นครปฐม', 'นครพนม',
+  'นครราชสีมา', 'นครศรีธรรมราช', 'นครสวรรค์', 'นนทบุรี', 'นราธิวาส',
+  'น่าน', 'บึงกาฬ', 'บุรีรัมย์', 'ปทุมธานี', 'ประจวบคีรีขันธ์',
+  'ปราจีนบุรี', 'ปัตตานี', 'พระนครศรีอยุธยา', 'พะเยา', 'พังงา',
+  'พัทลุง', 'พิจิตร', 'พิษณุโลก', 'เพชรบุรี', 'เพชรบูรณ์',
+  'แพร่', 'ภูเก็ต', 'มหาสารคาม', 'มุกดาหาร', 'แม่ฮ่องสอน',
+  'ยโสธร', 'ยะลา', 'ร้อยเอ็ด', 'ระนอง', 'ระยอง',
+  'ราชบุรี', 'ลพบุรี', 'ลำปาง', 'ลำพูน', 'เลย',
+  'ศรีสะเกษ', 'สกลนคร', 'สงขลา', 'สตูล', 'สมุทรปราการ',
+  'สมุทรสงคราม', 'สมุทรสาคร', 'สระแก้ว', 'สระบุรี', 'สิงห์บุรี',
+  'สุโขทัย', 'สุพรรณบุรี', 'สุราษฎร์ธานี', 'สุรินทร์', 'หนองคาย',
+  'หนองบัวลำภู', 'อ่างทอง', 'อำนาจเจริญ', 'อุดรธานี', 'อุตรดิตถ์',
+  'อุทัยธานี', 'อุบลราชธานี'
+];
 
 // พิกัดค่ายทหารหลักของกองทัพบก สำหรับกดเลือกปักหมุดด่วน
 const RTA_CAMP_PRESETS = [
@@ -1944,16 +1965,23 @@ export default function MilitaryUnitsPage() {
               
               <div className="grid-cols-2">
                 
-                {/* เลือกระดับโครงสร้าง (Level Name) */}
+                {/* เลือกระดับโครงสร้าง (Level Name) - Search Autocomplete */}
                 <div className="form-group">
                   <label className="form-label required">
                     ระดับโครงสร้างหน่วย (Level Name)
                   </label>
-                  <select 
-                    className="form-select"
+                  <SearchableAutocomplete
                     value={modalForm.levelName}
-                    onChange={(e) => {
-                      const sel = e.target.value;
+                    placeholder="พิมพ์ค้นหาระดับโครงสร้าง เช่น ระดับ ทบ., กองพล, กรม..."
+                    required
+                    options={[
+                      { value: 'ระดับ ทบ.', label: 'ระดับ ทบ. (1. ทภ. / บชร. / กองทัพภาค / ส่วนกลาง)', icon: '🎖️', keywords: '1 ทบ กองทัพภาค ส่วนกลาง บชร' },
+                      { value: 'ระดับ กองพล', label: 'ระดับ กองพล (2. กองพล / มณฑลทหารบก มทบ.)', icon: '🏢', keywords: '2 กองพล มทบ มณฑลทหารบก' },
+                      { value: 'ระดับ กรม/กองพัน', label: 'ระดับ กรม/กองพัน (3. กรม หรือ กองพัน)', icon: '⚔️', keywords: '3 กรม กองพัน พัน' },
+                      { value: 'อื่นๆ', label: 'อื่นๆ (กำหนดชื่อระดับโครงสร้างเอง)', icon: '✨', keywords: 'อื่นๆ กำหนดเอง custom' }
+                    ]}
+                    onChange={(sel) => {
+                      if (!sel) return;
                       let newLvl = modalForm.level;
                       if (sel === 'ระดับ ทบ.') newLvl = 1;
                       else if (sel === 'ระดับ กองพล') newLvl = 2;
@@ -1966,13 +1994,7 @@ export default function MilitaryUnitsPage() {
                         parentId: newLvl === 1 ? '' : newLvl === 2 ? '1st_ARMY' : '2nd_INF_DIV'
                       });
                     }}
-                    required
-                  >
-                    <option value="ระดับ ทบ.">ระดับ ทบ. (1. ทภ. / บชร. / กองทัพภาค / ส่วนกลาง)</option>
-                    <option value="ระดับ กองพล">ระดับ กองพล (2. กองพล / มณฑลทหารบก มทบ.)</option>
-                    <option value="ระดับ กรม/กองพัน">ระดับ กรม/กองพัน (3. กรม หรือ กองพัน)</option>
-                    <option value="อื่นๆ">อื่นๆ (กำหนดชื่อระดับโครงสร้างเอง)</option>
-                  </select>
+                  />
                   <span style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
                     {modalForm.levelName === 'ระดับ ทบ.' ? 'หน่วยขึ้นตรงส่วนกลาง / กองทัพภาค (เช่น ทภ.1-4, นสศ., นปอ.)' :
                      modalForm.levelName === 'ระดับ กองพล' ? 'กองพลทหารราบ, กองพลทหารม้า, มณฑลทหารบก (มทบ.)' :
@@ -1981,7 +2003,7 @@ export default function MilitaryUnitsPage() {
                   </span>
                 </div>
 
-                {/* เลือกสังกัดแม่ */}
+                {/* เลือกสังกัดแม่ - Search Autocomplete */}
                 <div className="form-group">
                   <label className="form-label">
                     หน่วยต้นสังกัด (Parent Unit)
@@ -1989,29 +2011,37 @@ export default function MilitaryUnitsPage() {
                   {modalForm.level === 1 ? (
                     <input type="text" className="form-input" value="กองทัพบก (ขึ้นตรงส่วนกลาง)" disabled style={{ opacity: 0.6 }} />
                   ) : modalForm.level === 2 ? (
-                    <select 
-                      className="form-select"
+                    <SearchableAutocomplete
                       value={modalForm.parentId}
-                      onChange={(e) => setModalForm({ ...modalForm, parentId: e.target.value })}
+                      placeholder="พิมพ์ค้นหาหน่วยระดับ ทบ. (เช่น ทภ.1, ทภ.2, นสศ.)..."
                       required
-                    >
-                      <option value="">-- เลือกหน่วยระดับ ทบ. --</option>
-                      {units.filter((u) => u.level === 1).map((u) => (
-                        <option key={u.id} value={u.id}>[{u.code || u.shortName}] {u.name}</option>
-                      ))}
-                    </select>
+                      options={units
+                        .filter((u) => u.level === 1)
+                        .map((u) => ({
+                          value: u.id,
+                          label: `[${u.code || u.shortName}] ${u.name}`,
+                          subLabel: u.province ? `จ.${u.province}` : '',
+                          badge: u.shortName || u.code,
+                          keywords: `${u.id} ${u.code || ''} ${u.shortName || ''} ${u.name || ''} ${u.province || ''}`
+                        }))}
+                      onChange={(val) => setModalForm({ ...modalForm, parentId: val })}
+                    />
                   ) : (
-                    <select 
-                      className="form-select"
+                    <SearchableAutocomplete
                       value={modalForm.parentId}
-                      onChange={(e) => setModalForm({ ...modalForm, parentId: e.target.value })}
+                      placeholder="พิมพ์ค้นหากองพล / มทบ. ต้นสังกัด (เช่น พล.ร.6, มทบ.27)..."
                       required
-                    >
-                      <option value="">-- เลือกกองพล / มทบ. ต้นสังกัด --</option>
-                      {units.filter((u) => u.level === 2).map((u) => (
-                        <option key={u.id} value={u.id}>[{u.code || u.shortName}] {u.name}</option>
-                      ))}
-                    </select>
+                      options={units
+                        .filter((u) => u.level === 2)
+                        .map((u) => ({
+                          value: u.id,
+                          label: `[${u.code || u.shortName}] ${u.name}`,
+                          subLabel: u.province ? `จ.${u.province}` : '',
+                          badge: u.shortName || u.code,
+                          keywords: `${u.id} ${u.code || ''} ${u.shortName || ''} ${u.name || ''} ${u.province || ''}`
+                        }))}
+                      onChange={(val) => setModalForm({ ...modalForm, parentId: val })}
+                    />
                   )}
                 </div>
 
@@ -2200,28 +2230,80 @@ export default function MilitaryUnitsPage() {
                   </button>
                 </div>
 
-                {/* Input Fields สำหรับ จังหวัด และ ชื่อค่าย/ที่ตั้ง */}
+                {/* Input Fields สำหรับ จังหวัด และ ชื่อค่าย/ที่ตั้ง (Search Autocomplete) */}
                 <div className="grid-cols-2" style={{ gap: '14px', marginBottom: '10px' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label required">จังหวัดที่ตั้งหน่วย</label>
-                    <input 
-                      type="text" 
-                      className="form-input"
-                      placeholder="เช่น ปราจีนบุรี, นครราชสีมา, กรุงเทพมหานคร"
+                    <SearchableAutocomplete
                       value={modalForm.province}
-                      onChange={(e) => setModalForm({ ...modalForm, province: e.target.value })}
+                      allowCustom={true}
                       required
+                      placeholder="พิมพ์ค้นหาจังหวัด เช่น ร้อยเอ็ด, ปราจีนบุรี, นครราชสีมา..."
+                      options={Array.from(
+                        new Set([
+                          ...THAI_PROVINCES,
+                          ...units.map((u) => (u.province || '').trim()).filter(Boolean)
+                        ])
+                      ).map((prov) => ({
+                        value: prov,
+                        label: prov,
+                        icon: '📍',
+                        keywords: prov
+                      }))}
+                      onChange={(val) => setModalForm({ ...modalForm, province: val })}
                     />
                   </div>
 
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label">ชื่อค่ายทหาร / ที่ตั้งหน่วย</label>
-                    <input 
-                      type="text" 
-                      className="form-input"
-                      placeholder="เช่น ค่ายพรหมโยธี, ค่ายสุรสีห์, บก.ทบ."
+                    <SearchableAutocomplete
                       value={modalForm.locationName}
-                      onChange={(e) => setModalForm({ ...modalForm, locationName: e.target.value })}
+                      allowCustom={true}
+                      placeholder="พิมพ์ค้นหาค่ายทหาร เช่น ค่ายสุรนารี, ค่ายพรหมโยธี..."
+                      options={(() => {
+                        const seen = new Set();
+                        const list = [];
+                        RTA_CAMP_PRESETS.forEach((camp) => {
+                          if (!seen.has(camp.locationName)) {
+                            seen.add(camp.locationName);
+                            list.push({
+                              value: camp.locationName,
+                              label: camp.locationName,
+                              subLabel: `${camp.name} • จ.${camp.province}`,
+                              icon: '🏛️',
+                              keywords: `${camp.name} ${camp.locationName} ${camp.province}`,
+                              meta: camp
+                            });
+                          }
+                        });
+                        units.forEach((u) => {
+                          const loc = (u.locationName || '').trim();
+                          if (loc && !seen.has(loc)) {
+                            seen.add(loc);
+                            list.push({
+                              value: loc,
+                              label: loc,
+                              subLabel: u.province ? `จ.${u.province}` : '',
+                              icon: '🏕️',
+                              keywords: `${loc} ${u.province || ''} ${u.shortName || ''}`
+                            });
+                          }
+                        });
+                        return list;
+                      })()}
+                      onChange={(val, opt) => {
+                        if (opt?.meta) {
+                          setModalForm((prev) => ({
+                            ...prev,
+                            locationName: val,
+                            province: opt.meta.province || prev.province,
+                            lat: opt.meta.lat || prev.lat,
+                            lng: opt.meta.lng || prev.lng
+                          }));
+                        } else {
+                          setModalForm((prev) => ({ ...prev, locationName: val }));
+                        }
+                      }}
                     />
                   </div>
                 </div>
@@ -2340,36 +2422,42 @@ export default function MilitaryUnitsPage() {
 
               </div>
 
-              {/* ประเภทหน่วย และ สถานะ */}
+              {/* ประเภทหน่วย และ สถานะ (Search Autocomplete) */}
               <div className="grid-cols-2">
                 <div className="form-group">
                   <label className="form-label required">
                     ประเภทหน่วย / หมวดหมู่ (โครงสร้าง ทบ. 7 ส่วนหลัก)
                   </label>
-                  <select 
-                    className="form-select"
+                  <SearchableAutocomplete
                     value={modalForm.type}
-                    onChange={(e) => setModalForm({ ...modalForm, type: e.target.value })}
                     required
-                  >
-                    {RTA_ORGANIZATION_SECTIONS.map((sec) => (
-                      <option key={sec.code} value={sec.code}>
-                        {sec.number ? `${sec.number}. ` : ''}{sec.shortLabel} ({sec.nameEn})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="พิมพ์ค้นหาประเภทหน่วย เช่น กำลังรบ, ส่งกำลัง, ภูมิภาค..."
+                    options={RTA_ORGANIZATION_SECTIONS.map((sec) => ({
+                      value: sec.code,
+                      label: `${sec.number ? `${sec.number}. ` : ''}${sec.shortLabel} (${sec.nameEn})`,
+                      subLabel: sec.description || '',
+                      icon: sec.icon,
+                      keywords: `${sec.code} ${sec.shortLabel} ${sec.nameEn} ${sec.description || ''}`
+                    }))}
+                    onChange={(val) => {
+                      if (val) setModalForm({ ...modalForm, type: val });
+                    }}
+                  />
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">สถานะการใช้งาน</label>
-                  <select 
-                    className="form-select"
+                  <SearchableAutocomplete
                     value={modalForm.status}
-                    onChange={(e) => setModalForm({ ...modalForm, status: e.target.value })}
-                  >
-                    <option value="ACTIVE">พร้อมใช้งาน (ACTIVE)</option>
-                    <option value="INACTIVE">ระงับการใช้งาน (INACTIVE)</option>
-                  </select>
+                    placeholder="พิมพ์ค้นหาสถานะ..."
+                    options={[
+                      { value: 'ACTIVE', label: 'พร้อมใช้งาน (ACTIVE)', icon: '✅', keywords: 'active พร้อม ใช้งาน ปกติ' },
+                      { value: 'INACTIVE', label: 'ระงับการใช้งาน (INACTIVE)', icon: '⛔', keywords: 'inactive ระงับ ปิด' }
+                    ]}
+                    onChange={(val) => {
+                      if (val) setModalForm({ ...modalForm, status: val });
+                    }}
+                  />
                 </div>
               </div>
 
