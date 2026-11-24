@@ -87,7 +87,9 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings(true);
     runSlaScan(true);
-    const savedTheme = localStorage.getItem('rta_theme') || 'teal';
+    const rawTheme = localStorage.getItem('rta_theme') || 'teal';
+    const savedTheme = rawTheme === 'sky-indigo' ? 'sky-indigo' : 'teal';
+    if (savedTheme !== rawTheme) localStorage.setItem('rta_theme', savedTheme);
     setCurrentTheme(savedTheme);
 
     const socket = getSocketClient();
@@ -128,11 +130,12 @@ export default function SettingsPage() {
   }, []);
 
   const changeTheme = (newTheme) => {
-    setCurrentTheme(newTheme);
-    localStorage.setItem('rta_theme', newTheme);
-    document.documentElement.setAttribute('data-theme', newTheme);
-    window.dispatchEvent(new CustomEvent('rta_theme_change', { detail: newTheme }));
-    setMessage(`เปลี่ยนธีมสีการแสดงผลเป็น: ${newTheme === 'teal' ? 'เขียวคราม (Emerald & Deep Teal)' : newTheme === 'navy-gold' ? 'กรมท่า-ทอง (ทบ.)' : 'สว่าง สะอาดตา'} เรียบร้อยแล้ว`);
+    const safeTheme = newTheme === 'sky-indigo' ? 'sky-indigo' : 'teal';
+    setCurrentTheme(safeTheme);
+    localStorage.setItem('rta_theme', safeTheme);
+    document.documentElement.setAttribute('data-theme', safeTheme);
+    window.dispatchEvent(new CustomEvent('rta_theme_change', { detail: safeTheme }));
+    setMessage(`เปลี่ยนธีมสีการแสดงผลเป็น: ${safeTheme === 'teal' ? 'เขียวคราม (Emerald & Deep Teal)' : 'ฟ้าคราม (Sky Blue & Deep Indigo)'} เรียบร้อยแล้ว`);
   };
 
   const loadSettings = async (withBotCheck = false) => {
@@ -598,7 +601,7 @@ export default function SettingsPage() {
           <span className="badge badge-emerald">Real-time Apply</span>
         </div>
 
-        <div className="grid-cols-3" style={{ gap: '16px' }}>
+        <div className="grid-cols-2" style={{ gap: '16px' }}>
 
           {/* Theme 1: เขียวคราม */}
           <div
@@ -641,17 +644,17 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Theme 2: กรมท่า-ทอง ทบ. */}
+          {/* Theme 2: ฟ้าคราม */}
           <div
-            onClick={() => changeTheme('navy-gold')}
+            onClick={() => changeTheme('sky-indigo')}
             style={{
               padding: '16px',
               borderRadius: '12px',
-              border: currentTheme === 'navy-gold' ? '2px solid var(--gold-primary)' : '1px solid var(--border-subtle)',
-              background: 'linear-gradient(135deg, rgba(7, 13, 30, 0.85) 0%, rgba(30, 58, 138, 0.15) 100%)',
+              border: currentTheme === 'sky-indigo' ? '2px solid #38bdf8' : '1px solid var(--border-subtle)',
+              background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.2) 0%, rgba(6, 19, 38, 0.88) 100%)',
               cursor: 'pointer',
               position: 'relative',
-              boxShadow: currentTheme === 'navy-gold' ? '0 0 16px rgba(212, 175, 55, 0.3)' : 'none',
+              boxShadow: currentTheme === 'sky-indigo' ? '0 0 16px rgba(56, 189, 248, 0.35)' : 'none',
               transition: 'all 0.2s ease'
             }}
           >
@@ -660,66 +663,25 @@ export default function SettingsPage() {
                 width: '36px',
                 height: '36px',
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #070d1e 0%, #1e3a8a 50%, #d4af37 100%)',
+                background: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #4f46e5 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '18px'
               }}>
-                ⚜️
+                🌊
               </div>
-              {currentTheme === 'navy-gold' && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'var(--gold-primary)', color: '#070d1e', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
+              {currentTheme === 'sky-indigo' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#38bdf8', color: '#061326', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
                   <Check size={12} /> ใช้งานอยู่
                 </span>
               )}
             </div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
-              2. ธีมกรมท่า-ทอง (ทบ.)
+              2. ธีมฟ้าคราม
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              สีกรมท่าลึกตัดขอบทองหรูหรา สง่างาม สมเกียรติยศกองทัพบก เหมาะกับงานราชการเป็นทางการ
-            </div>
-          </div>
-
-          {/* Theme 3: สว่าง สะอาดตา */}
-          <div
-            onClick={() => changeTheme('light-teal')}
-            style={{
-              padding: '16px',
-              borderRadius: '12px',
-              border: currentTheme === 'light-teal' ? '2px solid var(--cyan-accent)' : '1px solid var(--border-subtle)',
-              background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.1) 0%, rgba(224, 242, 254, 0.15) 100%)',
-              cursor: 'pointer',
-              position: 'relative',
-              boxShadow: currentTheme === 'light-teal' ? '0 0 16px rgba(20, 184, 166, 0.3)' : 'none',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #f8fafc 0%, #e0f2fe 50%, #0d9488 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '18px'
-              }}>
-                ☀️
-              </div>
-              {currentTheme === 'light-teal' && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'var(--cyan-accent)', color: '#041417', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
-                  <Check size={12} /> ใช้งานอยู่
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
-              3. ธีมสว่าง สะอาดตา
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              พื้นหลังโทนสว่าง คอนทราสต์ตัวอักษรสูงเป็นพิเศษ เหมาะกับสภาพแวดล้อมห้องที่มีแสงสว่างมาก
+              เฉดฟ้า-ครามเข้ม ไล่เฉดนุ่มนวล สดใส คมชัด อ่านข้อมูลและตารางได้สบายสายตา
             </div>
           </div>
 

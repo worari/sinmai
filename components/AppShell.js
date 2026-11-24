@@ -25,8 +25,10 @@ export default function AppShell({ children }) {
   const router = useRouter();
 
   useEffect(() => {
-    // โหลดธีมเริ่มต้น (เขียวคราม เป็น default)
-    const savedTheme = localStorage.getItem('rta_theme') || 'teal';
+    // โหลดธีมเริ่มต้น (รองรับเฉพาะ เขียวคราม และ ฟ้าคราม)
+    const rawTheme = localStorage.getItem('rta_theme') || 'teal';
+    const savedTheme = rawTheme === 'sky-indigo' ? 'sky-indigo' : 'teal';
+    if (savedTheme !== rawTheme) localStorage.setItem('rta_theme', savedTheme);
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
 

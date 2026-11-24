@@ -53,7 +53,7 @@ export default function Navbar({
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
 
-  // ธีมที่มีให้เลือก (Default: เขียวคราม ไล่เฉด สะอาดตาอ่านง่าย)
+  // ธีมที่มีให้เลือก (เขียวคราม และ ฟ้าคราม)
   const THEMES = [
     {
       id: 'teal',
@@ -63,18 +63,11 @@ export default function Navbar({
       preview: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 50%, #059669 100%)'
     },
     {
-      id: 'navy-gold',
-      name: 'กรมท่า-ทอง (ทบ.)',
-      desc: 'สีกรมท่าเข้มตัดสีทอง ทรงเกียรติ สไตล์ทางการกองทัพบก',
-      icon: '⚜️',
-      preview: 'linear-gradient(135deg, #070d1e 0%, #1e3a8a 50%, #d4af37 100%)'
-    },
-    {
-      id: 'light-teal',
-      name: 'สว่าง สะอาดตา',
-      desc: 'พื้นขาวคลีน ไฮคอนทราสต์ อักษรคมชัด อ่านสะดวกทุกสภาพแสง',
-      icon: '☀️',
-      preview: 'linear-gradient(135deg, #f8fafc 0%, #e0f2fe 50%, #0d9488 100%)'
+      id: 'sky-indigo',
+      name: 'ฟ้าคราม',
+      desc: 'เฉดฟ้า-ครามเข้ม ไล่เฉดนุ่มนวล คมชัด สบายสายตา',
+      icon: '🌊',
+      preview: 'linear-gradient(135deg, #0284c7 0%, #38bdf8 50%, #4f46e5 100%)'
     }
   ];
 
@@ -115,7 +108,9 @@ export default function Navbar({
     };
 
     const syncTheme = () => {
-      const savedTheme = localStorage.getItem('rta_theme') || 'teal';
+      const rawTheme = localStorage.getItem('rta_theme') || 'teal';
+      const savedTheme = rawTheme === 'sky-indigo' ? 'sky-indigo' : 'teal';
+      if (savedTheme !== rawTheme) localStorage.setItem('rta_theme', savedTheme);
       setCurrentTheme(savedTheme);
       document.documentElement.setAttribute('data-theme', savedTheme);
     };
@@ -261,7 +256,7 @@ export default function Navbar({
       position: 'sticky',
       top: 0,
       zIndex: 50,
-      background: 'rgba(4, 20, 23, 0.92)',
+      background: 'var(--bg-navbar, rgba(4, 20, 23, 0.92))',
       backdropFilter: 'blur(16px)',
       WebkitBackdropFilter: 'blur(16px)',
       borderBottom: '1px solid var(--border-subtle)',
