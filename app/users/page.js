@@ -43,6 +43,9 @@ import { MILITARY_RANKS, MILITARY_UNITS, validateCitizenId, formatThaiDate, vali
 import { USER_ROLES, USER_STATUS } from '@/lib/constants';
 import { getSocketClient } from '@/lib/socket-client';
 import UnitAutocomplete from '@/components/UnitAutocomplete';
+import PaginationBar from '@/components/PaginationBar';
+
+const USERS_PER_PAGE = 10;
 
 export default function UserManagementPage() {
   const [activeTab, setActiveTab] = useState('users'); // 'users' | 'pending' | 'logs'
@@ -54,6 +57,7 @@ export default function UserManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [usersPage, setUsersPage] = useState(1);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -324,6 +328,19 @@ export default function UserManagementPage() {
 
     setFilteredUsers(result);
   }, [searchQuery, roleFilter, statusFilter, users, activeTab]);
+
+  // รีเซ็ตกลับหน้า 1 เมื่อเปลี่ยน Tab หรือตัวกรองค้นหา
+  useEffect(() => {
+    setUsersPage(1);
+  }, [searchQuery, roleFilter, statusFilter, activeTab]);
+
+  // คำนวณรายการผู้ใช้สำหรับหน้าปัจจุบัน (หน้าละ 10 แถว)
+  const usersTotalPages = Math.max(1, Math.ceil(filteredUsers.length / USERS_PER_PAGE));
+  const safeUsersPage = Math.min(Math.max(1, usersPage), usersTotalPages);
+  const paginatedUsers = filteredUsers.slice(
+    (safeUsersPage - 1) * USERS_PER_PAGE,
+    safeUsersPage * USERS_PER_PAGE
+  );
 
   const showNotification = (msg, isError = false) => {
     if (isError) {
@@ -932,7 +949,7 @@ export default function UserManagementPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((u) => {
+                    {paginatedUsers.map((u) => {
                       const roleBadge = getRoleBadgeStyle(u.role);
                       const isPending = u.status === 'PENDING';
                       const isSuspended = u.status === 'SUSPENDED' || u.isActive === false;
@@ -1071,6 +1088,20 @@ export default function UserManagementPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+
+            {/* Pagination Bar (หน้าละ 10 แถว: หน้าแรก / ย้อนกลับ / เลขหน้า / หน้าถัดไป / หน้าสุดท้าย) */}
+            {!loading && filteredUsers.length > 0 && (
+              <PaginationBar
+                currentPage={safeUsersPage}
+                totalItems={filteredUsers.length}
+                itemsPerPage={USERS_PER_PAGE}
+                onPageChange={setUsersPage}
+                firstLabel="หน้าแรก"
+                prevLabel="ย้อนกลับ"
+                nextLabel="หน้าถัดไป"
+                lastLabel="หน้าสุดท้าย"
+              />
             )}
           </div>
         </>

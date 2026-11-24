@@ -17,6 +17,7 @@ export default function PaginationBar({
   itemsPerPage = 10,
   onPageChange,
   firstLabel = 'หน้าแรก',
+  prevLabel = 'ย้อนกลับ',
   nextLabel = 'หน้าถัดไป',
   lastLabel = 'หน้าสุดท้าย'
 }) {
@@ -82,10 +83,18 @@ export default function PaginationBar({
           onClick={() => goTo(safePage - 1)}
           disabled={safePage <= 1}
           className="btn btn-secondary btn-sm"
-          style={{ opacity: safePage <= 1 ? 0.4 : 1, padding: '5px 8px' }}
-          title="หน้าก่อนหน้า"
+          style={{
+            opacity: safePage <= 1 ? 0.4 : 1,
+            padding: '5px 10px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+          title={`ไปยังหน้า${prevLabel}`}
         >
           <ChevronLeft size={14} />
+          {prevLabel && <span>{prevLabel}</span>}
         </button>
 
         <div style={{ display: 'flex', gap: '4px', margin: '0 2px' }}>
