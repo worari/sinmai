@@ -17,7 +17,26 @@ export async function GET(request) {
       return NextResponse.json({ success: true, ...checkResult }, { headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const claims = db.getClaims(user);
+    // โหมดแบ่งหน้าจากฝั่ง Server (Server-Side Pagination + Lightweight Payload)
+    const pageParam = searchParams.get('page');
+    const mode = searchParams.get('mode');
+    if (mode === 'paginated' || pageParam !== null) {
+      const result = db.getClaimsPaginated(user, {
+        page: Number(pageParam) || 1,
+        limit: Number(searchParams.get('limit')) || 10,
+        search: searchParams.get('search') || '',
+        status: searchParams.get('status') || 'ALL',
+        sla: searchParams.get('sla') || 'ALL',
+        startDate: searchParams.get('startDate') || '',
+        endDate: searchParams.get('endDate') || ''
+      });
+      return NextResponse.json({ success: true, ...result }, { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    // โหมดปกติ: ตัด Base64 fileData ออกโดยอัตโนมัติ (เว้นแต่ระบุ ?includeFiles=1) เพื่อลดขนาด Payload และเร่งความเร็ว
+    const includeFiles = searchParams.get('includeFiles') === '1';
+    const rawClaims = db.getClaims(user);
+    const claims = includeFiles ? rawClaims : rawClaims.map((c) => db.toClaimSummary(c));
     return NextResponse.json({ success: true, claims }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

@@ -1,7 +1,7 @@
 // app/claims/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { 
   FileText, 
@@ -90,18 +90,37 @@ const toLocalYMD = (dateObj) => {
 
 export default function ClaimsListPage() {
   const [claims, setClaims] = useState([]);
-  const [filteredClaims, setFilteredClaims] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [authError, setAuthError] = useState(false);
 
-  // Filters & Pagination
+  // Filters & Pagination (Server-Side)
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [slaFilter, setSlaFilter] = useState('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Server-side pagination & summary counters
+  const [serverPagination, setServerPagination] = useState({
+    totalFiltered: 0,
+    totalPages: 1,
+    filteredCompensationTotal: 0
+  });
+  const [serverCounts, setServerCounts] = useState({
+    total: 0,
+    draft: 0,
+    inProgress: 0,
+    approved: 0,
+    paid: 0
+  });
+
+  const fetchAbortRef = useRef(null);
+  const hasLoadedOnceRef = useRef(false);
+  const latestQueryRef = useRef({ page: 1, search: '', status: 'ALL', sla: 'ALL', startDate: '', endDate: '' });
 
   // CRUD Modals State
   // 1. Manage Documents Modal
@@ -128,6 +147,111 @@ export default function ClaimsListPage() {
   const [overwriteExistingClaims, setOverwriteExistingClaims] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
 
+  // Debounce ช่องค้นหา 250ms เพื่อไม่ให้ยิง API ถี่เกินไปขณะพิมพ์
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // รีเซ็ตกลับหน้า 1 เมื่อมีการเปลี่ยนคำค้นหา ช่วงวันที่ หรือตัวกรอง
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, statusFilter, slaFilter, startDate, endDate]);
+
+  const loadClaims = useCallback(async (userOverride = null, queryOverride = null) => {
+    if (fetchAbortRef.current) {
+      fetchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+
+    if (!hasLoadedOnceRef.current) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+    setAuthError(false);
+
+    try {
+      const u = userOverride || (typeof window !== 'undefined' ? (() => {
+        try { return JSON.parse(localStorage.getItem('rta_user')); } catch { return null; }
+      })() : null);
+
+      const q = queryOverride || latestQueryRef.current;
+      const params = new URLSearchParams();
+      params.set('mode', 'paginated');
+      params.set('page', String(q.page || 1));
+      params.set('limit', String(CLAIMS_PER_PAGE));
+      if (u?.id) params.set('userId', u.id);
+      if (q.search) params.set('search', q.search);
+      if (q.status && q.status !== 'ALL') params.set('status', q.status);
+      if (q.sla && q.sla !== 'ALL') params.set('sla', q.sla);
+      if (q.startDate) params.set('startDate', q.startDate);
+      if (q.endDate) params.set('endDate', q.endDate);
+
+      const headers = u?.id ? { 'x-user-id': u.id } : {};
+      const res = await fetch(`/api/claims?${params.toString()}`, {
+        headers,
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setAuthError(true);
+        setClaims([]);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.claims)) {
+        setClaims(data.claims);
+        if (data.pagination) {
+          setServerPagination({
+            totalFiltered: Number(data.pagination.totalFiltered || 0),
+            totalPages: Math.max(1, Number(data.pagination.totalPages || 1)),
+            filteredCompensationTotal: Number(data.pagination.filteredCompensationTotal || 0)
+          });
+        }
+        if (data.counts) {
+          setServerCounts({
+            total: Number(data.counts.total || 0),
+            draft: Number(data.counts.draft || 0),
+            inProgress: Number(data.counts.inProgress || 0),
+            approved: Number(data.counts.approved || 0),
+            paid: Number(data.counts.paid || 0)
+          });
+        }
+        hasLoadedOnceRef.current = true;
+      } else {
+        setClaims([]);
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      console.error('Error loading claims:', e);
+    } finally {
+      if (fetchAbortRef.current === controller) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
+
+  // โหลดข้อมูลตามหน้าและตัวกรองจาก Server แบบรวดเร็ว (ส่งเฉพาะ 10 รายการต่อหน้า ไม่มี Base64)
+  useEffect(() => {
+    const nextQuery = {
+      page: currentPage,
+      search: debouncedSearch,
+      status: statusFilter,
+      sla: slaFilter,
+      startDate,
+      endDate
+    };
+    latestQueryRef.current = nextQuery;
+    loadClaims(null, nextQuery);
+  }, [currentPage, debouncedSearch, statusFilter, slaFilter, startDate, endDate, loadClaims]);
+
   useEffect(() => {
     const readUser = () => {
       const saved = localStorage.getItem('rta_user');
@@ -142,16 +266,16 @@ export default function ClaimsListPage() {
     const handleAuth = () => {
       const user = readUser();
       setCurrentUser(user);
-      loadClaims(user);
+      loadClaims(user, latestQueryRef.current);
     };
 
-    handleAuth();
+    setCurrentUser(readUser());
     window.addEventListener('rta_auth_change', handleAuth);
 
     const socket = getSocketClient();
     const syncLive = () => {
       const u = readUser();
-      if (u?.id) loadClaims(u);
+      if (u?.id) loadClaims(u, latestQueryRef.current);
     };
 
     if (socket) {
@@ -167,111 +291,11 @@ export default function ClaimsListPage() {
         socket.off('claim_updated', syncLive);
         socket.off('claim_deleted', syncLive);
       }
+      if (fetchAbortRef.current) {
+        fetchAbortRef.current.abort();
+      }
     };
-  }, []);
-
-  const loadClaims = async (user) => {
-    setLoading(true);
-    setAuthError(false);
-    try {
-      const u = user || (typeof window !== 'undefined' ? (() => {
-        try { return JSON.parse(localStorage.getItem('rta_user')); } catch { return null; }
-      })() : null);
-
-      const url = u?.id ? `/api/claims?userId=${encodeURIComponent(u.id)}` : '/api/claims';
-      const headers = u?.id ? { 'x-user-id': u.id } : {};
-      const res = await fetch(url, { headers });
-
-      if (res.status === 401 || res.status === 403) {
-        setAuthError(true);
-        setClaims([]);
-        setFilteredClaims([]);
-        return;
-      }
-
-      const data = await res.json();
-      if (data.success && Array.isArray(data.claims)) {
-        setClaims(data.claims);
-        setFilteredClaims(data.claims);
-      } else {
-        setClaims([]);
-        setFilteredClaims([]);
-      }
-    } catch (e) {
-      console.error('Error loading claims:', e);
-      setClaims([]);
-      setFilteredClaims([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let result = Array.isArray(claims) ? [...claims] : [];
-
-    // Custom Date Range filter (ช่วงวันที่เริ่มต้น - สิ้นสุด แบบ inclusive)
-    if (startDate) {
-      result = result.filter((c) => {
-        if (!c) return false;
-        const key = getClaimDateKey(c);
-        return key && key >= startDate;
-      });
-    }
-    if (endDate) {
-      result = result.filter((c) => {
-        if (!c) return false;
-        const key = getClaimDateKey(c);
-        return key && key <= endDate;
-      });
-    }
-
-    // Search query
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      result = result.filter((c) => {
-        if (!c) return false;
-        const fullName = `${c.casualtyRank || ''} ${c.casualtyFirstName || ''} ${c.casualtyLastName || ''}`.toLowerCase();
-        const cause = `${c.causeOfLoss || ''} ${c.lossSpecificCause || ''}`.toLowerCase();
-        return (
-          (c.trackingCode || '').toLowerCase().includes(q) ||
-          (c.casualtyFirstName || '').toLowerCase().includes(q) ||
-          (c.casualtyLastName || '').toLowerCase().includes(q) ||
-          fullName.includes(q) ||
-          (c.casualtyCitizenId || '').includes(q) ||
-          (c.unitName || '').toLowerCase().includes(q) ||
-          cause.includes(q)
-        );
-      });
-    }
-
-    // Status filter (รองรับทั้งกลุ่มสถานะจากการ์ดสรุปและสถานะรายขั้น)
-    if (statusFilter !== 'ALL') {
-      result = result.filter((c) => matchesStatusFilter(c, statusFilter));
-    }
-
-    // SLA filter
-    if (slaFilter !== 'ALL') {
-      const now = new Date();
-      result = result.filter((c) => {
-        if (!c) return false;
-        const created = new Date(c.reportDate || c.createdAt);
-        const days = Math.floor((now - created) / (1000 * 60 * 60 * 24));
-        const remaining = 30 - days;
-
-        if (slaFilter === 'OVERDUE') return remaining <= 0 && c.status !== 'SK_NOTIFIED' && c.status !== 'PAID';
-        if (slaFilter === 'WARNING') return remaining > 0 && remaining <= 7 && c.status !== 'SK_NOTIFIED' && c.status !== 'PAID';
-        if (slaFilter === 'NORMAL') return remaining > 7 || c.status === 'PAID' || c.status === 'SK_NOTIFIED';
-        return true;
-      });
-    }
-
-    setFilteredClaims(result);
-  }, [searchQuery, statusFilter, slaFilter, startDate, endDate, claims]);
-
-  // รีเซ็ตกลับหน้า 1 เมื่อมีการเปลี่ยนคำค้นหา ช่วงวันที่ หรือตัวกรอง
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, statusFilter, slaFilter, startDate, endDate]);
+  }, [loadClaims]);
 
   const applyDatePreset = (preset) => {
     const today = new Date();
@@ -326,42 +350,38 @@ export default function ClaimsListPage() {
     searchQuery.trim() || statusFilter !== 'ALL' || slaFilter !== 'ALL' || startDate || endDate
   );
 
-  const safeClaims = Array.isArray(claims) ? claims : [];
-  const safeFilteredClaims = Array.isArray(filteredClaims) ? filteredClaims : [];
-  const totalClaimsCount = safeFilteredClaims.length;
-  const filteredCompensationTotal = safeFilteredClaims.reduce(
-    (sum, c) => sum + Number(c?.compensationAmount || (c?.claimType === 'HIGH_RISK' ? 300000 : 60000) || 0),
-    0
-  );
-  const totalPages = Math.max(1, Math.ceil(totalClaimsCount / CLAIMS_PER_PAGE));
+  const paginatedClaims = Array.isArray(claims) ? claims : [];
+  const totalClaimsCount = serverPagination.totalFiltered;
+  const filteredCompensationTotal = serverPagination.filteredCompensationTotal;
+  const totalPages = Math.max(1, serverPagination.totalPages);
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-  const paginatedClaims = safeFilteredClaims.slice(
-    (safeCurrentPage - 1) * CLAIMS_PER_PAGE,
-    safeCurrentPage * CLAIMS_PER_PAGE
-  );
 
-  // Quick Counter Aggregation (อ้างอิงตามช่วงวันที่ที่เลือก เพื่อให้ยอดบนการ์ดตรงกับตาราง 100%)
-  const dateScopedClaims = safeClaims.filter((c) => {
-    if (!c) return false;
-    const key = getClaimDateKey(c);
-    if (startDate && (!key || key < startDate)) return false;
-    if (endDate && (!key || key > endDate)) return false;
-    return true;
-  });
-  const totalCount = dateScopedClaims.length;
-  const draftCount = dateScopedClaims.filter((c) => c && c.status === 'DRAFT').length;
-  const inProgressCount = dateScopedClaims.filter((c) => c && matchesStatusFilter(c, 'GROUP_IN_PROGRESS')).length;
-  const approvedCount = dateScopedClaims.filter((c) => c && matchesStatusFilter(c, 'GROUP_APPROVED')).length;
-  const paidCount = dateScopedClaims.filter((c) => c && matchesStatusFilter(c, 'GROUP_PAID')).length;
+  // Quick Counter Aggregation (คำนวณจากฝั่ง Server ตามช่วงวันที่ที่เลือก รวดเร็วและแม่นยำ 100%)
+  const totalCount = serverCounts.total;
+  const draftCount = serverCounts.draft;
+  const inProgressCount = serverCounts.inProgress;
+  const approvedCount = serverCounts.approved;
+  const paidCount = serverCounts.paid;
 
   // ==========================================
   // CRUD Handlers
   // ==========================================
 
-  // 1. Open Manage Documents Modal
-  const handleOpenDocsModal = (claim) => {
+  // 1. Open Manage Documents Modal (โหลดรายละเอียดไฟล์เอกสารเต็มเฉพาะคำร้องที่กดดู On-Demand)
+  const handleOpenDocsModal = async (claim) => {
     setSelectedClaimForDocs(claim);
     setPreviewDocInModal(null);
+    if (!claim?.id) return;
+    try {
+      const headers = currentUser?.id ? { 'x-user-id': currentUser.id } : {};
+      const res = await fetch(`/api/claims/${claim.id}`, { headers, cache: 'no-store' });
+      const data = await res.json();
+      if (data.success && data.claim) {
+        setSelectedClaimForDocs((prev) => (prev && prev.id === data.claim.id ? data.claim : prev));
+      }
+    } catch (e) {
+      // keep summary claim if full fetch fails
+    }
   };
 
   // Upload/Replace doc in Modal
@@ -576,11 +596,12 @@ export default function ClaimsListPage() {
         throw new Error(data.message || 'ลบคำร้องไม่สำเร็จ');
       }
 
-      // นำคำร้องออกจากรายการทันที
+      // นำคำร้องออกจากรายการและรีเฟรชตัวเลขสรุปจาก Server
       setClaims((prev) => prev.filter((c) => c.id !== selectedClaimForDelete.id));
       const deletedTracking = selectedClaimForDelete.trackingCode;
       const deletedName = `${selectedClaimForDelete.casualtyRank} ${selectedClaimForDelete.casualtyFirstName} ${selectedClaimForDelete.casualtyLastName}`;
       setSelectedClaimForDelete(null);
+      loadClaims(currentUser, latestQueryRef.current);
 
       triggerStatusPopup({
         type: 'danger',
@@ -761,13 +782,14 @@ export default function ClaimsListPage() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button 
-            onClick={() => loadClaims(currentUser)} 
+            onClick={() => loadClaims(currentUser, latestQueryRef.current)} 
             className="btn btn-secondary btn-sm"
             title="รีเฟรชข้อมูลคำร้องล่าสุด"
+            disabled={isRefreshing}
             style={{ gap: '6px' }}
           >
-            <RefreshCw size={14} />
-            <span>รีเฟรช</span>
+            <RefreshCw size={14} className={isRefreshing ? 'spin' : ''} />
+            <span>{isRefreshing ? 'กำลังโหลด...' : 'รีเฟรช'}</span>
           </button>
 
           <button
@@ -1190,7 +1212,7 @@ export default function ClaimsListPage() {
               </Link>
             </div>
           </div>
-        ) : filteredClaims.length === 0 ? (
+        ) : paginatedClaims.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)' }}>
             <FileText size={42} style={{ margin: '0 auto 12px', opacity: 0.3 }} />
             <div>ไม่พบข้อมูลคำร้องตามเงื่อนไขที่ค้นหา</div>

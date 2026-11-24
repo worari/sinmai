@@ -57,11 +57,17 @@ app.prepare().then(async () => {
     }
   });
 
-  // ผูก Socket.io
+  // ผูก Socket.io (รองรับทั้ง HTTP Polling และ WebSocket ผ่าน Reverse Proxy)
   const io = new Server(server, {
+    transports: ['polling', 'websocket'],
+    allowUpgrades: true,
+    httpCompression: true,
+    pingTimeout: 30000,
+    pingInterval: 25000,
     cors: {
-      origin: false,
-      methods: ['GET', 'POST']
+      origin: true,
+      methods: ['GET', 'POST'],
+      credentials: true
     }
   });
 
