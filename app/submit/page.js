@@ -425,8 +425,12 @@ export default function SubmitClaimPage() {
   const loadDraftClaim = async (draftId, user, unitsList = allUnits) => {
     setLoadingDraft(true);
     try {
-      const queryParam = user?.id ? `?userId=${user.id}` : '';
-      const res = await fetch(`/api/claims/${draftId}${queryParam}`);
+      const queryParams = new URLSearchParams({ includeFiles: '1' });
+      if (user?.id) queryParams.set('userId', user.id);
+      const res = await fetch(`/api/claims/${draftId}?${queryParams.toString()}`, {
+        credentials: 'include',
+        headers: user?.id ? { 'x-user-id': user.id } : {}
+      });
       const data = await res.json();
       if (!res.ok || !data.success || !data.claim) {
         throw new Error(data.message || 'ไม่สามารถโหลดข้อมูลแบบร่างได้');

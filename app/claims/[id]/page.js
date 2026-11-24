@@ -86,6 +86,10 @@ export default function ClaimDetailPage({ params }) {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    } else if (claim?.id && (doc.hasFileData || doc.uploaded || doc.isApprovalOrder)) {
+      const docKey = doc.isApprovalOrder || doc.index === 'อนุมัติ' ? 'approval' : String(doc.index);
+      const uidPart = currentUser?.id ? `&userId=${encodeURIComponent(currentUser.id)}` : '';
+      window.open(`/api/claims/${claim.id}/document?docIndex=${encodeURIComponent(docKey)}&download=1${uidPart}`, '_blank');
     } else {
       const content = `เอกสารแนบทางราชการ กองทัพบก\nเอกสาร: ${doc.name || doc.title}\nไฟล์แนบ: ${doc.fileName || 'doc_attached.pdf'}\nเลขที่อ้างอิง: ${claim?.trackingCode || 'ทบ-กพ-๖๙/๐๑๒'}\nกำลังพล: ${claim?.casualtyRank} ${claim?.casualtyFirstName} ${claim?.casualtyLastName}\nสังกัด: ${claim?.unitName}\nตรวจรับรองโดย: กสพ.กพ.ทบ.`;
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -273,7 +277,7 @@ export default function ClaimDetailPage({ params }) {
     try {
       const url = user?.id ? `/api/claims/${id}?userId=${encodeURIComponent(user.id)}` : `/api/claims/${id}`;
       const headers = user?.id ? { 'x-user-id': user.id } : {};
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers, credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (data.success && data.claim) {
         setClaim(data.claim);

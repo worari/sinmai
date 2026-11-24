@@ -370,20 +370,37 @@ export default function ClaimsListPage() {
   // CRUD Handlers
   // ==========================================
 
-  // 1. Open Manage Documents Modal (โหลดรายละเอียดไฟล์เอกสารเต็มเฉพาะคำร้องที่กดดู On-Demand)
+  // 1. Open Manage Documents Modal (โหลดเมตาดาต้าเอกสารครบ 12 รายการแบบเบาและรวดเร็ว ไฟล์จริงโหลด On-Demand ตอนกดดูพรีวิว)
   const handleOpenDocsModal = async (claim) => {
     setSelectedClaimForDocs(claim);
     setPreviewDocInModal(null);
     if (!claim?.id) return;
     try {
       const headers = currentUser?.id ? { 'x-user-id': currentUser.id } : {};
-      const res = await fetch(`/api/claims/${claim.id}`, { headers, cache: 'no-store' });
+      const uidQuery = currentUser?.id ? `?userId=${encodeURIComponent(currentUser.id)}` : '';
+      const res = await fetch(`/api/claims/${claim.id}${uidQuery}`, { headers, credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (data.success && data.claim) {
         setSelectedClaimForDocs((prev) => (prev && prev.id === data.claim.id ? data.claim : prev));
       }
     } catch (e) {
-      // keep summary claim if full fetch fails
+      // keep summary claim if fetch fails
+    }
+  };
+
+  // ดาวน์โหลดไฟล์แนบจริงจาก Modal จัดการเอกสาร
+  const handleDownloadModalDoc = (doc) => {
+    if (!doc || !selectedClaimForDocs?.id) return;
+    if (doc.fileData) {
+      const a = document.createElement('a');
+      a.href = doc.fileData;
+      a.download = doc.fileName || `doc_${doc.index}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else if (doc.hasFileData || doc.uploaded) {
+      const uidPart = currentUser?.id ? `&userId=${encodeURIComponent(currentUser.id)}` : '';
+      window.open(`/api/claims/${selectedClaimForDocs.id}/document?docIndex=${encodeURIComponent(doc.index)}&download=1${uidPart}`, '_blank');
     }
   };
 
@@ -1682,13 +1699,18 @@ export default function ClaimsListPage() {
                         {/* 1. Preview Doc */}
                         <button
                           type="button"
-                          onClick={() => setPreviewDocInModal(currentDoc)}
-                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setPreviewDocInModal({ ...currentDoc, index: docDef.index, name: docDef.name });
+                            setTimeout(() => {
+                              document.getElementById('claims-modal-doc-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 80);
+                          }}
+                          className={`btn btn-sm ${isUploaded ? 'btn-primary' : 'btn-secondary'}`}
                           style={{ padding: '6px 10px', fontSize: '12px', gap: '4px' }}
-                          title="พรีวิวตัวอย่างหรือไฟล์แนบจริง"
+                          title={isUploaded ? 'กดเพื่อพรีวิวไฟล์เอกสารแนบจริง' : 'ดูตัวอย่างแบบฟอร์มทางการ'}
                         >
                           <Eye size={13} />
-                          <span>{isUploaded ? 'พรีวิวไฟล์' : 'ดูตัวอย่าง'}</span>
+                          <span>{isUploaded ? 'พรีวิวไฟล์แนบ' : 'ดูตัวอย่าง'}</span>
                         </button>
 
                         {/* 2. Upload / Replace File */}
@@ -1729,16 +1751,19 @@ export default function ClaimsListPage() {
 
               {/* Sub-Modal: Preview Doc inside Modal */}
               {previewDocInModal && (
-                <div style={{
-                  marginTop: '20px',
-                  padding: '16px',
-                  borderRadius: '10px',
-                  background: '#041014',
-                  border: '1px solid var(--border-glass)'
-                }}>
+                <div
+                  id="claims-modal-doc-preview"
+                  style={{
+                    marginTop: '20px',
+                    padding: '16px',
+                    borderRadius: '10px',
+                    background: '#041014',
+                    border: '1px solid var(--cyan-accent)'
+                  }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <div style={{ fontSize: '14px', fontWeight: 600, color: '#fff' }}>
-                      พรีวิว: {previewDocInModal.name}
+                      พรีวิวเอกสารข้อที่ {previewDocInModal.index}: {previewDocInModal.name}
                     </div>
                     <button
                       type="button"
@@ -1752,7 +1777,7 @@ export default function ClaimsListPage() {
                   <SampleDocumentViewer
                     doc={previewDocInModal}
                     claim={selectedClaimForDocs}
-                    onDownload={() => { }}
+                    onDownload={handleDownloadModalDoc}
                   />
                 </div>
               )}

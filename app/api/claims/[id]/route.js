@@ -11,9 +11,28 @@ export async function GET(request, { params }) {
     const user = auth.user;
 
     const { id } = params;
+    const { searchParams } = new URL(request.url);
+    const includeFiles = searchParams.get('includeFiles') === '1';
+
     const claim = db.getClaimById(id, user);
     if (!claim) {
       return NextResponse.json({ success: false, message: 'ไม่พบข้อมูลคำร้อง' }, { status: 404 });
+    }
+
+    // โหมดปกติ: ตัด Base64 fileData ออกจาก documents เพื่อให้หน้า /claims/[id] เปิดได้ทันที (<50ms)
+    // แล้วให้ปุ่มพรีวิว (ดวงตา) ดึงไฟล์จริงรายข้อแบบ On-Demand ผ่าน /api/claims/[id]/document?docIndex=N
+    if (!includeFiles) {
+      const summary = db.toClaimSummary(claim);
+      return NextResponse.json(
+        {
+          success: true,
+          claim: {
+            ...summary,
+            timeline: claim.timeline || []
+          }
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     return NextResponse.json({ success: true, claim }, { headers: { 'Cache-Control': 'no-store' } });

@@ -48,6 +48,9 @@ function dataURItoBlob(dataURI) {
   }
 }
 
+// แคชไฟล์เอกสารที่โหลดแล้วในหน่วยความจำฝั่ง Client เพื่อเปิดดูซ้ำได้ทันที 0ms
+const DOC_FILE_CACHE = new Map();
+
 export default function SampleDocumentViewer({ 
   doc, 
   claim = null,
@@ -59,13 +62,91 @@ export default function SampleDocumentViewer({
   const [localFileData, setLocalFileData] = useState(doc?.fileData || null);
   const [localFileName, setLocalFileName] = useState(doc?.fileName || '');
   const [blobUrl, setBlobUrl] = useState(null);
+  const [loadingRealFile, setLoadingRealFile] = useState(false);
+  const [loadFileError, setLoadFileError] = useState('');
   const fileInputRef = useRef(null);
 
-  // ซิงค์ข้อมูลเมื่อ doc prop เปลี่ยน
+  // ซิงค์ข้อมูลและโหลดไฟล์แนบจริงแบบ On-Demand จาก API หาก doc ถูกตัด Base64 เพื่อความเร็ว
   useEffect(() => {
-    setLocalFileData(doc?.fileData || null);
+    let cancelled = false;
+    setLoadFileError('');
     setLocalFileName(doc?.fileName || '');
-  }, [doc]);
+
+    if (doc?.fileData) {
+      setLocalFileData(doc.fileData);
+      setLoadingRealFile(false);
+      return;
+    }
+
+    const canFetchFromApi =
+      claim?.id &&
+      (doc?.hasFileData || doc?.uploaded || doc?.isApprovalOrder) &&
+      (doc?.index !== undefined && doc?.index !== null);
+
+    if (!canFetchFromApi) {
+      setLocalFileData(null);
+      setLoadingRealFile(false);
+      return;
+    }
+
+    const docKey = doc.isApprovalOrder || doc.index === 'อนุมัติ' ? 'approval' : String(doc.index);
+    const cacheKey = `${claim.id}:${docKey}:${doc.fileName || ''}:${doc.updatedAt || ''}`;
+    if (DOC_FILE_CACHE.has(cacheKey)) {
+      const cached = DOC_FILE_CACHE.get(cacheKey);
+      setLocalFileData(cached.fileData || null);
+      if (cached.fileName) setLocalFileName(cached.fileName);
+      setLoadingRealFile(false);
+      return;
+    }
+
+    setLocalFileData(null);
+    setLoadingRealFile(true);
+
+    (async () => {
+      try {
+        let uid = '';
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('rta_user');
+            if (raw) uid = JSON.parse(raw)?.id || '';
+          } catch (e) {}
+        }
+        const params = new URLSearchParams({ docIndex: docKey, format: 'json' });
+        if (uid) params.set('userId', uid);
+        const headers = uid ? { 'x-user-id': uid } : {};
+
+        const res = await fetch(`/api/claims/${claim.id}/document?${params.toString()}`, {
+          headers,
+          credentials: 'include'
+        });
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (res.ok && data.success && data.document?.fileData) {
+          DOC_FILE_CACHE.set(cacheKey, {
+            fileData: data.document.fileData,
+            fileName: data.document.fileName
+          });
+          setLocalFileData(data.document.fileData);
+          if (data.document.fileName) setLocalFileName(data.document.fileName);
+        } else {
+          setLocalFileData(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadFileError('ไม่สามารถโหลดไฟล์แนบได้ในขณะนี้');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingRealFile(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [doc?.index, doc?.fileData, doc?.fileName, doc?.hasFileData, doc?.uploaded, doc?.updatedAt, doc?.isApprovalOrder, claim?.id]);
 
   // แปลง base64 เป็น Blob URL เพื่อให้เบราว์เซอร์สามารถแสดงผล PDF ขนาดใหญ่ได้อย่างราบรื่น
   useEffect(() => {
@@ -86,7 +167,7 @@ export default function SampleDocumentViewer({
       } else {
         setBlobUrl(activeData);
       }
-    } else if (doc?.fileUrl) {
+    } else if (doc?.fileUrl && !doc.fileUrl.startsWith('/uploads/')) {
       setBlobUrl(doc.fileUrl);
     } else {
       setBlobUrl(null);
@@ -107,7 +188,7 @@ export default function SampleDocumentViewer({
   const docFormat = doc.format || (fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() : 'PDF');
   const docSize = doc.size || (doc.fileSize ? `${(doc.fileSize / 1024).toFixed(0)} KB` : '1.4 MB');
   const activeFileData = localFileData || doc.fileData;
-  const isRealFileAttached = Boolean(activeFileData || (doc.fileUrl && !doc.fileUrl.includes('sample_')));
+  const isRealFileAttached = Boolean(activeFileData || doc.hasFileData || (doc.fileUrl && !doc.fileUrl.includes('sample_') && !doc.fileUrl.startsWith('/uploads/')));
 
   // ตรวจสอบประเภทเอกสารทั้ง 12 รายการ
   const idx = Number(doc.index);
@@ -375,8 +456,25 @@ export default function SampleDocumentViewer({
       {viewTab === 'attached' && (
         <div style={{ display: 'flex', justifyContent: 'center', overflowX: 'auto', padding: '10px 0' }}>
           
-          {/* กรณีที่มีไฟล์แนบจริงเป็นรูปภาพ */}
-          {activeFileData && activeFileData.startsWith('data:image/') ? (
+          {/* กำลังโหลดไฟล์แนบจริงแบบ On-Demand */}
+          {loadingRealFile ? (
+            <div style={{
+              width: '100%',
+              padding: '60px 20px',
+              textAlign: 'center',
+              background: 'rgba(4, 20, 23, 0.7)',
+              borderRadius: '10px',
+              border: '1px solid var(--border-glass)',
+              color: 'var(--cyan-accent)'
+            }}>
+              <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>
+                กำลังโหลดไฟล์เอกสารต้นฉบับ ({fileName})...
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
+                กำลังดึงเฉพาะไฟล์ข้อที่ {doc.index || '-'} เพื่อให้หน้าจอทำงานเร็วที่สุด
+              </div>
+            </div>
+          ) : activeFileData && activeFileData.startsWith('data:image/') ? (
             <div style={{
               background: '#020b14',
               padding: '16px',
