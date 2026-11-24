@@ -25,7 +25,7 @@ export async function POST(request) {
 
     if (!user) {
       if (foundUser) {
-        db.addActivityLog({
+        const failLog = db.addActivityLog({
           userId: foundUser.id,
           userName: `${foundUser.rank || ''} ${foundUser.firstName} ${foundUser.lastName}`.trim(),
           userRole: foundUser.role || 'GUEST',
@@ -36,8 +36,7 @@ export async function POST(request) {
           ip: clientInfo.ip,
           device: clientInfo.device
         });
-        db.saveToFile(['activityLogs']);
-        await db.flush();
+        db.persistActivityLogFast(failLog);
       }
       return NextResponse.json({ success: false, message: 'เลขประจำตัวประชาชน/อีเมล หรือรหัสผ่านไม่ถูกต้อง' }, { status: 401 });
     }
@@ -45,7 +44,7 @@ export async function POST(request) {
     const userStatus = user.status || (user.isActive === false ? 'SUSPENDED' : 'APPROVED');
 
     if (userStatus === 'PENDING') {
-      db.addActivityLog({
+      const pendingLog = db.addActivityLog({
         userId: user.id,
         userName: `${user.rank || ''} ${user.firstName} ${user.lastName}`.trim(),
         userRole: user.role || 'PENDING',
@@ -56,8 +55,7 @@ export async function POST(request) {
         ip: clientInfo.ip,
         device: clientInfo.device
       });
-      db.saveToFile(['activityLogs']);
-      await db.flush();
+      db.persistActivityLogFast(pendingLog);
       return NextResponse.json({
         success: false,
         status: 'PENDING',
@@ -66,7 +64,7 @@ export async function POST(request) {
     }
 
     if (userStatus === 'SUSPENDED' || user.isActive === false) {
-      db.addActivityLog({
+      const blockedLog = db.addActivityLog({
         userId: user.id,
         userName: `${user.rank || ''} ${user.firstName} ${user.lastName}`.trim(),
         userRole: user.role,
@@ -77,8 +75,7 @@ export async function POST(request) {
         ip: clientInfo.ip,
         device: clientInfo.device
       });
-      db.saveToFile(['activityLogs']);
-      await db.flush();
+      db.persistActivityLogFast(blockedLog);
       return NextResponse.json({
         success: false,
         status: 'SUSPENDED',
@@ -97,7 +94,7 @@ export async function POST(request) {
     resetRateLimit(rate.key);
 
     const fullName = `${user.rank || ''} ${user.firstName} ${user.lastName}`.trim();
-    db.addActivityLog({
+    const loginLog = db.addActivityLog({
       userId: user.id,
       userName: fullName,
       userRole: user.role,
@@ -108,8 +105,8 @@ export async function POST(request) {
       ip: clientInfo.ip,
       device: clientInfo.device
     });
-    db.saveToFile(['activityLogs']);
-    await db.flush();
+    // บันทึก Log แบบ Non-blocking (1 SQL INSERT) เพื่อไม่ให้หน่วงเวลาเข้าสู่ระบบ
+    db.persistActivityLogFast(loginLog);
 
     const { password: _, ...userWithoutPass } = user;
     userWithoutPass.name = userWithoutPass.name || fullName || 'เจ้าหน้าที่ ทบ.';

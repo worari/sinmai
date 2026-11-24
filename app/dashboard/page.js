@@ -240,27 +240,24 @@ export default function DashboardPage() {
     const onConnect = () => setSocketConnected(true);
     const onDisconnect = () => setSocketConnected(false);
     const onStatsUpdated = async (newStats) => {
+      const savedUserStr = typeof window !== 'undefined' ? localStorage.getItem('rta_user') : null;
+      let u = null;
+      try { u = savedUserStr ? JSON.parse(savedUserStr) : null; } catch (e) {}
+      if (!u?.id) return;
+      const headers = { 'x-user-id': u.id };
       const fy = selectedFiscalYearRef.current;
-      if (fy && fy !== 'ALL') {
-        try {
-          const res = await fetch(`/api/stats?fiscalYear=${fy}`, { cache: 'no-store' }).then((r) => r.json());
-          if (res.success && res.stats) {
-            setStats(res.stats);
-          }
-        } catch (e) {
+      const targetUrl = fy && fy !== 'ALL'
+        ? `/api/stats?fiscalYear=${encodeURIComponent(fy)}&userId=${encodeURIComponent(u.id)}`
+        : `/api/stats?fiscalYear=ALL&userId=${encodeURIComponent(u.id)}`;
+      try {
+        const res = await fetch(targetUrl, { cache: 'no-store', credentials: 'include', headers }).then((r) => r.json());
+        if (res.success && res.stats) {
+          setStats(res.stats);
+        } else if (newStats) {
           setStats(newStats);
         }
-      } else {
-        try {
-          const res = await fetch('/api/stats?fiscalYear=ALL', { cache: 'no-store' }).then((r) => r.json());
-          if (res.success && res.stats) {
-            setStats(res.stats);
-          } else {
-            setStats(newStats);
-          }
-        } catch (e) {
-          setStats(newStats);
-        }
+      } catch (e) {
+        if (newStats) setStats(newStats);
       }
       setLastEvent('อัปเดตสถิติสดล่าสุด ' + new Date().toLocaleTimeString('th-TH'));
     };
@@ -304,11 +301,26 @@ export default function DashboardPage() {
 
   const loadDashboardData = async (user = currentUser, fy = selectedFiscalYear) => {
     try {
-      const claimsUrl = user?.id ? `/api/claims?userId=${user.id}` : '/api/claims';
-      const statsUrl = fy ? `/api/stats?fiscalYear=${fy}` : '/api/stats?fiscalYear=ALL';
+      let activeUser = user;
+      if (!activeUser && typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('rta_user');
+          if (raw) activeUser = JSON.parse(raw);
+        } catch (e) {}
+      }
+      // หากยังไม่ได้เข้าสู่ระบบ ไม่ต้องยิง /api/stats และ /api/claims เพื่อป้องกัน 401 Unauthorized
+      if (!activeUser?.id) return;
+
+      const uidParam = `userId=${encodeURIComponent(activeUser.id)}`;
+      const claimsUrl = `/api/claims?${uidParam}`;
+      const statsUrl = fy
+        ? `/api/stats?fiscalYear=${encodeURIComponent(fy)}&${uidParam}`
+        : `/api/stats?fiscalYear=ALL&${uidParam}`;
+      const headers = { 'x-user-id': activeUser.id };
+
       const [resStats, resClaims] = await Promise.all([
-        fetch(statsUrl, { cache: 'no-store' }).then((r) => r.json()),
-        fetch(claimsUrl, { cache: 'no-store' }).then((r) => r.json())
+        fetch(statsUrl, { cache: 'no-store', credentials: 'include', headers }).then((r) => r.json()),
+        fetch(claimsUrl, { cache: 'no-store', credentials: 'include', headers }).then((r) => r.json())
       ]);
 
       if (resStats.success) setStats(resStats.stats);

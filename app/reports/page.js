@@ -173,7 +173,13 @@ export default function ReportsPage() {
         q.append('compareYears', compYears.join(','));
       }
 
-      const resStats = await fetch(`/api/stats?${q.toString()}`, { cache: 'no-store' }).then((r) => r.json());
+      if (currentUser?.id) q.append('userId', currentUser.id);
+      const headers = currentUser?.id ? { 'x-user-id': currentUser.id } : {};
+      const resStats = await fetch(`/api/stats?${q.toString()}`, {
+        cache: 'no-store',
+        credentials: 'include',
+        headers
+      }).then((r) => r.json());
       if (resStats.success && resStats.stats) {
         setStats(resStats.stats);
       }
